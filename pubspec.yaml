@@ -1,0 +1,37 @@
+# ⚠️ `name` معرّف تقني محايد مؤقت (وليس الاسم التجاري).
+# الاسم الظاهر للمستخدم مؤقت أيضًا ويُدار من lib/core/config/app_identity.dart.
+# راجع قسم "الهوية والاسم المؤقت" في README.md قبل تغييره.
+name: teacher_student_app
+description: تطبيق عربي (RTL) يربط المدرسين بالطلاب في مصر — Flutter + Firebase.
+publish_to: 'none'
+
+# نسخة ما قبل الإطلاق: 0.1.0 -> المرحلة 2 (هيكل أولي فقط، بلا ميزات حقيقية).
+version: 0.1.0+1
+
+environment:
+  # الحد الأدنى المعلن. المشروع حاليًا يبني على Flutter stable (Dart 3.11).
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # تعريب Material/Cupertino + دعم RTL (بدون حزم خارجية).
+  flutter_localizations:
+    sdk: flutter
+
+  # المرحلة 2: نضيف فقط حزمة التهيئة الأساسية.
+  # firebase_auth / cloud_firestore / firebase_storage / firebase_messaging /
+  # google_sign_in تُضاف في مراحلها (انظر docs/ARCHITECTURE_DECISIONS.md: F-11..F-14).
+  firebase_core: ^5.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # لا تُضاف أصول أو خطوط الآن.
+  # لإضافة خط عربي لاحقًا (مثال: Cairo أو IBM Plex Sans Arabic) ضع الملفات في
+  # assets/fonts/ وأضفها هنا، ثم فعّل العائلة في lib/core/theme/app_typography.dart.

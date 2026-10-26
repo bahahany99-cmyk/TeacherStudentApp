@@ -1,0 +1,40 @@
+# ===== أسرار وبيانات اعتماد (لا تُرفع أبدًا) =====
+*.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+key.properties
+secrets/
+# إعداد Firebase المحلي (يُولَّد بأمر flutterfire configure — غير مُرفوع)
+google-services.json
+GoogleService-Info.plist
+lib/core/config/firebase_options.dart
+lib/firebase_options.dart
+
+# ===== Flutter / Dart =====
+# مخرجات البناء والحزم
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+coverage/
+doc/api/
+*.g.dart.bak
+
+# ملفات المنصة المولّدة محليًا (تُنشأ بأمر flutter create، وتحتوي مسارات جهازك)
+android/local.properties
+
+# ===== محررات وأدوات =====
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
