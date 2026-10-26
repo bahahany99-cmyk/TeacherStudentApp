@@ -149,6 +149,7 @@ docs/                        خطة، متطلبات، قرارات بنية، �
 
 ## الوثائق
 
+- [**خطة التنفيذ المرحلية (المراحل P0–P17)**](docs/ROADMAP.md) ← ابدأ من هنا
 - [خطة المشروع](docs/PROJECT_PLAN.md)
 - [متطلبات المنتج](docs/PRODUCT_REQUIREMENTS.md)
 - [قرارات البنية](docs/ARCHITECTURE_DECISIONS.md)
