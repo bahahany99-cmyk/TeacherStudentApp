@@ -508,12 +508,16 @@ describe('studyGroups — قراءة مقيّدة وكتابة للمالك فق
     );
   });
 
-  it('لا يجوز تغيير المقاعد المشغولة أو المالك من التطبيق', async () => {
+  it('المقاعد المشغولة تتغيّر بمقعد واحد فقط، والمالك لا يتغيّر', async () => {
     await seed([
       { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 9 }) },
     ]);
 
+    // نقص مقعدين مرفوض، ونقص مقعد واحد مقبول (إزالة عضو — P9).
     await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 7 }),
+    );
+    await assertSucceeds(
       updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 8 }),
     );
     await assertFails(
@@ -1404,16 +1408,23 @@ describe('P9 — قبول المنتظر: مقعد واحد وعضوية واح�
   });
 
   it('الطالب يغادر القائمة، ولا يعود إلا لمجموعة ما زالت مكتملة', async () => {
-    await seedQueue(11);
+    // مكتملة تمامًا: الغياب والعودة كلاهما على الطابور نفسه.
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 12 }) },
+      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1') },
+    ]);
     const db = asStudent();
 
     await assertSucceeds(
       updateDoc(doc(db, waitlistPath('g1', 'student-1')), { status: 'left' }),
     );
 
-    // عودة سليمة ما دامت مكتملة.
+    // عودة سليمة ما دامت مكتملة (الصف نفسه يعود waiting).
     await assertSucceeds(
-      setDoc(doc(db, waitlistPath('g1', 'student-1')), waitlistDoc('g1', 'student-1')),
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'waiting',
+        addedAt: now(),
+      }),
     );
 
     // بعد تحرر مقعد: لا عودة للطابور.
@@ -1422,7 +1433,10 @@ describe('P9 — قبول المنتظر: مقعد واحد وعضوية واح�
       { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 9 }) },
     ]);
     await assertFails(
-      updateDoc(doc(db, waitlistPath('g1', 'student-1')), { status: 'waiting' }),
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'waiting',
+        addedAt: now(),
+      }),
     );
   });
 

@@ -212,12 +212,12 @@ class DesignGalleryScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _GradientPreview(
+                      const _GradientPreview(
                         label: 'page',
                         gradient: AppGradients.page,
                       ),
-                      SizedBox(height: AppSpacing.xs),
-                      _GradientPreview(
+                      const SizedBox(height: AppSpacing.xs),
+                      const _GradientPreview(
                         label: 'pageWarm',
                         gradient: AppGradients.pageWarm,
                       ),

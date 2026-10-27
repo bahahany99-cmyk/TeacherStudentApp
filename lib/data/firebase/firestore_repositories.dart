@@ -114,69 +114,6 @@ class FirestoreTeacherRepository implements TeacherRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-  @override
-  Future<StudyGroup> removeMember({
-    required String groupId,
-    required String memberId,
-    required String teacherId,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
-        groupId,
-      );
-      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
-          .collection(FirestoreCollections.groupMembers)
-          .doc(memberId);
-
-      return _firestore.runTransaction<StudyGroup>((
-        Transaction transaction,
-      ) async {
-        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
-            await transaction.get(groupRef);
-        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
-            await transaction.get(memberRef);
-
-        final Map<String, Object?>? groupData = groupSnapshot.data();
-        if (!groupSnapshot.exists || groupData == null) {
-          throw const AppException.notFound(debugMessage: 'group missing');
-        }
-        final StudyGroup? group = studyGroupFromMap(
-          groupSnapshot.id,
-          groupData,
-        );
-        if (group == null) {
-          throw const AppException(
-            AppErrorKind.unknown,
-            debugMessage: 'group document is unreadable',
-          );
-        }
-        if (group.teacherId != teacherId) {
-          throw const AppException.permission(debugMessage: 'not group owner');
-        }
-        if (!memberSnapshot.exists) {
-          throw const AppException.notFound(debugMessage: 'member missing');
-        }
-
-        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
-        transaction.delete(memberRef);
-        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
-
-        return StudyGroup(
-          id: group.id,
-          teacherId: group.teacherId,
-          teacherName: group.teacherName,
-          title: group.title,
-          subject: group.subject,
-          stage: group.stage,
-          seatsTotal: group.seatsTotal,
-          seatsTaken: seatsTaken,
-          meetingMode: group.meetingMode,
-          scheduleNote: group.scheduleNote,
-          isActive: group.isActive,
-        );
-      });
-    });
-  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -1156,69 +1093,6 @@ class FirestoreScheduleRepository implements ScheduleRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-  @override
-  Future<StudyGroup> removeMember({
-    required String groupId,
-    required String memberId,
-    required String teacherId,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
-        groupId,
-      );
-      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
-          .collection(FirestoreCollections.groupMembers)
-          .doc(memberId);
-
-      return _firestore.runTransaction<StudyGroup>((
-        Transaction transaction,
-      ) async {
-        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
-            await transaction.get(groupRef);
-        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
-            await transaction.get(memberRef);
-
-        final Map<String, Object?>? groupData = groupSnapshot.data();
-        if (!groupSnapshot.exists || groupData == null) {
-          throw const AppException.notFound(debugMessage: 'group missing');
-        }
-        final StudyGroup? group = studyGroupFromMap(
-          groupSnapshot.id,
-          groupData,
-        );
-        if (group == null) {
-          throw const AppException(
-            AppErrorKind.unknown,
-            debugMessage: 'group document is unreadable',
-          );
-        }
-        if (group.teacherId != teacherId) {
-          throw const AppException.permission(debugMessage: 'not group owner');
-        }
-        if (!memberSnapshot.exists) {
-          throw const AppException.notFound(debugMessage: 'member missing');
-        }
-
-        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
-        transaction.delete(memberRef);
-        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
-
-        return StudyGroup(
-          id: group.id,
-          teacherId: group.teacherId,
-          teacherName: group.teacherName,
-          title: group.title,
-          subject: group.subject,
-          stage: group.stage,
-          seatsTotal: group.seatsTotal,
-          seatsTaken: seatsTaken,
-          meetingMode: group.meetingMode,
-          scheduleNote: group.scheduleNote,
-          isActive: group.isActive,
-        );
-      });
-    });
-  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -1315,69 +1189,6 @@ class FirestoreMessageRepository implements MessageRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-  @override
-  Future<StudyGroup> removeMember({
-    required String groupId,
-    required String memberId,
-    required String teacherId,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
-        groupId,
-      );
-      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
-          .collection(FirestoreCollections.groupMembers)
-          .doc(memberId);
-
-      return _firestore.runTransaction<StudyGroup>((
-        Transaction transaction,
-      ) async {
-        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
-            await transaction.get(groupRef);
-        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
-            await transaction.get(memberRef);
-
-        final Map<String, Object?>? groupData = groupSnapshot.data();
-        if (!groupSnapshot.exists || groupData == null) {
-          throw const AppException.notFound(debugMessage: 'group missing');
-        }
-        final StudyGroup? group = studyGroupFromMap(
-          groupSnapshot.id,
-          groupData,
-        );
-        if (group == null) {
-          throw const AppException(
-            AppErrorKind.unknown,
-            debugMessage: 'group document is unreadable',
-          );
-        }
-        if (group.teacherId != teacherId) {
-          throw const AppException.permission(debugMessage: 'not group owner');
-        }
-        if (!memberSnapshot.exists) {
-          throw const AppException.notFound(debugMessage: 'member missing');
-        }
-
-        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
-        transaction.delete(memberRef);
-        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
-
-        return StudyGroup(
-          id: group.id,
-          teacherId: group.teacherId,
-          teacherName: group.teacherName,
-          title: group.title,
-          subject: group.subject,
-          stage: group.stage,
-          seatsTotal: group.seatsTotal,
-          seatsTaken: seatsTaken,
-          meetingMode: group.meetingMode,
-          scheduleNote: group.scheduleNote,
-          isActive: group.isActive,
-        );
-      });
-    });
-  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -1477,69 +1288,6 @@ class FirestoreBookingRepository implements BookingRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-  @override
-  Future<StudyGroup> removeMember({
-    required String groupId,
-    required String memberId,
-    required String teacherId,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
-        groupId,
-      );
-      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
-          .collection(FirestoreCollections.groupMembers)
-          .doc(memberId);
-
-      return _firestore.runTransaction<StudyGroup>((
-        Transaction transaction,
-      ) async {
-        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
-            await transaction.get(groupRef);
-        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
-            await transaction.get(memberRef);
-
-        final Map<String, Object?>? groupData = groupSnapshot.data();
-        if (!groupSnapshot.exists || groupData == null) {
-          throw const AppException.notFound(debugMessage: 'group missing');
-        }
-        final StudyGroup? group = studyGroupFromMap(
-          groupSnapshot.id,
-          groupData,
-        );
-        if (group == null) {
-          throw const AppException(
-            AppErrorKind.unknown,
-            debugMessage: 'group document is unreadable',
-          );
-        }
-        if (group.teacherId != teacherId) {
-          throw const AppException.permission(debugMessage: 'not group owner');
-        }
-        if (!memberSnapshot.exists) {
-          throw const AppException.notFound(debugMessage: 'member missing');
-        }
-
-        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
-        transaction.delete(memberRef);
-        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
-
-        return StudyGroup(
-          id: group.id,
-          teacherId: group.teacherId,
-          teacherName: group.teacherName,
-          title: group.title,
-          subject: group.subject,
-          stage: group.stage,
-          seatsTotal: group.seatsTotal,
-          seatsTaken: seatsTaken,
-          meetingMode: group.meetingMode,
-          scheduleNote: group.scheduleNote,
-          isActive: group.isActive,
-        );
-      });
-    });
-  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
