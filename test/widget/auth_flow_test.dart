@@ -119,8 +119,11 @@ void main() {
   });
 
   group('نموذج البريد الإلكتروني', () {
-    Future<void> openForm(WidgetTester tester) async {
-      await _pumpApp(tester, const DemoAuthService());
+    Future<void> openForm(
+      WidgetTester tester, {
+      AuthService auth = const DemoAuthService(),
+    }) async {
+      await _pumpApp(tester, auth);
       await tapVisible(tester, find.text('الدخول بالبريد الإلكتروني'));
     }
 
@@ -157,10 +160,11 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'إنشاء الحساب'), findsOneWidget);
     });
 
-    testWidgets('فشل الخادم يظهر داخل النموذج برسالة عربية لا رمزًا تقنيًا', (
+    testWidgets('خطأ غير معروف يُعرض عربيًا داخل النموذج', (
       WidgetTester tester,
     ) async {
-      await openForm(tester);
+      // خدمة ترمي خطأ غير مصنّف: الواجهة يجب أن تعرض رسالة عربية عامة.
+      await openForm(tester, auth: _StubAuthService());
 
       await tester.enterText(
         find.byType(TextFormField).first,
@@ -179,9 +183,8 @@ void main() {
     testWidgets('الخدمة غير المُهيَّأة تُعرض برسالتها الصريحة', (
       WidgetTester tester,
     ) async {
-      // نستخدم الخدمة التجريبية نفسها: المصادقة الحقيقية غير مُهيَّأة.
-      await _pumpApp(tester, const DemoAuthService());
-      await tapVisible(tester, find.text('الدخول بالبريد الإلكتروني'));
+      // الخدمة التجريبية ترمي AppException.unavailable.
+      await openForm(tester);
 
       await tester.enterText(
         find.byType(TextFormField).first,
