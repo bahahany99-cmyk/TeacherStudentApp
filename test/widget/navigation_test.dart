@@ -5,30 +5,31 @@ import '../helpers/test_app.dart';
 
 /// يمر عبر شاشة البداية إلى شاشة الدخول.
 Future<void> _openLogin(WidgetTester tester) async {
+  usePhoneSurface(tester);
   await tester.pumpWidget(buildTestApp());
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
-  await tester.pump(const Duration(milliseconds: 600));
+  await tester.pumpAndSettle();
 }
 
 /// يبدأ جلسة معاينة بدور الطالب عبر زر شاشة الدخول.
 Future<void> _enterStudentShell(WidgetTester tester) async {
   await _openLogin(tester);
-  await tester.tap(find.widgetWithText(OutlinedButton, 'واجهة الطالب'));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 600));
+  await tapVisible(
+    tester,
+    find.widgetWithText(OutlinedButton, 'واجهة الطالب'),
+  );
 }
 
 /// يضغط عنصر تنقّل محدّد داخل شريط التنقّل السفلي.
 Future<void> _tapNav(WidgetTester tester, String label) async {
-  await tester.tap(
+  await tapVisible(
+    tester,
     find.descendant(
       of: find.byType(NavigationBar),
       matching: find.text(label),
     ),
   );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
@@ -38,9 +39,24 @@ void main() {
     await _enterStudentShell(tester);
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('المدرسون'), findsWidgets);
-    expect(find.text('المجموعات'), findsWidgets);
-    expect(find.text('الحجوزات'), findsWidgets);
+
+    // كل عناصر تنقّل الطالب موجودة داخل شريط التنقّل.
+    for (final String label in <String>[
+      'الرئيسية',
+      'المدرسون',
+      'المجموعات',
+      'الحجوزات',
+      'حسابي',
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: 'عنصر التنقّل "$label" مفقود',
+      );
+    }
   });
 
   testWidgets('صفحة المجموعات مستقلة وتُفتح من التنقل', (
@@ -60,12 +76,32 @@ void main() {
 
     // الذهاب إلى "حسابي" ثم تبديل الدور.
     await _tapNav(tester, 'حسابي');
+    await tapVisible(
+      tester,
+      find.widgetWithText(OutlinedButton, 'واجهة المدرس'),
+    );
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'واجهة المدرس'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('الطلبات'), findsWidgets);
-    expect(find.text('مجموعاتي'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('مجموعاتي'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('الطلبات'),
+      ),
+      findsOneWidget,
+    );
+    // عنصر خاص بالطالب يجب أن يختفي.
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('المدرسون'),
+      ),
+      findsNothing,
+    );
   });
 }

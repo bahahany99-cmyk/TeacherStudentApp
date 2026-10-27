@@ -9,6 +9,7 @@ void main() {
   testWidgets('شاشة البداية تعرض الهوية العربية ثم تنتقل لتسجيل الدخول', (
     WidgetTester tester,
   ) async {
+    usePhoneSurface(tester);
     await tester.pumpWidget(buildTestApp());
 
     // أول إطار: شاشة البداية.
@@ -17,17 +18,18 @@ void main() {
 
     // انتهاء مهلة شاشة البداية (900ms) ثم انتقال التنقل.
     await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
 
     expect(find.text('تسجيل الدخول'), findsWidgets);
     expect(find.text('المتابعة باستخدام Google'), findsOneWidget);
   });
 
   testWidgets('اتجاه الواجهة RTL واللغة عربية', (WidgetTester tester) async {
+    usePhoneSurface(tester);
     await tester.pumpWidget(buildTestApp());
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
 
     final BuildContext context = tester.element(find.byType(Scaffold).first);
 
