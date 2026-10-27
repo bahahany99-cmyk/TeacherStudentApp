@@ -18,7 +18,7 @@
 | الوصف المختصر | «منصة تجمع مدرسي مصر بطلابهم» | `lib/core/config/app_identity.dart` → `tagline` |
 | عنوان النافذة/التطبيق في Flutter | من `AppIdentity.displayName` | — |
 | اسم التطبيق على Android | **غير موجود بعد** (لا مجلد `android/`) | `android/app/src/main/AndroidManifest.xml` → `android:label` |
-| `applicationId` على Google Play | **لم يُحسم** (Q-29) | `android/app/build.gradle.kts` |
+| `applicationId` على Google Play | **`com.darsly.app`** ✅ معتمد | `tool/scaffold_android.sh` (`--org com.darsly --project-name app`) |
 
 قاعدة عمل: لا يُثبَّت أي اسم أو شعار أو لوحة ألوان نهائية قبل اعتماد صاحب المشروع.
 
@@ -42,6 +42,8 @@
 | الطبقة | القرار |
 |---|---|
 | التطبيق | **Flutter + Dart** — Android فقط |
+| `applicationId` | **`com.darsly.app`** (معتمد) — الاسم التجاري الظاهر لم يُعتمد بعد |
+| التحقق الآلي | **GitHub Actions**: analyze + test + APK artifact (`.github/workflows/build.yml`) |
 | الخلفية | **Firebase** (لا Supabase) |
 | المصادقة | **Firebase Authentication** عبر **Google** فقط |
 | قاعدة البيانات | **Cloud Firestore** لكل البيانات |
