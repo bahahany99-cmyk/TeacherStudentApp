@@ -149,8 +149,14 @@ void main() {
       expect(map.containsKey('seatsTaken'), isFalse);
       expect(map['seatsTotal'], 14);
       expect(map['isActive'], isFalse);
-      // نص فارغ (لا null) حتى لا تُرفض الكتابة بعد دمج المستند.
-      expect(map['scheduleNote'], '');
+      // القيمة نصية دائمًا (لا null): القواعد تقرأ المستند **بعد الدمج**،
+      // وnull يجعل الحقل بنوع غير نصي فيُرفض التعديل.
+      expect(map['scheduleNote'], 'السبت 5 م');
+
+      final Map<String, Object?> cleared = draft(
+        scheduleNote: '  ',
+      ).toUpdateMap(isActive: true);
+      expect(cleared['scheduleNote'], '');
     });
   });
 

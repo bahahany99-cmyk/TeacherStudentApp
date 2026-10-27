@@ -63,8 +63,9 @@ void main() {
 
     await tapVisible(tester, find.text('إنشاء المجموعة'));
 
+    // رسالة الحقل + رسالة النموذج (أول مشكلة) تظهران معًا.
     expect(find.text('هذا الحقل مطلوب.'), findsWidgets);
-    expect(find.text('تحقّق من الحقول المعلَّمة ثم أعد المحاولة.'), findsOneWidget);
+    expect(find.text('أدخل 3 أحرف على الأقل.'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -106,7 +107,8 @@ void main() {
     await tester.pumpWidget(_host());
     await tester.pumpAndSettle();
 
-    final Finder minus = find.byTooltip('إنقاص');
+    // الزر نفسه (لا أداة التلميح) حتى نقرأ onPressed.
+    final Finder minus = find.widgetWithIcon(IconButton, Icons.remove);
     for (int i = 0; i < 12; i++) {
       if (tester.widget<IconButton>(minus).onPressed != null) {
         await tester.tap(minus);
@@ -131,7 +133,7 @@ void main() {
     expect(find.textContaining('عضوًا منضمًا'), findsOneWidget);
 
     // السعة الحالية 12 والمشغولة 9 ⇒ الإنقاص يتوقف عند 9.
-    final Finder minus = find.byTooltip('إنقاص');
+    final Finder minus = find.widgetWithIcon(IconButton, Icons.remove);
     for (int i = 0; i < 8; i++) {
       if (tester.widget<IconButton>(minus).onPressed != null) {
         await tester.tap(minus);

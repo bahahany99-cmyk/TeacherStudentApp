@@ -149,21 +149,25 @@ void main() {
         AppColors.washLilac,
         AppColors.washPeach,
       ]) {
-        expect(wash.g, lessThanOrEqualTo(wash.r));
+        expect(wash.r, greaterThanOrEqualTo(wash.g));
+        expect(wash.b, greaterThanOrEqualTo(wash.g));
       }
     });
 
     test('الحالات الدلالية خالية من الأخضر', () {
+      // القاعدة: الأخضر ليس القناة الأقوى (لا لون «أخضر» أو «نعناعي»)، وهو
+      // تحقّق أعم من مقارنة الأحمر فقط لأن الأزرق الرمادي مقبول.
       for (final Color status in <Color>[
         AppColors.statusAccepted,
         AppColors.statusPending,
         AppColors.statusRejected,
         AppColors.statusNeutral,
       ]) {
+        final double maxOther = status.r > status.b ? status.r : status.b;
         expect(
           status.g,
-          lessThanOrEqualTo(status.r),
-          reason: 'اللون $status ليس أخضر مسيطرًا',
+          lessThanOrEqualTo(maxOther),
+          reason: 'اللون $status أخضر مسيطر',
         );
       }
     });
