@@ -38,6 +38,8 @@ class ErrorState extends StatelessWidget {
       AppErrorKind.network => Icons.wifi_off_outlined,
       AppErrorKind.permission => Icons.lock_outline,
       AppErrorKind.notFound => Icons.search_off,
+      AppErrorKind.unavailable => Icons.cloud_off_outlined,
+      AppErrorKind.invalidInput => Icons.edit_note_outlined,
       AppErrorKind.unknown => Icons.error_outline,
     };
   }

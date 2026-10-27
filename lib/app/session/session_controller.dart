@@ -165,7 +165,7 @@ class SessionController extends ChangeNotifier {
         _user = user;
         _pendingRole = null;
         _status = SessionStatus.signedIn;
-      case AuthNeedsRole needsRole:
+      case final AuthNeedsRole needsRole:
         _user = null;
         _pendingRole = needsRole;
         _status = SessionStatus.needsRole;

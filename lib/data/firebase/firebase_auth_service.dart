@@ -57,7 +57,7 @@ class FirebaseAuthService implements AuthService {
       );
       final User? user = credential.user;
       if (user == null) {
-        throw AppException(
+        throw const AppException(
           AppErrorKind.unknown,
           debugMessage: 'Google sign-in returned no user',
         );
