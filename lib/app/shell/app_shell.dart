@@ -96,7 +96,9 @@ class _AppShellState extends State<AppShell> {
               }
 
               if (!_exitHintShown) {
-                setState(() => _exitHintShown = true);
+                setState(() {
+                  _exitHintShown = true;
+                });
                 AppSnackBar.show(
                   context,
                   'اضغط رجوع مرة أخرى للخروج من التطبيق',

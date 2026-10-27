@@ -65,8 +65,14 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
   }
 
   /// يعيد تشغيل الطلب من المصدر — لا يعيد استخدام المستقبل القديم.
+  ///
+  /// نستخدم جسمًا صريحًا (`{ }`) لا سهمًا: مع السهم يعيد `setState` قيمة
+  /// الإسناد، وهي `Future`، فيرفضها Flutter برسالة
+  /// «setState() callback argument returned a Future».
   void _retry() {
-    setState(() => _future = widget.load());
+    setState(() {
+      _future = widget.load();
+    });
   }
 
   Widget _empty(BuildContext context) {

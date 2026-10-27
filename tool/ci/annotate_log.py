@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""ينشر محتوى ملف سجل كـ GitHub Actions annotations.
+"""ينشر مقاطع الفشل من ملف سجل كـ GitHub Actions annotations.
 
-السبب: سجلات Actions تُخزَّن في blob storage غير متاح من بيئة التطوير، لكن
-الـ annotations تُقرأ عبر api.github.com، فتصبح النتائج قابلة للمراجعة.
+السبب: سجلات Actions وملفاتها تُخزَّن في blob storage غير متاح من بيئة التطوير،
+لكن الـ annotations تُقرأ عبر api.github.com، فتصبح النتائج قابلة للمراجعة.
+
+ننشر **مقاطع الفشل كاملة** (من سطر العنوان حتى نهاية الأثر) لا شرائح متساوية:
+الشرائح المتساوية كانت تقطع سطر «The following X was thrown» الذي يحدّد نوع
+الخطأ، فيصل التشخيص بلا سببه.
 
 الاستخدام:
     python3 tool/ci/annotate_log.py /tmp/test.txt "flutter-test"
@@ -13,8 +17,18 @@ from __future__ import annotations
 import pathlib
 import sys
 
-MAX_ANNOTATIONS = 40
-LINES_PER_ANNOTATION = 60
+# GitHub يعرض عددًا محدودًا من الـ annotations لكل خطوة، فنبدأ بالأهم.
+MAX_ANNOTATIONS = 9
+LINES_PER_BLOCK = 70
+MAX_CHARS = 6000
+
+MARKERS = (
+    'EXCEPTION CAUGHT',
+    'Failing tests:',
+    'Error:',
+    'error •',
+    'FAILED',
+)
 
 
 def escape(value: str) -> str:
@@ -34,15 +48,32 @@ def main() -> int:
         return 0
 
     lines = path.read_text(errors='replace').splitlines()
-    limit = LINES_PER_ANNOTATION * MAX_ANNOTATIONS
 
-    for start in range(0, min(len(lines), limit), LINES_PER_ANNOTATION):
-        part = lines[start : start + LINES_PER_ANNOTATION]
-        message = escape('\n'.join(part))
-        print(f'::error title={title} (سطور {start + 1}-{start + len(part)})::{message}')
+    blocks: list[str] = []
+    used_until = -1
 
-    if len(lines) > limit:
-        print(f'::warning::{title}: تم قصّ السجل ({len(lines)} سطرًا).')
+    for index, line in enumerate(lines):
+        if index <= used_until:
+            continue
+        if not any(marker in line for marker in MARKERS):
+            continue
+
+        part = lines[index : index + LINES_PER_BLOCK]
+        block = '\n'.join(part)[:MAX_CHARS]
+        blocks.append(f'[سطر {index + 1}]\n{block}')
+        used_until = index + len(part) - 1
+
+    if not blocks:
+        tail = lines[-LINES_PER_BLOCK:]
+        blocks = ['\n'.join(tail)[:MAX_CHARS]] if tail else []
+
+    for number, block in enumerate(blocks[:MAX_ANNOTATIONS], start=1):
+        print(f'::error title={title} ({number}/{len(blocks)})::{escape(block)}')
+
+    if len(blocks) > MAX_ANNOTATIONS:
+        print(
+            f'::warning::{title}: عُرض {MAX_ANNOTATIONS} من {len(blocks)} مقطع فشل.'
+        )
 
     return 0
 
