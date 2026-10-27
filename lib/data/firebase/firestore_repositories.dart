@@ -8,13 +8,20 @@ import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
+import 'package:teacher_student_app/data/models/group_message.dart';
+import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
+import 'package:teacher_student_app/data/services/message_repository.dart';
+import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
+import 'package:teacher_student_app/data/validation/message_rules.dart';
+import 'package:teacher_student_app/data/validation/session_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// أسماء المجموعات في Firestore — مكان واحد، مطابقة لـ`firestore.rules`.
@@ -24,6 +31,8 @@ abstract final class FirestoreCollections {
   static const String studyGroups = 'studyGroups';
   static const String groupMembers = 'members';
   static const String groupJoinRequests = 'groupJoinRequests';
+  static const String groupSessions = 'sessions';
+  static const String groupMessages = 'messages';
   static const String bookingRequests = 'bookingRequests';
 }
 
@@ -143,6 +152,21 @@ class FirestoreGroupRepository implements GroupRepository {
         return null;
       }
       return studyGroupFromMap(doc.id, data);
+    });
+  }
+
+  @override
+  Future<bool> isMember({
+    required String groupId,
+    required String userId,
+  }) {
+    return _guard(() async {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _groups
+          .doc(groupId)
+          .collection(FirestoreCollections.groupMembers)
+          .doc(userId)
+          .get();
+      return doc.exists;
     });
   }
 
@@ -552,6 +576,233 @@ class FirestoreGroupRepository implements GroupRepository {
       });
     });
   }
+}
+
+/// الجدول الأسبوعي — مجموعة فرعية `studyGroups/{id}/sessions`.
+///
+/// كل مستند يحمل `groupId` منسوخًا ومكتوبًا عند الإنشاء: يجعل القراءة فحصًا
+/// على المستند نفسه بدل `get()` للأب، ويُبقي القواعد قابلة للتحقق على الاستعلام.
+class FirestoreScheduleRepository implements ScheduleRepository {
+  FirestoreScheduleRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> _sessions(String groupId) =>
+      _firestore
+          .collection(FirestoreCollections.studyGroups)
+          .doc(groupId)
+          .collection(FirestoreCollections.groupSessions);
+
+  @override
+  Future<List<GroupSession>> listForGroup(String groupId) {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _sessions(
+        groupId,
+      ).get();
+      return SessionRules.sorted(
+        mapDocuments(snapshot.docs.map(_entry), groupSessionFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<GroupSession> createSession({
+    required String groupId,
+    required String teacherId,
+    required SessionDraft draft,
+  }) {
+    return _guard(() async {
+      final List<GroupSession> existing = await listForGroup(groupId);
+      _ensureValid(draft, existing: existing);
+
+      final CollectionReference<Map<String, dynamic>> sessions = _sessions(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> ref = sessions.doc();
+      await ref.set(<String, Object?>{
+        ...draft.toUpdateMap(),
+        'groupId': groupId,
+        'teacherId': teacherId,
+        'isCancelled': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return GroupSession(
+        id: ref.id,
+        groupId: groupId,
+        teacherId: teacherId,
+        title: draft.normalizedTitle,
+        weekday: draft.weekday,
+        startMinutes: draft.startMinutes,
+        durationMinutes: draft.durationMinutes,
+        locationNote: draft.normalizedLocation,
+      );
+    });
+  }
+
+  @override
+  Future<GroupSession> updateSession({
+    required GroupSession session,
+    required String teacherId,
+    required SessionDraft draft,
+  }) {
+    return _guard(() async {
+      if (session.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+      final List<GroupSession> existing = await listForGroup(session.groupId);
+      _ensureValid(draft, existing: existing, ignoreSessionId: session.id);
+
+      await _sessions(session.groupId)
+          .doc(session.id)
+          .update(draft.toUpdateMap());
+
+      return session.copyWith(
+        title: draft.normalizedTitle,
+        weekday: draft.weekday,
+        startMinutes: draft.startMinutes,
+        durationMinutes: draft.durationMinutes,
+        locationNote: draft.normalizedLocation,
+      );
+    });
+  }
+
+  @override
+  Future<GroupSession> setCancelled({
+    required GroupSession session,
+    required String teacherId,
+    required bool isCancelled,
+  }) {
+    return _guard(() async {
+      if (session.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+      await _sessions(session.groupId).doc(session.id).update(
+        <String, Object?>{'isCancelled': isCancelled},
+      );
+      return session.copyWith(isCancelled: isCancelled);
+    });
+  }
+
+  void _ensureValid(
+    SessionDraft draft, {
+    required List<GroupSession> existing,
+    String? ignoreSessionId,
+  }) {
+    final ValidationResult result = SessionRules.validateDraft(
+      draft,
+      existing: existing,
+      ignoreSessionId: ignoreSessionId,
+    );
+    if (!result.isValid) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: SessionRules.conflictMessage(
+              draft,
+              existing,
+              ignoreSessionId: ignoreSessionId,
+            ) ??
+            result.firstMessage,
+        debugMessage: 'invalid session draft',
+      );
+    }
+  }
+
+  (String, Map<String, Object?>) _entry(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) => (doc.id, doc.data());
+}
+
+/// محادثة المجموعة — مجموعة فرعية `studyGroups/{id}/messages`.
+///
+/// القراءة مقيّدة بالعضوية في القواعد (`exists()` على مستند العضو)، والكتابة
+/// لا تسمح بتعديل رسالة بعد إرسالها ولا بحذفها من التطبيق.
+class FirestoreMessageRepository implements MessageRepository {
+  FirestoreMessageRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> _messages(String groupId) =>
+      _firestore
+          .collection(FirestoreCollections.studyGroups)
+          .doc(groupId)
+          .collection(FirestoreCollections.groupMessages);
+
+  @override
+  Future<List<GroupMessage>> listForGroup(String groupId) {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _messages(
+        groupId,
+      ).orderBy('sentAt').limit(MessageRules.maxMessagesPerLoad).get();
+
+      final List<GroupMessage> messages = mapDocuments(
+        snapshot.docs.map(_entry),
+        groupMessageFromMap,
+      ).toList(growable: false);
+      // الاستعلام يضيّق النافذة، والواجهة تعرض الأحدث؛ نُعيدها تصاعدية دائمًا.
+      messages.sort((GroupMessage a, GroupMessage b) {
+        final int byTime = a.sentAt.compareTo(b.sentAt);
+        return byTime != 0 ? byTime : a.id.compareTo(b.id);
+      });
+      return List<GroupMessage>.unmodifiable(messages);
+    });
+  }
+
+  @override
+  Future<GroupMessage> sendMessage({
+    required String groupId,
+    required String senderId,
+    required String senderName,
+    required UserRole senderRole,
+    required String text,
+  }) {
+    return _guard(() async {
+      final ValidationResult valid = MessageRules.validate(text);
+      if (!valid.isValid) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: MessageRules.normalize(text).isEmpty
+              ? 'لا يمكن إرسال رسالة فارغة.'
+              : 'الرسالة أطول من ${MessageRules.maxLength} حرفًا.',
+          debugMessage: 'invalid message',
+        );
+      }
+
+      final GroupMessage message = GroupMessage(
+        id: '',
+        groupId: groupId,
+        senderId: senderId,
+        senderName: senderName,
+        senderRole: senderRole,
+        text: MessageRules.normalize(text),
+        sentAt: DateTime.now(),
+      );
+
+      final DocumentReference<Map<String, dynamic>> ref = _messages(
+        groupId,
+      ).doc();
+      await ref.set(<String, Object?>{
+        ...message.toCreateMap(),
+        'groupId': groupId,
+      });
+
+      return GroupMessage(
+        id: ref.id,
+        groupId: groupId,
+        senderId: senderId,
+        senderName: senderName,
+        senderRole: senderRole,
+        text: message.text,
+        sentAt: message.sentAt,
+      );
+    });
+  }
+
+  (String, Map<String, Object?>) _entry(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) => (doc.id, doc.data());
 }
 
 /// ترتيب طلبات الانضمام: المعلّقة أولًا (الأقدم أولًا) ثم المقرَّرة.

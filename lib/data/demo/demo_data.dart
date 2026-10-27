@@ -1,7 +1,10 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
+import 'package:teacher_student_app/data/models/group_message.dart';
+import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/user_role.dart';
 
 /// ⚠️ بيانات تجريبية وهمية بالكامل.
 ///
@@ -204,6 +207,47 @@ abstract final class DemoData {
   /// أعضاء مجموعة تجريبية عددهم = المقاعد المشغولة.
   ///
   /// ⚠️ وهميون بالكامل، ولا يمثّلون طلابًا حقيقيين.
+  // ── P9: جدول أسبوعي تجريبي لمجموعة العرض الأولى ──────────────────────────
+  //
+  // موعدان لا يتداخلان، حتى يجرّب المستخدم الإضافة والتعديل والإلغاء بلا أن
+  // يصطدم برسالة تداخل مباشرة.
+  static const String demoSessionTeacherId = 'demo-teacher-1';
+
+  static const List<GroupSession> sessions = <GroupSession>[
+    GroupSession(
+      id: 'demo-session-1',
+      groupId: 'demo-group-1',
+      teacherId: demoSessionTeacherId,
+      title: 'التفاضل — مراجعة الوحدة الثانية',
+      weekday: GroupWeekday.saturday,
+      startMinutes: 17 * 60,
+      durationMinutes: 90,
+      locationNote: 'سنتر المعادي',
+    ),
+    GroupSession(
+      id: 'demo-session-2',
+      groupId: 'demo-group-1',
+      teacherId: demoSessionTeacherId,
+      title: 'حلّ تدريبات',
+      weekday: GroupWeekday.tuesday,
+      startMinutes: 19 * 60 + 30,
+      durationMinutes: 60,
+    ),
+  ];
+
+  // ── P9: محادثة تجريبية لمجموعة العرض الأولى ──────────────────────────────
+  static final List<GroupMessage> messages = <GroupMessage>[
+    GroupMessage(
+      id: 'demo-message-1',
+      groupId: 'demo-group-1',
+      senderId: demoSessionTeacherId,
+      senderName: 'أ. سارة الخطيب',
+      senderRole: UserRole.teacher,
+      text: 'ممتاز يا شباب، هنبدأ الوحدة الثانية السبت. راجعوا القوانين قبل الحصة.',
+      sentAt: DateTime(2026, 9, 1, 18, 5),
+    ),
+  ];
+
   static List<GroupMember> membersFor(String groupId) {
     StudyGroup? group;
     for (final StudyGroup candidate in groups) {

@@ -95,6 +95,31 @@ const joinRequestDoc = (groupId, studentId, overrides = {}) => ({
 
 const joinPath = (groupId, studentId) => `groupJoinRequests/${groupId}_${studentId}`;
 
+/** موعد أسبوعي (P9) — `groupId` منسوخ في المستند. */
+const sessionDoc = (groupId, teacherId, overrides = {}) => ({
+  groupId,
+  teacherId,
+  title: 'التفاضل — مراجعة',
+  weekday: 'saturday',
+  startMinutes: 17 * 60,
+  durationMinutes: 90,
+  locationNote: 'سنتر المعادي',
+  isCancelled: false,
+  createdAt: now(),
+  ...overrides,
+});
+
+/** رسالة محادثة (P9). */
+const messageDoc = (groupId, senderId, overrides = {}) => ({
+  groupId,
+  senderId,
+  senderName: 'طالب',
+  senderRole: 'student',
+  text: 'إلى اللقاء السبت',
+  sentAt: now(),
+  ...overrides,
+});
+
 const bookingDoc = (studentId, teacherId, overrides = {}) => ({
   studentId,
   teacherId,
@@ -871,6 +896,228 @@ describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
     );
     await assertFails(
       deleteDoc(doc(asTeacher(), joinPath('g1', 'student-1'))),
+    );
+  });
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P9 — الجدول الأسبوعي: أعضاء المجموعة يقرأون، والمالك يكتب', () => {
+  const withGroup = (overrides = {}, members = ['student-1']) =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', overrides) },
+      ...members.map((uid) => ({
+        path: `studyGroups/g1/members/${uid}`,
+        data: { studentId: uid, name: 'طالب', joinedAt: now(), status: 'active' },
+      })),
+    ]);
+
+  it('العضو والمالك يقرأان المواعيد، والغريب لا', async () => {
+    await withGroup();
+    await seed([
+      { path: 'studyGroups/g1/sessions/s1', data: sessionDoc('g1', 'teacher-1') },
+    ]);
+
+    const read = (db) => getDoc(doc(db, 'studyGroups/g1/sessions/s1'));
+    await assertSucceeds(read(asTeacher()));
+    await assertSucceeds(read(asStudent()));
+    await assertFails(read(asOther()));
+    await assertFails(read(asGuest()));
+  });
+
+  it('قائمة المواعيد مسموحة للعضو ومرفوضة لغير العضو', async () => {
+    await withGroup();
+    await seed([
+      { path: 'studyGroups/g1/sessions/s1', data: sessionDoc('g1', 'teacher-1') },
+    ]);
+    const list = (db) => getDocs(collection(db, 'studyGroups/g1/sessions'));
+    await assertSucceeds(list(asTeacher()));
+    await assertSucceeds(list(asStudent()));
+    await assertFails(list(asOther()));
+  });
+
+  it('المالك يضيف موعدًا صالحًا، والطالب لا يضيف', async () => {
+    await withGroup();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/g1/sessions/s1'),
+        sessionDoc('g1', 'teacher-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'studyGroups/g1/sessions/s2'),
+        sessionDoc('g1', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('الإنشاء يرفض: مالِكًا آخر، مجموعة أخرى، يومًا غير معروف، مدة/وقتًا خارج النطاق', async () => {
+    await withGroup();
+    const write = (data, uid = 'teacher-1') =>
+      setDoc(doc(testEnv.authenticatedContext(uid).firestore(), 'studyGroups/g1/sessions/s1'), data);
+
+    await assertFails(write(sessionDoc('g1', 'teacher-2')));
+    await assertFails(write(sessionDoc('g2', 'teacher-1')));
+    await assertFails(write(sessionDoc('g1', 'teacher-1', { weekday: 'funday' })));
+    await assertFails(write(sessionDoc('g1', 'teacher-1', { durationMinutes: 5 })));
+    await assertFails(write(sessionDoc('g1', 'teacher-1', { startMinutes: 1400 })));
+    // 23:30 + 60 دقيقة تعبر منتصف الليل ⇒ مرفوضة.
+    await assertFails(
+      write(sessionDoc('g1', 'teacher-1', { startMinutes: 1410, durationMinutes: 60 })),
+    );
+    await assertFails(write(sessionDoc('g1', 'teacher-1', { title: 'أب' })));
+    await assertFails(write({ ...sessionDoc('g1', 'teacher-1'), isFeatured: true }));
+    // وإنشاء موعد ملغى مباشرة مرفوض.
+    await assertFails(write(sessionDoc('g1', 'teacher-1', { isCancelled: true })));
+  });
+
+  it('المالك يعدّل ويُلغي، والطالب لا، ولا يجوز نقل الموعد لمجموعة/مالك آخر', async () => {
+    await withGroup();
+    await seed([
+      { path: 'studyGroups/g1/sessions/s1', data: sessionDoc('g1', 'teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1/sessions/s1'), {
+        startMinutes: 18 * 60,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1/sessions/s1'), {
+        isCancelled: true,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'studyGroups/g1/sessions/s1'), {
+        startMinutes: 19 * 60,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1/sessions/s1'), {
+        teacherId: 'teacher-2',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1/sessions/s1'), {
+        durationMinutes: 300,
+      }),
+    );
+  });
+
+  it('لا حذف موعد من التطبيق', async () => {
+    await withGroup();
+    await seed([
+      { path: 'studyGroups/g1/sessions/s1', data: sessionDoc('g1', 'teacher-1') },
+    ]);
+
+    await assertFails(deleteDoc(doc(asTeacher(), 'studyGroups/g1/sessions/s1')));
+  });
+});
+
+describe('P9 — محادثة المجموعة: العضوية والمرسل', () => {
+  const withGroup = () =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+    ]);
+
+  it('المالك والعضو يقرأان، وغير العضو لا', async () => {
+    await withGroup();
+    await seed([
+      {
+        path: 'studyGroups/g1/messages/m1',
+        data: messageDoc('g1', 'student-1'),
+      },
+    ]);
+
+    const read = (db) => getDoc(doc(db, 'studyGroups/g1/messages/m1'));
+    await assertSucceeds(read(asTeacher()));
+    await assertSucceeds(read(asStudent()));
+    await assertFails(read(asOther()));
+    await assertFails(read(asGuest()));
+  });
+
+  it('العضو يرسل باسمه، ولا ينشر باسم غيره', async () => {
+    await withGroup();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), 'studyGroups/g1/messages/m1'),
+        messageDoc('g1', 'student-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'studyGroups/g1/messages/m2'),
+        messageDoc('g1', 'student-2'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asOther(), 'studyGroups/g1/messages/m3'),
+        messageDoc('g1', 'stranger-9'),
+      ),
+    );
+  });
+
+  it('المدرس صاحب المجموعة يرسل بوسم مدرس', async () => {
+    await withGroup();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/g1/messages/m1'),
+        messageDoc('g1', 'teacher-1', {
+          senderRole: 'teacher',
+          senderName: 'أ. سارة',
+        }),
+      ),
+    );
+  });
+
+  it('رسالة فارغة أو طويلة أو بحقل إضافي أو دور غير معروف مرفوضة', async () => {
+    await withGroup();
+    const write = (data) =>
+      setDoc(doc(asStudent(), 'studyGroups/g1/messages/m1'), data);
+
+    await assertFails(write(messageDoc('g1', 'student-1', { text: '' })));
+    await assertFails(
+      write(messageDoc('g1', 'student-1', { text: 'ا'.repeat(501) })),
+    );
+    await assertFails(
+      write(messageDoc('g1', 'student-1', { senderRole: 'admin' })),
+    );
+    await assertFails(
+      write({ ...messageDoc('g1', 'student-1'), pinned: true }),
+    );
+    await assertFails(
+      write(messageDoc('g2', 'student-1')),
+    );
+  });
+
+  it('لا تعديل ولا حذف لرسالة بعد إرسالها', async () => {
+    await withGroup();
+    await seed([
+      {
+        path: 'studyGroups/g1/messages/m1',
+        data: messageDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'studyGroups/g1/messages/m1'), {
+        text: 'نص مختلف',
+      }),
+    );
+    await assertFails(
+      deleteDoc(doc(asStudent(), 'studyGroups/g1/messages/m1')),
+    );
+    await assertFails(
+      deleteDoc(doc(asTeacher(), 'studyGroups/g1/messages/m1')),
     );
   });
 });

@@ -1,6 +1,8 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
+import 'package:teacher_student_app/data/models/group_message.dart';
+import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 
@@ -183,6 +185,58 @@ GroupMember? groupMemberFromMap(String id, Map<String, Object?> data) {
     status: readString(data['status']) == 'waitlist'
         ? GroupMemberStatus.waitlist
         : GroupMemberStatus.active,
+  );
+}
+
+/// `studyGroups/{id}/sessions/{id}` → [GroupSession].
+///
+/// يعيد `null` إن كان المستند بلا عنوان أو بلا مالك — موعد بلا صاحب لا يمكن
+/// تعديله ولا نسبته لمدرس.
+GroupSession? groupSessionFromMap(String id, Map<String, Object?> data) {
+  final String? title = readString(data['title']);
+  final String? teacherId = readString(data['teacherId']);
+  final String? groupId = readString(data['groupId']);
+  if (title == null || teacherId == null || groupId == null) {
+    return null;
+  }
+
+  final int start = readInt(data['startMinutes'], fallback: -1);
+  final int duration = readInt(data['durationMinutes'], fallback: 0);
+
+  return GroupSession(
+    id: id,
+    groupId: groupId,
+    teacherId: teacherId,
+    title: title,
+    weekday: GroupWeekday.parse(data['weekday']),
+    // حماية من بيانات قديمة/فاسدة: نطاقات منطقية بدل رمي استثناء في الواجهة.
+    startMinutes: start < 0 || start > 1439 ? 0 : start,
+    durationMinutes: duration <= 0 ? 30 : duration,
+    locationNote: readString(data['locationNote']),
+    isCancelled: readBool(data['isCancelled']),
+  );
+}
+
+/// `studyGroups/{id}/messages/{id}` → [GroupMessage].
+GroupMessage? groupMessageFromMap(String id, Map<String, Object?> data) {
+  final String? senderId = readString(data['senderId']);
+  final String? text = readString(data['text']);
+  final String? groupId = readString(data['groupId']);
+  if (senderId == null || text == null || groupId == null) {
+    return null;
+  }
+
+  return GroupMessage(
+    id: id,
+    groupId: groupId,
+    senderId: senderId,
+    senderName: readString(data['senderName']) ?? 'عضو',
+    senderRole: parseSenderRole(data['senderRole']),
+    text: text,
+    sentAt:
+        readDate(data['sentAt']) ??
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
   );
 }
 

@@ -22,6 +22,8 @@ AppServices _services(DemoGroupRepository groups) {
     teachers: DemoTeacherRepository(),
     groups: groups,
     bookings: DemoBookingRepository(),
+    schedules: DemoScheduleRepository(),
+    messages: DemoMessageRepository(),
   );
 }
 

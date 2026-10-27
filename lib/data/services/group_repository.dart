@@ -28,6 +28,12 @@ abstract interface class GroupRepository {
   /// أسماء بقية الطلاب) تُفرض في Firestore، لا في الواجهة.
   Future<List<GroupMember>> listMembers(String groupId);
 
+  /// هل هذا المستخدم عضو مقبول في المجموعة؟
+  ///
+  /// تُستخدم لإتاحة الجدول والمحادثة (P9) في الواجهة. **ليست فحصًا أمنيًا**:
+  /// القواعد تفحص العضوية بنفسها عند كل قراءة/كتابة.
+  Future<bool> isMember({required String groupId, required String userId});
+
   /// إنشاء مجموعة جديدة لصاحبها.
   ///
   /// المنفّذ الحقيقي يكتب `seatsTaken = 0` و`isActive = true`، والقواعد ترفض

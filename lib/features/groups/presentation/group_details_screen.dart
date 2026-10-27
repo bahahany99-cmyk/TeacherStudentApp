@@ -284,6 +284,34 @@ class _GroupDetailsBody extends StatelessWidget {
           ),
         ),
 
+        const SizedBox(height: AppSpacing.md),
+        const SectionHeader(
+          title: 'الحصص والتواصل',
+          subtitle: 'الجدول الأسبوعي ومحادثة المجموعة',
+          icon: Icons.forum_outlined,
+        ),
+        AppCard(
+          onTap: () => Navigator.of(context).pushNamed(
+            RoutePaths.groupTimetable,
+            arguments: group.id,
+          ),
+          margin: AppSpacing.listGap,
+          child: const _ManagementTile(
+            icon: Icons.calendar_month_outlined,
+            title: 'جدول الحصص',
+          ),
+        ),
+        AppCard(
+          onTap: () => Navigator.of(context).pushNamed(
+            RoutePaths.groupChat,
+            arguments: group.id,
+          ),
+          child: const _ManagementTile(
+            icon: Icons.chat_bubble_outline,
+            title: 'محادثة المجموعة',
+          ),
+        ),
+
         if (isTeacherView) ...<Widget>[
           const SizedBox(height: AppSpacing.sectionGap),
           const SectionHeader(
@@ -322,7 +350,7 @@ class _GroupDetailsBody extends StatelessWidget {
                 'واحدة على الخادم، فلا يمكن تجاوز السعة بطلبين متزامنين.',
           ),
         ] else ...<Widget>[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sectionGap),
           _JoinPanel(group: group),
         ],
         const SizedBox(height: AppSpacing.lg),

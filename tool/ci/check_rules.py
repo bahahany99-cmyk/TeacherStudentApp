@@ -28,6 +28,8 @@ REQUIRED_MATCHES = (
     'match /teacherProfiles/{uid}',
     'match /studyGroups/{groupId}',
     'match /groupJoinRequests/{requestId}',
+    'match /sessions/{sessionId}',
+    'match /messages/{messageId}',
     'match /bookingRequests/{bookingId}',
 )
 
@@ -126,7 +128,21 @@ def main() -> int:
     if 'groupIsJoinable(' not in code:
         problems.append('groupJoinRequests: السعة/النشر غير مفحوصين قبل الطلب')
 
-    # 8) منع الحقول الإدارية في ملف المدرس
+    # 8) P9: الجدول والمحادثة للأعضاء فقط، والكتابة للمالك
+    if 'exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid))' not in code:
+        problems.append('sessions/messages: فحص العضوية (exists) غير موجود')
+    if 'request.resource.data.startMinutes + request.resource.data.durationMinutes <= 1440' not in code:
+        problems.append('sessions: الحصة قد تعبر منتصف الليل')
+    if "request.resource.data.weekday in [" not in code:
+        problems.append('sessions: اليوم غير مقيّد بقائمة')
+    if 'request.resource.data.senderId == request.auth.uid' not in code:
+        problems.append('messages: لا يوجد منع لانتحال المرسل')
+    if 'request.resource.data.text.size() <= 500' not in code:
+        problems.append('messages: طول الرسالة غير مقيّد')
+    if 'allow update, delete: if isAdmin();' not in code:
+        problems.append('messages: الرسائل قابلة للتعديل/الحذف من التطبيق')
+
+    # 9) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:

@@ -71,6 +71,8 @@ Future<SessionController> _pumpApp(
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(),
     bookings: DemoBookingRepository(),
+    schedules: DemoScheduleRepository(),
+    messages: DemoMessageRepository(),
   );
   final SessionController session = SessionController(auth);
   await session.restore();

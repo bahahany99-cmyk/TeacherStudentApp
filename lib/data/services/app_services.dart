@@ -5,6 +5,8 @@ import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
+import 'package:teacher_student_app/data/services/message_repository.dart';
+import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 
 /// حاوية واحدة تعرّف "حدود" طبقة البيانات أمام الواجهات.
@@ -17,12 +19,20 @@ class AppServices {
     required this.teachers,
     required this.groups,
     required this.bookings,
+    required this.schedules,
+    required this.messages,
   });
 
   final AuthService auth;
   final TeacherRepository teachers;
   final GroupRepository groups;
   final BookingRepository bookings;
+
+  /// الجدول الأسبوعي للمجموعات (P9).
+  final ScheduleRepository schedules;
+
+  /// محادثة المجموعة (P9).
+  final MessageRepository messages;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -45,6 +55,8 @@ class AppServices {
       teachers: FirestoreTeacherRepository(),
       groups: FirestoreGroupRepository(),
       bookings: FirestoreBookingRepository(),
+      schedules: FirestoreScheduleRepository(),
+      messages: FirestoreMessageRepository(),
     );
   }
 
@@ -55,6 +67,8 @@ class AppServices {
       teachers: DemoTeacherRepository(),
       groups: DemoGroupRepository(),
       bookings: DemoBookingRepository(),
+      schedules: DemoScheduleRepository(),
+      messages: DemoMessageRepository(),
     );
   }
 }

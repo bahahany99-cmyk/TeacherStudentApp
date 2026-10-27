@@ -11,6 +11,9 @@ rules_version = '2';
 //      (Firebase Console أو سكربت بمفتاح خدمة لا يصل للتطبيق).
 //   4. المجموعات (P7) وصاحبها فقط يكتب، والطلبات (P8) لكل طالب طلبه الواحد،
 //      وحجز المقعد زيادة واحدة ذرّية يقبلها الخادم لا الواجهة.
+//   5. الجدول والمحادثة (P9): يقرأهما صاحب المجموعة والأعضاء المقبولون فقط
+//      (`exists()` على مستند العضو)، ويكتب الجدول المالك وحده، ولا رسالة
+//      تُعدَّل أو تُحذف بعد إرسالها.
 //
 // المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
 // مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
@@ -218,6 +221,103 @@ service cloud.firestore {
         );
 
         // لا تعديل ولا إزالة من التطبيق (إزالة عضو إجراء إداري لاحقًا).
+        allow update, delete: if isAdmin();
+      }
+
+      // ── P9: الجدول الأسبوعي ──────────────────────────────────────────────
+      // القراءة: صاحب المجموعة وكل عضو مقبول. الكتابة: صاحب المجموعة فقط.
+      match /sessions/{sessionId} {
+        function groupOwnerId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        function isOwner() {
+          return signedIn() && request.auth.uid == groupOwnerId();
+        }
+
+        function isMember() {
+          return signedIn() && exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid));
+        }
+
+        function sessionKeys() {
+          return ['groupId', 'teacherId', 'title', 'weekday', 'startMinutes',
+                  'durationMinutes', 'locationNote', 'isCancelled', 'createdAt'];
+        }
+
+        // نفس حدود العميل (SessionRules)، والحصة لا تعبر منتصف الليل.
+        function validSession() {
+          return request.resource.data.title is string
+            && request.resource.data.title.size() >= 3
+            && request.resource.data.title.size() <= 60
+            && request.resource.data.weekday in ['saturday', 'sunday', 'monday',
+                 'tuesday', 'wednesday', 'thursday', 'friday']
+            && request.resource.data.startMinutes is int
+            && request.resource.data.startMinutes >= 0
+            && request.resource.data.startMinutes <= 1380
+            && request.resource.data.durationMinutes is int
+            && request.resource.data.durationMinutes >= 15
+            && request.resource.data.durationMinutes <= 240
+            && request.resource.data.startMinutes + request.resource.data.durationMinutes <= 1440
+            && request.resource.data.isCancelled is bool
+            && request.resource.data.locationNote is string
+            && request.resource.data.locationNote.size() <= 60;
+        }
+
+        allow read: if isAdmin() || isOwner() || isMember();
+
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly(sessionKeys())
+          && request.resource.data.groupId == groupId
+          && request.resource.data.teacherId == request.auth.uid
+          && request.resource.data.isCancelled == false
+          && validSession();
+
+        // التعديل لا ينقل الموعد لمجموعة أخرى ولا يغيّر مالكه.
+        allow update: if isOwner()
+          && request.resource.data.keys().hasOnly(sessionKeys())
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.teacherId == resource.data.teacherId
+          && validSession();
+
+        // لا حذف من التطبيق: الإلغاء عبر isCancelled يحفظ سجل الجدول.
+        allow delete: if isAdmin();
+      }
+
+      // ── P9: محادثة المجموعة ──────────────────────────────────────────────
+      // نفس الجمهور: المالك والأعضاء المقبولون فقط. ولا تعديل ولا حذف بعد
+      // الإرسال — سجل المحادثة للقراءة فقط بعد كتابته.
+      match /messages/{messageId} {
+        function groupOwnerId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        function isOwner() {
+          return signedIn() && request.auth.uid == groupOwnerId();
+        }
+
+        function isMember() {
+          return signedIn() && exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid));
+        }
+
+        allow read: if isAdmin() || isOwner() || isMember();
+
+        // لا انتحال مرسل: senderId يجب أن يساوي uid الطالب، ولا يكتب إلا عضو
+        // أو المالك. الطول والمفاتيح مقيدة، والوقت من العميل (خادم الزمن
+        // الكامل يحتاج دالة — مقبول لأن الترتيب فقط هو المستخدم).
+        allow create: if (isOwner() || isMember())
+          && request.resource.data.keys().hasOnly(
+               ['groupId', 'senderId', 'senderName', 'senderRole', 'text', 'sentAt'])
+          && request.resource.data.groupId == groupId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 80
+          && request.resource.data.senderRole in ['student', 'teacher']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.sentAt is timestamp;
+
         allow update, delete: if isAdmin();
       }
     }

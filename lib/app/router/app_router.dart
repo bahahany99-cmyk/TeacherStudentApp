@@ -9,9 +9,11 @@ import 'package:teacher_student_app/features/auth/presentation/login_screen.dart
 import 'package:teacher_student_app/features/auth/presentation/role_selection_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_chat_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_form_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_members_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_timetable_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/join_requests_screen.dart';
 import 'package:teacher_student_app/features/splash/presentation/splash_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
@@ -71,6 +73,21 @@ abstract final class AppRouter {
           JoinRequestsScreen(groupId: requestsGroupId),
           settings,
         );
+      case RoutePaths.groupTimetable:
+        final String? timetableGroupId = _idFrom(settings);
+        if (timetableGroupId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(
+          GroupTimetableScreen(groupId: timetableGroupId),
+          settings,
+        );
+      case RoutePaths.groupChat:
+        final String? chatGroupId = _idFrom(settings);
+        if (chatGroupId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(GroupChatScreen(groupId: chatGroupId), settings);
       case RoutePaths.bookingDetails:
         final String? bookingId = _idFrom(settings);
         if (bookingId == null) {

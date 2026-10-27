@@ -8,15 +8,21 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
+import 'package:teacher_student_app/data/models/group_message.dart';
+import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
+import 'package:teacher_student_app/data/services/message_repository.dart';
+import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
+import 'package:teacher_student_app/data/validation/message_rules.dart';
+import 'package:teacher_student_app/data/validation/session_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// تنفيذات تجريبية محلية (بدون Firebase) لعقود طبقة الخدمات.
@@ -253,6 +259,16 @@ class DemoGroupRepository implements GroupRepository {
     if (!result.isValid) {
       throw AppException.invalidInput(debugMessage: result.firstMessage);
     }
+  }
+
+  @override
+  Future<bool> isMember({
+    required String groupId,
+    required String userId,
+  }) async {
+    final List<GroupMember> members =
+        _acceptedMembers[groupId] ?? const <GroupMember>[];
+    return members.any((GroupMember m) => m.id == userId);
   }
 
   // ── P8: طلبات الانضمام ────────────────────────────────────────────────────
@@ -494,6 +510,61 @@ class DemoGroupRepository implements GroupRepository {
   }
 }
 
+/// محادثة المجموعة في وضع الزائر (P9): قائمة في الذاكرة تُفقد عند الإغلاق.
+class DemoMessageRepository implements MessageRepository {
+  DemoMessageRepository({List<GroupMessage>? source})
+    : _messages = <GroupMessage>[...(source ?? DemoData.messages)];
+
+  final List<GroupMessage> _messages;
+
+  int _nextId = 1;
+
+  @override
+  Future<List<GroupMessage>> listForGroup(String groupId) async {
+    final List<GroupMessage> mine = _messages
+        .where((GroupMessage m) => m.groupId == groupId)
+        .toList(growable: false);
+    // الأقدم أولًا (الواجهة تعرضها مقلوبة)، والترتيب ثابت عند تساوي الوقت.
+    mine.sort((GroupMessage a, GroupMessage b) {
+      final int byTime = a.sentAt.compareTo(b.sentAt);
+      return byTime != 0 ? byTime : a.id.compareTo(b.id);
+    });
+    return List<GroupMessage>.unmodifiable(mine);
+  }
+
+  @override
+  Future<GroupMessage> sendMessage({
+    required String groupId,
+    required String senderId,
+    required String senderName,
+    required UserRole senderRole,
+    required String text,
+  }) async {
+    final ValidationResult valid = MessageRules.validate(text);
+    if (!valid.isValid) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: valid.problems.first.issue == FieldIssue.tooLong
+            ? 'الرسالة أطول من ${MessageRules.maxLength} حرفًا.'
+            : 'لا يمكن إرسال رسالة فارغة.',
+        debugMessage: 'invalid message',
+      );
+    }
+
+    final GroupMessage message = GroupMessage(
+      id: 'demo-message-${_nextId++}',
+      groupId: groupId,
+      senderId: senderId,
+      senderName: senderName,
+      senderRole: senderRole,
+      text: MessageRules.normalize(text),
+      sentAt: DateTime.now(),
+    );
+    _messages.add(message);
+    return message;
+  }
+}
+
 class DemoBookingRepository implements BookingRepository {
   DemoBookingRepository({List<BookingRequest>? source})
     : _source = source ?? DemoData.bookings;
@@ -516,5 +587,135 @@ class DemoBookingRepository implements BookingRepository {
       }
     }
     return Future<BookingRequest?>.value(null);
+  }
+}
+
+/// الجدول الأسبوعي في وضع الزائر (P9).
+///
+/// مستودع مستقل عن `DemoGroupRepository` حتى تبقى العقود منفصلة كما في
+/// Firestore (مجموعة فرعية `sessions`)، لكنه يحمل نفس بيانات العرض.
+class DemoScheduleRepository implements ScheduleRepository {
+  DemoScheduleRepository({List<GroupSession>? source})
+    : _sessions = <GroupSession>[...(source ?? DemoData.sessions)];
+
+  final List<GroupSession> _sessions;
+
+  int _nextId = 1;
+
+  List<GroupSession> _of(String groupId) => _sessions
+      .where((GroupSession s) => s.groupId == groupId)
+      .toList(growable: false);
+
+  @override
+  Future<List<GroupSession>> listForGroup(String groupId) async {
+    return List<GroupSession>.unmodifiable(SessionRules.sorted(_of(groupId)));
+  }
+
+  @override
+  Future<GroupSession> createSession({
+    required String groupId,
+    required String teacherId,
+    required SessionDraft draft,
+  }) async {
+    final ValidationResult valid = SessionRules.validateDraft(
+      draft,
+      existing: _of(groupId),
+    );
+    if (!valid.isValid) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: _draftMessage(draft, groupId, valid),
+        debugMessage: 'invalid session draft',
+      );
+    }
+
+    final GroupSession session = GroupSession(
+      id: 'demo-session-new-${_nextId++}',
+      groupId: groupId,
+      teacherId: teacherId,
+      title: draft.normalizedTitle,
+      weekday: draft.weekday,
+      startMinutes: draft.startMinutes,
+      durationMinutes: draft.durationMinutes,
+      locationNote: draft.normalizedLocation,
+    );
+    _sessions.add(session);
+    return session;
+  }
+
+  @override
+  Future<GroupSession> updateSession({
+    required GroupSession session,
+    required String teacherId,
+    required SessionDraft draft,
+  }) async {
+    final int index = _sessions.indexWhere(
+      (GroupSession s) => s.id == session.id,
+    );
+    if (index == -1) {
+      throw const AppException.notFound(debugMessage: 'demo session missing');
+    }
+    if (_sessions[index].teacherId != teacherId) {
+      throw const AppException.permission(debugMessage: 'not group owner');
+    }
+
+    final ValidationResult valid = SessionRules.validateDraft(
+      draft,
+      existing: _of(session.groupId),
+      ignoreSessionId: session.id,
+    );
+    if (!valid.isValid) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: _draftMessage(draft, session.groupId, valid),
+        debugMessage: 'invalid session draft',
+      );
+    }
+
+    final GroupSession updated = _sessions[index].copyWith(
+      title: draft.normalizedTitle,
+      weekday: draft.weekday,
+      startMinutes: draft.startMinutes,
+      durationMinutes: draft.durationMinutes,
+      locationNote: draft.normalizedLocation,
+    );
+    _sessions[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<GroupSession> setCancelled({
+    required GroupSession session,
+    required String teacherId,
+    required bool isCancelled,
+  }) async {
+    final int index = _sessions.indexWhere(
+      (GroupSession s) => s.id == session.id,
+    );
+    if (index == -1) {
+      throw const AppException.notFound(debugMessage: 'demo session missing');
+    }
+    if (_sessions[index].teacherId != teacherId) {
+      throw const AppException.permission(debugMessage: 'not group owner');
+    }
+    final GroupSession updated = _sessions[index].copyWith(
+      isCancelled: isCancelled,
+    );
+    _sessions[index] = updated;
+    return updated;
+  }
+
+  /// رسالة التداخل أهم من رسالة النطاق لأنها الأكثر حدوثًا في الاستخدام.
+  String? _draftMessage(
+    SessionDraft draft,
+    String groupId,
+    ValidationResult result,
+  ) {
+    final String? conflict = SessionRules.conflictMessage(
+      draft,
+      _of(groupId),
+      ignoreSessionId: null,
+    );
+    return conflict ?? result.firstMessage;
   }
 }
