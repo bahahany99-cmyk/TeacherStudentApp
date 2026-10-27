@@ -396,13 +396,7 @@ class _SessionCard extends StatelessWidget {
                 ),
               ),
               if (cancelled)
-                const StatusChip(label: 'ملغاة', color: AppColors.statusNeutral)
-              else
-                PillChip(
-                  label: SessionRules.formatRange(session),
-                  icon: Icons.schedule_outlined,
-                  dense: true,
-                ),
+                const StatusChip(label: 'ملغاة', color: AppColors.statusNeutral),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -430,7 +424,8 @@ class _SessionCard extends StatelessWidget {
           ),
           if (isOwner) ...<Widget>[
             const SizedBox(height: AppSpacing.xs),
-            Row(
+            Wrap(
+              spacing: AppSpacing.xxs,
               children: <Widget>[
                 TextButton.icon(
                   onPressed: onEdit,

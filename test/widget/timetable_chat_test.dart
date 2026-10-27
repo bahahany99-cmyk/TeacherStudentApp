@@ -48,7 +48,12 @@ Widget _host({
     services: harness.services,
     child: SessionScope(
       controller: session,
-      child: MaterialApp(theme: AppTheme.light, home: screen),
+      // التطبيق الحقيقي يفرض RTL في `MaterialApp.builder`؛ الاختبار يفعله
+      // هنا كي تكون قياسات التخطيط واقعية.
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: MaterialApp(theme: AppTheme.light, home: screen),
+      ),
     ),
   );
 }
