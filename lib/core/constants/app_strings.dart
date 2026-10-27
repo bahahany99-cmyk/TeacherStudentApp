@@ -9,8 +9,9 @@ abstract final class AppStrings {
   static const String appName = AppIdentity.displayName;
   static const String appTagline = AppIdentity.tagline;
 
+  /// نص «وضع الزائر»: يوضّح أن التطبيق يعمل ببيانات محلية بلا حساب ولا خادم.
   static const String demoBanner =
-      'وضع تجريبي: جميع البيانات المعروضة وهمية ومحلية، ولا يوجد اتصال بـ Firebase.';
+      'وضع الزائر: بيانات تجريبية محلية بلا حساب ولا اتصال بخادم.';
 
   static const String comingSoon = 'غير مفعّل في هذه المرحلة';
   static const String retry = 'إعادة المحاولة';

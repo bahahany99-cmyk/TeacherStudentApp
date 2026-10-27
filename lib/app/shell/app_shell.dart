@@ -7,9 +7,11 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_controller.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
@@ -127,8 +129,12 @@ class _AppShellState extends State<AppShell> {
                     const Padding(
                       padding: EdgeInsetsDirectional.only(end: AppSpacing.md),
                       child: Tooltip(
-                        message: 'وضع تجريبي — بلا Firebase',
-                        child: Icon(Icons.science_outlined, size: 20),
+                        message:
+                            'وضع الزائر — بيانات تجريبية بلا حساب ولا خادم',
+                        child: StatusChip(
+                          label: 'زائر',
+                          color: AppColors.demoForeground,
+                        ),
                       ),
                     ),
                 ],

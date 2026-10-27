@@ -4,9 +4,12 @@ name: Build & Verify
 # بيئة العمل لا تحتوي Flutter/Dart وpub.dev محجوب، لذلك التحقق الآلي الحقيقي
 # (analyze / test / APK) يجري على GitHub Actions.
 #
-# سياسة الموارد (قرار 2026-10-27): كل دفعة (push / PR) تُشغّل **الفحص
-# والاختبارات فقط**. بناء APK يجري **يدويًا عند الطلب** عبر workflow_dispatch،
-# حفاظًا على مساحة التخزين، لأن كل بناء ينتج APK بحجم ~70 م.ب.
+# سياسة الموارد (قرار 2026-10-27، مُحدَّثة):
+# - كل دفعة (push / PR): analyze + test + **بناء APK للتحقق فقط بلا رفع**.
+#   البناء لا يستهلك مساحة التخزين (المساحة تُستهلك بالـ artifacts المرفوعة)،
+#   فبهذا نكتشف أعطال Gradle/الحزم فورًا بدل الانتظار إلى بناء يدوي.
+# - الطلب اليدوي (workflow_dispatch): نفس الخطوات + **رفع APK** كـ artifact
+#   لتنزيله وتجربته على الهاتف.
 
 permissions:
   contents: write # لنشر ملخص النتائج كتعليق على الكوميت عند الفشل
@@ -17,18 +20,17 @@ on:
       - main
       - 'arena/**'
   pull_request:
-  workflow_dispatch: # ← الطلب اليدوي فقط هو ما يبني APK
+  workflow_dispatch: # ← هذا وحده يرفع APK كـ artifact
 
-# نُلغي التشغيلات القديمة على نفس الفرع لتوفير دقائق CI.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: analyze · test
+    name: analyze · test · build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -90,7 +92,7 @@ jobs:
           exit "$status"
 
       - name: Upload analyze log
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: analyze-log
@@ -113,66 +115,38 @@ jobs:
           echo "✅ flutter test: كل الاختبارات ناجحة."
 
       - name: Upload test log
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: test-log
           path: /tmp/test.txt
           if-no-files-found: ignore
 
-  # ── بناء APK: يدوي فقط (Actions ← Run workflow) ──────────────────────────────
-  build_apk:
-    name: build apk (يدوي)
-    if: github.event_name == 'workflow_dispatch'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
       - name: Scaffold Android platform (deterministic, com.darsly.app)
         run: bash tool/scaffold_android.sh
 
-      - name: Resolve dependencies
-        run: flutter pub get
+      # بناء تحقّق فقط: يثبت أن Gradle + Firebase Android يعملان، بلا رفع.
+      - name: Build debug APK (verification)
+        run: |
+          set -o pipefail
+          status=0
+          flutter build apk --debug > /tmp/build.txt 2>&1 || status=$?
+          tail -60 /tmp/build.txt
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+          if [ "$status" -ne 0 ]; then
+            # فشل Gradle يُقرأ من الـ annotations لأن السجلات محجوبة.
+            python3 tool/ci/annotate_log.py /tmp/build.txt "apk-build"
+            exit "$status"
+          fi
 
-      - name: Report APK
-        if: always()
-        run: ls -lh build/app/outputs/flutter-apk/ || true
+          ls -l build/app/outputs/flutter-apk/app-debug.apk
+          echo "✅ APK جُرِّب بناؤه بنجاح (بدون رفع في وضع الدفع)."
 
-      - name: Upload APK artifact
-        if: success()
+      - name: Upload APK artifact (يدوي فقط)
+        if: success() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
-          retention-days: 7
-
-      # نسخة من مجلد android المولَّد، ليتمكّن صاحب المشروع من إضافته للمستودع
-      # مرة واحدة إن أراد (وحتى ذلك الحين، CI يولّده عند كل بناء يدوي).
-      - name: Upload generated android folder
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-android-platform
-          path: android/
           if-no-files-found: error
           retention-days: 7

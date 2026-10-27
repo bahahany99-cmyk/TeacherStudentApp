@@ -213,7 +213,7 @@ class _DemoAccessCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
-                  'معاينة الواجهات (بيانات تجريبية)',
+                  'وضع الزائر (بدون حساب)',
                   style: theme.textTheme.titleMedium,
                 ),
               ),
@@ -221,8 +221,9 @@ class _DemoAccessCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'اختيار الدور هنا للعرض فقط ولا يُنشئ حسابًا ولا يمنح أي صلاحية. '
-            'في الإنتاج يُقرأ الدور من الخادم ويُفرض عبر قواعد Firestore.',
+            'تصفّح كل الشاشات ببيانات تجريبية محلية دون تسجيل دخول ودون '
+            'اتصال بخادم. اختيار الدور هنا للعرض فقط: لا يُنشئ حسابًا ولا يمنح '
+            'أي صلاحية، وفي الإنتاج يُقرأ الدور من الخادم.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

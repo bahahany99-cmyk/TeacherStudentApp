@@ -23,8 +23,17 @@ import 'package:teacher_student_app/data/services/auth_service.dart';
 ///   roleChosenAt: Timestamp,
 /// }
 /// ```
-/// ⚠️ الحقول أعلاه هي **كل** ما يكتبه التطبيق. أي حقل إداري (approved،
-/// isFeatured، isAdmin…) لا يُكتب من التطبيق إطلاقًا.
+/// وعند اختيار الدور «مدرس» يُنشأ أيضًا `teacherProfiles/{uid}`:
+/// ```
+/// {
+///   ownerId: uid,
+///   displayName: String,
+///   status: 'pendingReview',   // لا يصبح 'approved' إلا من الإدارة
+///   createdAt: Timestamp,
+/// }
+/// ```
+/// ⚠️ الحقول أعلاه هي **كل** ما يكتبه التطبيق. لا يكتب `approved` ولا
+/// `isFeatured` ولا `isAdmin`؛ تغيير الحالة الإدارية خارج التطبيق تمامًا.
 class FirebaseAuthService implements AuthService {
   FirebaseAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -34,6 +43,10 @@ class FirebaseAuthService implements AuthService {
   final FirebaseFirestore _firestore;
 
   static const String usersCollection = 'users';
+
+  /// ملفات المدرسين. يُنشأ المستند تلقائيًا بحالة `pendingReview` عند اختيار
+  /// الدور «مدرس» (قرار صاحب المشروع 2026-10-27).
+  static const String teacherProfilesCollection = 'teacherProfiles';
 
   @override
   Future<AuthResult?> restoreSession() async {
@@ -163,7 +176,9 @@ class FirebaseAuthService implements AuthService {
         }
       }
 
-      await doc.set(<String, Object?>{
+      final WriteBatch batch = _firestore.batch();
+
+      batch.set(doc, <String, Object?>{
         'displayName': displayName,
         'email': email,
         'role': role.name,
@@ -172,6 +187,16 @@ class FirebaseAuthService implements AuthService {
             : FieldValue.serverTimestamp(),
         'roleChosenAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      if (role == UserRole.teacher) {
+        await _ensureTeacherProfile(
+          batch: batch,
+          uid: uid,
+          displayName: displayName,
+        );
+      }
+
+      await batch.commit();
 
       return AppUser(
         id: uid,
@@ -182,6 +207,34 @@ class FirebaseAuthService implements AuthService {
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);
     }
+  }
+
+  /// ينشئ ملف المدرس إن لم يكن موجودًا، بحالة `pendingReview` فقط.
+  ///
+  /// - لا نلمس ملفًا موجودًا: لو كان معتمدًا سابقًا (أو مرفوضًا) فالحالة قرار
+  ///   إداري لا يُعاد ضبطه من التطبيق.
+  /// - الحقول الوصفية (المادة/المرحلة/النبذة) يكمّلها المدرس من «ملفي»؛
+  ///   نكتب الاسم فقط حتى لا نخترع بيانات.
+  Future<void> _ensureTeacherProfile({
+    required WriteBatch batch,
+    required String uid,
+    required String displayName,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> profile = _firestore
+        .collection(teacherProfilesCollection)
+        .doc(uid);
+
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await profile.get();
+    if (snapshot.exists) {
+      return;
+    }
+
+    batch.set(profile, <String, Object?>{
+      'ownerId': uid,
+      'displayName': displayName,
+      'status': 'pendingReview',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// يقرأ الدور من `users/{uid}`؛ إن لم يوجد فالحساب يحتاج اختيار الدور.
