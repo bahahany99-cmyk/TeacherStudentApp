@@ -471,7 +471,7 @@ class _SessionFormSheetState extends State<_SessionFormSheet> {
     super.initState();
     final GroupSession? session = widget.session;
     _draft = session == null
-        ? SessionDraft.empty()
+        ? SessionRules.suggestedDraft(widget.existing)
         : SessionDraft.fromSession(session);
     _title = TextEditingController(text: _draft.title);
     _location = TextEditingController(text: _draft.locationNote ?? '');

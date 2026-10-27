@@ -141,6 +141,20 @@ abstract final class SessionRules {
     return 'يتعارض مع «${conflict.title}» (${formatRange(conflict)}).';
   }
 
+  /// مسودة بداية لا تتعارض مع الجدول الحالي.
+  ///
+  /// النموذج الفارغ يبدأ السبت 5 مساءً؛ إن كان هذا الموعد مشغولًا نتحرك بنصف
+  /// ساعة حتى نجد فراغًا. بدون ذلك يفتح المدرس «موعد جديد» ويجد رسالة تعارض
+  /// قبل أن يكتب حرفًا واحدًا.
+  static SessionDraft suggestedDraft(List<GroupSession> existing) {
+    SessionDraft draft = SessionDraft.empty();
+    while (findConflict(draft, existing) != null &&
+        draft.startMinutes + 30 <= latestStartMinutes) {
+      draft = draft.copyWith(startMinutes: draft.startMinutes + 30);
+    }
+    return draft;
+  }
+
   /// ترتيب الجدول: اليوم ثم وقت البداية. الملغاة في نهاية يومها.
   static List<GroupSession> sorted(List<GroupSession> sessions) {
     final List<GroupSession> result = <GroupSession>[...sessions];

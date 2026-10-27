@@ -248,6 +248,25 @@ void main() {
       );
     });
 
+    test('المسودة المقترحة تتجاوز الموعد المشغول', () {
+      final SessionDraft suggested = SessionRules.suggestedDraft(
+        <GroupSession>[_session(start: 17 * 60, duration: 60)],
+      );
+
+      expect(suggested.startMinutes, 18 * 60);
+      expect(
+        SessionRules.findConflict(suggested, <GroupSession>[
+          _session(start: 17 * 60, duration: 60),
+        ]),
+        isNull,
+      );
+      // بلا جدول يبقى الافتراضي كما هو.
+      expect(
+        SessionRules.suggestedDraft(const <GroupSession>[]).startMinutes,
+        17 * 60,
+      );
+    });
+
     test('معرّف اليوم بصيغة ISO للتحويل من التاريخ', () {
       expect(GroupWeekday.fromIso(DateTime.saturday), GroupWeekday.saturday);
       expect(GroupWeekday.fromIso(DateTime.monday), GroupWeekday.monday);
