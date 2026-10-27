@@ -53,7 +53,17 @@ jobs:
           java -version
 
       - name: Resolve dependencies
-        run: flutter pub get
+        run: |
+          set -o pipefail
+          status=0
+          flutter pub get > /tmp/pub.txt 2>&1 || status=$?
+          cat /tmp/pub.txt
+
+          if [ "$status" -ne 0 ]; then
+            # فشل تحليل الإصدارات يُقرأ من الـ annotations (السجلات محجوبة).
+            python3 tool/ci/annotate_log.py /tmp/pub.txt "pub-get"
+            exit "$status"
+          fi
 
       - name: Analyze
         run: |

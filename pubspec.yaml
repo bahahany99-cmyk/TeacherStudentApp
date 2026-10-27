@@ -19,10 +19,15 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # المرحلة 2: نضيف فقط حزمة التهيئة الأساسية.
-  # firebase_auth / cloud_firestore / firebase_storage / firebase_messaging /
-  # google_sign_in تُضاف في مراحلها (انظر docs/ARCHITECTURE_DECISIONS.md: F-11..F-14).
+  # ── P4: أساسيات Firebase ────────────────────────────────────────────────────
+  # firebase_core: تهيئة التطبيق فقط.
   firebase_core: ^5.0.0
+  # firebase_auth: بريد/كلمة مرور + Google (تسجيل الدخول بحساب Google يمرّ عبر
+  # `signInWithProvider`، فلا نحتاج حزمة google_sign_in المنفصلة).
+  firebase_auth: '>=5.0.0 <8.0.0'
+  # cloud_firestore: نقرأ/نكتب مستند المستخدم `users/{uid}` فقط في هذه المرحلة
+  # (الدور المختار عند أول دخول). بقية المستودعات تنتقل إلى Firestore في P5.
+  cloud_firestore: '>=5.0.0 <8.0.0'
 
 dev_dependencies:
   flutter_test:
