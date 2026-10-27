@@ -15,8 +15,8 @@ import '../helpers/test_app.dart';
 /// يبني شاشة النموذج داخل حزمة خدمات تجريبية وجلسة مدرس.
 Widget _host({String? groupId, AppServices? services}) {
   final AppServices resolved = services ?? AppServices.demo();
-  final SessionController session = SessionController(resolved.auth)
-    ..startDemoSession(UserRole.teacher);
+  // الجلسة تُنشأ لضمان وجود حالة مدرس في الشجرة (تُقرأ من SessionScope أدناه).
+  SessionController(resolved.auth).startDemoSession(UserRole.teacher);
 
   return AppServicesScope(
     services: resolved,

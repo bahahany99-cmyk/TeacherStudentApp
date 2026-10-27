@@ -161,7 +161,8 @@ class FirestoreGroupRepository implements GroupRepository {
           ? null
           : studyGroupFromMap(created.id, data);
       if (group == null) {
-        throw const AppException.unknown(
+        throw const AppException(
+          AppErrorKind.unknown,
           debugMessage: 'created group document is unreadable',
         );
       }
@@ -186,7 +187,8 @@ class FirestoreGroupRepository implements GroupRepository {
 
       final StudyGroup? existing = studyGroupFromMap(current.id, data);
       if (existing == null) {
-        throw const AppException.unknown(
+        throw const AppException(
+          AppErrorKind.unknown,
           debugMessage: 'group document is unreadable',
         );
       }

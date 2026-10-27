@@ -4,7 +4,6 @@ import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
-import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
@@ -229,9 +228,5 @@ class TeacherHomeScreen extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  void _showComingSoon(BuildContext context) {
-    AppSnackBar.show(context, AppStrings.comingSoon);
   }
 }

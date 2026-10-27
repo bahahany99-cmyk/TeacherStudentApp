@@ -133,12 +133,12 @@ class DesignGalleryScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const _SpaceBar('xxs', AppSpacing.xxs),
-                      const _SpaceBar('xs', AppSpacing.xs),
-                      const _SpaceBar('sm', AppSpacing.sm),
-                      const _SpaceBar('md', AppSpacing.md),
-                      const _SpaceBar('lg', AppSpacing.lg),
-                      const _SpaceBar('xl', AppSpacing.xl),
+                      _SpaceBar('xxs', AppSpacing.xxs),
+                      _SpaceBar('xs', AppSpacing.xs),
+                      _SpaceBar('sm', AppSpacing.sm),
+                      _SpaceBar('md', AppSpacing.md),
+                      _SpaceBar('lg', AppSpacing.lg),
+                      _SpaceBar('xl', AppSpacing.xl),
                     ],
                   ),
                 ),
