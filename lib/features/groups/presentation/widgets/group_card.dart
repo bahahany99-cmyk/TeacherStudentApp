@@ -4,7 +4,6 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
-import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 
 /// بطاقة عرض مجموعة دراسية.
@@ -117,34 +116,6 @@ class GroupCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// أيقونة مع نص قصير في صف لا يتجاوز عرض الشاشة (بدل Row قد يفيض).
-class _IconLabel extends StatelessWidget {
-  const _IconLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: AppSpacing.xxs),
-        Flexible(
-          child: Text(
-            label,
-            style: theme.textTheme.labelSmall,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
     );
   }
 }

@@ -43,8 +43,8 @@ void main() {
 
     test('حواف الحقول دائرية 18 والحواف الكبيرة 24', () {
       final ThemeData theme = AppTheme.light;
-      final InputBorder? border = theme.inputDecorationTheme.enabledBorder
-          as OutlineInputBorder?;
+      final OutlineInputBorder? border =
+          theme.inputDecorationTheme.enabledBorder as OutlineInputBorder?;
 
       expect(border?.borderRadius, BorderRadius.circular(AppSpacing.radiusLg));
       expect(AppSpacing.radiusXl, greaterThan(AppSpacing.radiusLg));
