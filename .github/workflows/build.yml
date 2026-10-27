@@ -104,7 +104,38 @@ jobs:
           if-no-files-found: ignore
 
       - name: Test
-        run: flutter test --reporter expanded
+        id: test
+        run: |
+          set -o pipefail
+          status=0
+          flutter test --reporter expanded > /tmp/test.txt 2>&1 || status=$?
+          cat /tmp/test.txt
+
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### نتيجة \`flutter test\` (فشل)"
+              echo
+              echo '```'
+              tail -300 /tmp/test.txt
+              echo '```'
+            } > /tmp/testcomment.md
+
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -f body="$(cat /tmp/testcomment.md)" \
+              -H "Accept: application/vnd.github+json" || echo "تعذّر نشر التعليق."
+          fi
+
+          exit "$status"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: /tmp/test.txt
+          if-no-files-found: ignore
 
       - name: Build debug APK
         run: flutter build apk --debug
