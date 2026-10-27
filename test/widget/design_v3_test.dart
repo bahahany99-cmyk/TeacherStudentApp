@@ -53,9 +53,17 @@ void main() {
         ),
       );
 
-      final Size size = tester.getSize(find.byType(DemoBanner));
-      // الارتفاع السابق كان نحو 60+ مع أيقونة وسطرين؛ الآن شريحة واحدة.
-      expect(size.height, lessThan(45));
+      // نقيس الشريحة نفسها (لا الهامش السفلي حولها).
+      final Size size = tester.getSize(
+        find
+            .descendant(
+              of: find.byType(DemoBanner),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      // الارتفاع السابق كان نحو 60+ مع أيقونة وسطرين؛ الآن سطر واحد دقيق.
+      expect(size.height, lessThan(34));
 
       final Text text = tester.widget<Text>(
         find.text('وضع الزائر · بيانات تجريبية'),

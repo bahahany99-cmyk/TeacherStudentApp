@@ -96,9 +96,13 @@ class BookingDetailsScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
-                                StatusChip(
-                                  label: booking.status.label,
-                                  color: _statusColor(booking.status),
+                                // `Flexible` يمنع فيضًا بكسر من البكسل على
+                                // الشاشات الضيقة عندما يطول اسم الحالة.
+                                Flexible(
+                                  child: StatusChip(
+                                    label: booking.status.label,
+                                    color: _statusColor(booking.status),
+                                  ),
                                 ),
                               ],
                             ),
