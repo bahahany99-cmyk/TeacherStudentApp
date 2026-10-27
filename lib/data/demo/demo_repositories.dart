@@ -975,8 +975,7 @@ class DemoGroupRepository implements GroupRepository {
       studentId: studentId,
     );
 
-    final int before =
-        _joinRequests.length + _waitlist.length;
+    final int before = _joinRequests.length + _waitlist.length;
     _joinRequests.removeWhere(
       (GroupJoinRequest r) =>
           r.id == requestId &&
