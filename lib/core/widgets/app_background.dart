@@ -45,6 +45,10 @@ class AppBackground extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(gradient: gradient),
       child: Stack(
+        // التمدّد ضروري: هذه الخلفية تلتف حول شجرة التطبيق كاملة (خلف
+        // Navigator)، وبلا `expand` يحصل المحتوى على قيود مرخّية فينهار
+        // ارتفاعه إلى صفر ولا يظهر أي شيء.
+        fit: StackFit.expand,
         children: <Widget>[
           if (showOrbs)
             Positioned.fill(
