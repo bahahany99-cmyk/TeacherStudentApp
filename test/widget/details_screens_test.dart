@@ -43,6 +43,15 @@ Future<void> _tapNav(WidgetTester tester, String label) async {
   );
 }
 
+/// يفتح «ملفي التعريفي» ← «تعديل المعلومات» من واجهة المدرس.
+Future<void> _openEditForm(WidgetTester tester) async {
+  await _enterTeacherShell(tester);
+  await _tapNav(tester, 'حسابي');
+  await tapVisible(tester, find.widgetWithText(ListTile, 'ملفي التعريفي'));
+  await tapVisible(tester, find.text('تعديل المعلومات'));
+  _expectTitle('تعديل المعلومات');
+}
+
 /// نص ظاهر فعليًا (يستبعد الشاشات المغطاة في مكدّس التنقل).
 Finder _visibleText(String text) => find.text(text).hitTestable();
 
@@ -151,28 +160,26 @@ void main() {
       expect(find.text('تعديل المعلومات'), findsOneWidget);
     });
 
-    testWidgets('نموذج التعديل يتحقق من المدخلات ولا يدّعي الحفظ', (
+    testWidgets('نموذج التعديل يرفض الاسم الفارغ برسالة عربية', (
       WidgetTester tester,
     ) async {
-      await _enterTeacherShell(tester);
-      await _tapNav(tester, 'حسابي');
-      await tapVisible(tester, find.widgetWithText(ListTile, 'ملفي التعريفي'));
-      await tapVisible(tester, find.text('تعديل المعلومات'));
+      await _openEditForm(tester);
 
-      _expectTitle('تعديل المعلومات');
-
-      // اسم فارغ → رسالة تحقق عربية.
       await tester.enterText(find.byType(TextFormField).first, '');
       await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
-      expect(find.text('الاسم مطلوب'), findsOneWidget);
 
-      // اسم صحيح → لا يُدّعى الحفظ، بل تُقال الحقيقة.
-      await tester.enterText(
-        find.byType(TextFormField).first,
-        'أ. سارة الخطيب',
-      );
+      expect(find.text('الاسم مطلوب'), findsOneWidget);
+    });
+
+    testWidgets('النموذج الصالح لا يدّعي الحفظ', (WidgetTester tester) async {
+      await _openEditForm(tester);
+
+      // الحقول مسبقة التعبئة من الملف، لذا الحفظ يمرّ من التحقق.
       await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
+
       expect(find.textContaining('لم يُحفظ شيء'), findsOneWidget);
+      // ولا تظهر أي رسالة تدّعي نجاح الحفظ.
+      expect(find.textContaining('تم الحفظ'), findsNothing);
     });
 
     testWidgets('معرّف غير موجود يعرض حالة واضحة لا شاشة منهارة', (
