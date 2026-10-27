@@ -314,7 +314,9 @@ class DesignGalleryScreen extends StatelessWidget {
                         children: <Widget>[
                           Icon(Icons.arrow_back),
                           SizedBox(width: AppSpacing.xs),
-                          Text('سهم للخلف (يجب أن يشير لليمين)'),
+                          Expanded(
+                            child: Text('سهم للخلف (يجب أن يشير لليمين)'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
@@ -322,7 +324,9 @@ class DesignGalleryScreen extends StatelessWidget {
                         children: <Widget>[
                           Icon(Icons.arrow_forward),
                           SizedBox(width: AppSpacing.xs),
-                          Text('سهم للأمام (يجب أن يشير لليسار)'),
+                          Expanded(
+                            child: Text('سهم للأمام (يجب أن يشير لليسار)'),
+                          ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xs),
