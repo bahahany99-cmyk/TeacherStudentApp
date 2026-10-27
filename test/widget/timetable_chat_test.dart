@@ -221,7 +221,10 @@ void main() {
       expect(find.textContaining('هنبدأ الوحدة الثانية'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'جاهز يا أستاذ');
-      await tapVisible(tester, find.byTooltip('إرسال'));
+      await tapVisible(
+        tester,
+        find.widgetWithIcon(IconButton, Icons.send),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('جاهز يا أستاذ'), findsOneWidget);
@@ -246,7 +249,10 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '   ');
-      await tapVisible(tester, find.byTooltip('إرسال'));
+      await tapVisible(
+        tester,
+        find.widgetWithIcon(IconButton, Icons.send),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('لا يمكن إرسال رسالة فارغة.'), findsOneWidget);

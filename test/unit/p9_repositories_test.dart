@@ -45,7 +45,7 @@ void main() {
       final DemoScheduleRepository schedules = DemoScheduleRepository();
       final GroupSession created = await schedules.createSession(
         groupId: 'demo-group-1',
-        teacherId: 'teacher-1',
+        teacherId: DemoData.demoSessionTeacherId,
         draft: _draft(),
       );
 
@@ -64,7 +64,7 @@ void main() {
         // الموعد الأول في بيانات العرض: السبت 17:00 لمدة 90 دقيقة.
         schedules.createSession(
           groupId: 'demo-group-1',
-          teacherId: 'teacher-1',
+          teacherId: DemoData.demoSessionTeacherId,
           draft: _draft(
             weekday: GroupWeekday.saturday,
             start: 17 * 60 + 30,
@@ -86,7 +86,7 @@ void main() {
       await expectLater(
         schedules.createSession(
           groupId: 'demo-group-1',
-          teacherId: 'teacher-1',
+          teacherId: DemoData.demoSessionTeacherId,
           draft: _draft(start: 23 * 60 + 30, duration: 60),
         ),
         throwsA(isA<AppException>()),
@@ -101,7 +101,7 @@ void main() {
 
       final GroupSession updated = await schedules.updateSession(
         session: session,
-        teacherId: 'teacher-1',
+        teacherId: DemoData.demoSessionTeacherId,
         draft: SessionDraft.fromSession(session).copyWith(
           title: 'عنوان محدّث',
           startMinutes: 20 * 60,
@@ -146,7 +146,7 @@ void main() {
 
       final GroupSession cancelled = await schedules.setCancelled(
         session: session,
-        teacherId: 'teacher-1',
+        teacherId: DemoData.demoSessionTeacherId,
         isCancelled: true,
       );
       expect(cancelled.isCancelled, isTrue);
@@ -157,7 +157,7 @@ void main() {
 
       final GroupSession restored = await schedules.setCancelled(
         session: cancelled,
-        teacherId: 'teacher-1',
+        teacherId: DemoData.demoSessionTeacherId,
         isCancelled: false,
       );
       expect(restored.isCancelled, isFalse);

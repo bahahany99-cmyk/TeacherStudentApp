@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/session/current_student.dart';
 import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
@@ -19,6 +20,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
@@ -55,8 +57,14 @@ class _GroupTimetableScreenState extends State<GroupTimetableScreen> {
       throw const AppException.notFound(debugMessage: 'group missing');
     }
 
-    final String viewerId = CurrentTeacher.idOf(session);
-    final bool isOwner = group.teacherId == viewerId;
+    // الهوية حسب الدور: معرّف المدرس لا يصلح للطالب (وفي وضع الزائر يعيد
+    // معرّف المدرس التجريبي دائمًا، وهو ما كان سيجعل كل طالب «مالكًا»).
+    final bool isTeacherView = session.role == UserRole.teacher;
+    final String viewerId = isTeacherView
+        ? CurrentTeacher.idOf(session)
+        : CurrentStudent.idOf(session);
+
+    final bool isOwner = isTeacherView && group.teacherId == viewerId;
     final bool isMember = isOwner
         ? true
         : await services.groups.isMember(

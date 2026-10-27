@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/validation/model_validators.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
 
 GroupSession _session({
@@ -99,7 +100,12 @@ void main() {
         _draft(start: 23 * 60 + 30, duration: 60),
       );
       expect(result.isValid, isFalse);
-      expect(result.problems.first.field, 'durationMinutes');
+      // البداية 23:30 تتجاوز آخر بداية مسموحة، والمدة تعبر منتصف الليل:
+      // القاعدة ترفع المشكلتين معًا، ورسالة الحفظ تشرح الأولى.
+      expect(
+        result.problems.map((ValidationProblem p) => p.field),
+        containsAll(<String>['startMinutes', 'durationMinutes']),
+      );
     });
 
     test('البداية بعد 11 مساءً مرفوضة', () {
