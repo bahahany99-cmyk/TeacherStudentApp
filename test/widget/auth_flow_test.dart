@@ -157,7 +157,7 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'إنشاء الحساب'), findsOneWidget);
     });
 
-    testWidgets('فشل الخادم يظهر رسالة عربية لا رمزًا تقنيًا', (
+    testWidgets('فشل الخادم يظهر داخل النموذج برسالة عربية لا رمزًا تقنيًا', (
       WidgetTester tester,
     ) async {
       await openForm(tester);
@@ -169,8 +169,29 @@ void main() {
       await tester.enterText(find.byType(TextFormField).last, 'secret123');
       await tapVisible(tester, find.widgetWithText(FilledButton, 'دخول'));
 
-      // الخدمة ترمي خطأ غير معروف ← رسالة عربية عامة.
+      // الخدمة ترمي خطأ غير معروف ← رسالة عربية عامة تبقى ظاهرة في الصفحة.
       expect(find.textContaining('حدث خطأ غير متوقع'), findsOneWidget);
+      // ولم نغادر النموذج (لم يُفتح الهيكل).
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'دخول'), findsOneWidget);
+    });
+
+    testWidgets('الخدمة غير المُهيَّأة تُعرض برسالتها الصريحة', (
+      WidgetTester tester,
+    ) async {
+      // نستخدم الخدمة التجريبية نفسها: المصادقة الحقيقية غير مُهيَّأة.
+      await _pumpApp(tester, const DemoAuthService());
+      await tapVisible(tester, find.text('الدخول بالبريد الإلكتروني'));
+
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'student@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, 'secret123');
+      await tapVisible(tester, find.widgetWithText(FilledButton, 'دخول'));
+
+      expect(find.text('الخدمة غير متاحة الآن'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
     });
   });
 

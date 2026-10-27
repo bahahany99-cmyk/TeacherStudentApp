@@ -4,7 +4,6 @@ import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
-import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/features/auth/presentation/auth_flow.dart';
@@ -35,6 +34,12 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
   bool _busy = false;
   bool _obscure = true;
 
+  /// آخر خطأ من الخادم — يُعرض داخل الصفحة لا في تنبيه عابر.
+  ///
+  /// السبب: فشل تسجيل الدخول يحتاج أن يبقى أمام المستخدم أثناء تصحيح البيانات،
+  /// ولأن التنبيه العابر قد يختفي قبل أن يقرأه.
+  AppException? _failure;
+
   @override
   void dispose() {
     _name.dispose();
@@ -53,7 +58,10 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
     }
 
     final SessionController session = SessionScope.read(context);
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _failure = null;
+    });
 
     try {
       if (_registerMode) {
@@ -77,13 +85,10 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
       if (!mounted) {
         return;
       }
-      setState(() => _busy = false);
-      final AppException failure = toAppException(error);
-      AppSnackBar.show(
-        context,
-        '${failure.title} — ${failure.message}',
-        type: AppMessageType.error,
-      );
+      setState(() {
+        _busy = false;
+        _failure = toAppException(error);
+      });
     }
   }
 
@@ -136,6 +141,7 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
     }
     setState(() {
       _registerMode = register;
+      _failure = null;
       _formKey.currentState?.reset();
     });
   }
@@ -229,6 +235,10 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                         validator: _validateConfirm,
                       ),
                     ],
+                    if (_failure != null) ...<Widget>[
+                      const SizedBox(height: AppSpacing.sm),
+                      _FailureCard(failure: _failure!),
+                    ],
                     const SizedBox(height: AppSpacing.md),
                     FilledButton(
                       onPressed: _busy ? null : _submit,
@@ -268,6 +278,58 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// صندوق خطأ ثابت داخل النموذج (لا يختفي تلقائيًا).
+class _FailureCard extends StatelessWidget {
+  const _FailureCard({required this.failure});
+
+  final AppException failure;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            Icons.error_outline,
+            size: 20,
+            color: theme.colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  failure.title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  failure.message,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
