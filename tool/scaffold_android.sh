@@ -77,6 +77,29 @@ open(path, 'w', encoding='utf-8').write(new)
 PY
 fi
 
+# رفع أدنى إصدار أندرويد إلى 23.
+# السبب: firebase_auth / cloud_firestore (P4) يتطلبان minSdk 23 على الأقل؛
+# القيمة الافتراضية في Flutter قد تكون 21 فتظهر أخطاء بناء متأخرة.
+GRADLE_SDK_FILE="android/app/build.gradle.kts"
+[[ -f "$GRADLE_SDK_FILE" ]] || GRADLE_SDK_FILE="android/app/build.gradle"
+python3 - "$GRADLE_SDK_FILE" <<'MINSDK'
+import re
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+new, count = re.subn(
+    r'minSdk\s*=?\s*(?:flutter\.)?minSdkVersion',
+    'minSdk = 23',
+    src,
+    count=1,
+)
+if count == 0:
+    sys.exit('خطأ: لم أجد minSdk في ملف Gradle')
+open(path, 'w', encoding='utf-8').write(new)
+print('✓ minSdk = 23 (متطلب Firebase Auth / Firestore)')
+MINSDK
+
 # تحقق من أن applicationId هو المعتمد.
 GRADLE_FILE="android/app/build.gradle.kts"
 [[ -f "$GRADLE_FILE" ]] || GRADLE_FILE="android/app/build.gradle"

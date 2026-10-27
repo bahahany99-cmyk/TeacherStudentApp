@@ -1,5 +1,7 @@
 import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
+import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
@@ -20,19 +22,40 @@ import 'package:teacher_student_app/data/services/teacher_repository.dart';
 class DemoAuthService implements AuthService {
   const DemoAuthService();
 
+  /// رسالة موحّدة: المصادقة الحقيقية تحتاج مشروع Firebase مُهيَّأ.
+  static const AppException _notConnected = AppException.unavailable(
+    debugMessage: 'Firebase not initialized (demo mode)',
+  );
+
   @override
-  Future<AppUser?> restoreSession() async => null;
+  Future<AuthResult?> restoreSession() async => null;
 
   @override
   Future<void> signOut() async {}
 
   @override
-  Future<AppUser> signInWithGoogle(UserRole requestedRole) {
-    throw UnsupportedError(
-      'تسجيل الدخول عبر Google غير منفّذ في المرحلة 2. '
-      'يتطلب مشروع Firebase + إعداد OAuth (انظر docs/FIREBASE_SETUP.md).',
-    );
-  }
+  Future<AuthResult> signInWithGoogle() => throw _notConnected;
+
+  @override
+  Future<AuthResult> signInWithEmail({
+    required String email,
+    required String password,
+  }) => throw _notConnected;
+
+  @override
+  Future<AuthResult> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) => throw _notConnected;
+
+  @override
+  Future<AppUser> assignRole({
+    required String uid,
+    required String displayName,
+    required UserRole role,
+    String? email,
+  }) => throw _notConnected;
 }
 
 class DemoTeacherRepository implements TeacherRepository {

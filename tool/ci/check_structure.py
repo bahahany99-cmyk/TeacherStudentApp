@@ -29,7 +29,10 @@ LTR_PATTERNS = (
 )
 
 # ملفات مسموح لها (لا يوجد حاليًا) — تُضاف بمبرر.
-LTR_ALLOWED: set[str] = set()
+# استثناءات مقصودة: بريد إلكتروني/رابط يُعرض دائمًا LTR حتى داخل واجهة RTL.
+LTR_ALLOWED: set[str] = {
+    'lib/features/auth/presentation/email_auth_screen.dart',
+}
 
 
 def strip_code(src: str) -> str:

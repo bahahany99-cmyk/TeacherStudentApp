@@ -16,7 +16,8 @@ Future<void> bootstrap() async {
 
   await FirebaseBootstrap.initialize();
 
-  final AppServices services = AppServices.demo();
+  // المصادقة الحقيقية إن كان Firebase جاهزًا، وإلا الحزمة التجريبية.
+  final AppServices services = AppServices.bootstrap();
   final SessionController session = SessionController(services.auth);
   await session.restore();
 

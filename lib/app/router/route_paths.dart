@@ -7,6 +7,12 @@
 abstract final class RoutePaths {
   static const String splash = '/';
   static const String login = '/login';
+
+  /// الدخول/إنشاء حساب بالبريد وكلمة المرور (P4).
+  static const String emailAuth = '/login/email';
+
+  /// اختيار الدور عند أول دخول (P4) — يظهر مرة واحدة فقط.
+  static const String roleSelection = '/onboarding/role';
   static const String shell = '/app';
 
   // ── شاشات التفاصيل (P3) ────────────────────────────────────────────────────

@@ -31,9 +31,12 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     final SessionController session = SessionScope.read(context);
-    final String nextRoute = session.isSignedIn
-        ? RoutePaths.shell
-        : RoutePaths.login;
+    // حساب بلا دور محفوظ ← شاشة اختيار الدور (أول دخول فقط).
+    final String nextRoute = switch (session.status) {
+      SessionStatus.signedIn => RoutePaths.shell,
+      SessionStatus.needsRole => RoutePaths.roleSelection,
+      SessionStatus.signedOut || SessionStatus.unknown => RoutePaths.login,
+    };
 
     unawaited(
       Navigator.of(context).pushNamedAndRemoveUntil(
@@ -102,7 +105,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    'المرحلة 2 — هيكل أولي للواجهات',
+                    'المرحلة 4 — أساسيات Firebase',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: Colors.white60,
                     ),

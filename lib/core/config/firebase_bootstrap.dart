@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:teacher_student_app/core/config/app_config.dart';
+import 'package:teacher_student_app/core/config/firebase_config.dart';
 
 /// حالة تهيئة Firebase.
 enum FirebaseStatus {
@@ -42,11 +43,21 @@ abstract final class FirebaseBootstrap {
       return;
     }
 
+    if (!FirebaseConfig.hasOptions) {
+      // طُلب التفعيل بلا إعدادات: نفشل بوضوح بدل محاولة صامتة تفشل لاحقًا
+      // في شاشة الدخول برسالة غامضة.
+      _status = FirebaseStatus.failed;
+      lastError =
+          'ENABLE_FIREBASE=true لكن إعدادات FirebaseConfig ناقصة. '
+          'راجع docs/FIREBASE_SETUP.md ومرّر قيم --dart-define.';
+      debugPrint('[FirebaseBootstrap] $lastError');
+      return;
+    }
+
     try {
-      // TODO(phase-3): بعد تنفيذ `flutterfire configure` استبدل السطر التالي بـ
-      // Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
-      // مع استيراد الملف المولَّد (المستثنى من Git).
-      await Firebase.initializeApp();
+      // النمط المعتمد: خيارات صريحة من `--dart-define`، بلا google-services.json
+      // في Git. (FlutterFire CLI يولّد firebase_options.dart بنفس القيم.)
+      await Firebase.initializeApp(options: FirebaseConfig.options);
       _status = FirebaseStatus.ready;
       lastError = null;
     } on Object catch (error) {

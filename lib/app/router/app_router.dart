@@ -4,7 +4,9 @@ import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/features/auth/presentation/email_auth_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
+import 'package:teacher_student_app/features/auth/presentation/role_selection_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
@@ -25,6 +27,10 @@ abstract final class AppRouter {
         return _page(const SplashScreen(), settings);
       case RoutePaths.login:
         return _page(const LoginScreen(), settings);
+      case RoutePaths.emailAuth:
+        return _page(const EmailAuthScreen(), settings);
+      case RoutePaths.roleSelection:
+        return _page(const RoleSelectionScreen(), settings);
       case RoutePaths.shell:
         return _page(const AppShell(), settings);
       case RoutePaths.designGallery:

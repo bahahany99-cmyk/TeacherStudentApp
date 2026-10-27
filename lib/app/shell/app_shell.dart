@@ -57,6 +57,10 @@ class _AppShellState extends State<AppShell> {
     final SessionController session = SessionScope.of(context);
     final UserRole? role = session.role;
 
+    if (session.needsRoleSelection) {
+      return const _RoleChoiceRequiredScreen();
+    }
+
     if (!session.isSignedIn || role == null || !role.isEndUser) {
       return const _SessionRequiredScreen();
     }
@@ -178,6 +182,34 @@ class _AppShellState extends State<AppShell> {
       ),
       AppTab.profile => const ProfileScreen(key: ValueKey<String>('tab-profile')),
     };
+  }
+}
+
+/// تُعرض إذا كان الحساب مسجّلًا لكنه لم يختر دوره بعد.
+///
+/// لا نعرض الهيكل بدور مفترض: الدور قرار يُحفظ في الخادم، لا تخمين في الواجهة.
+class _RoleChoiceRequiredScreen extends StatelessWidget {
+  const _RoleChoiceRequiredScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: EmptyState(
+            icon: Icons.badge_outlined,
+            title: 'اختر نوع الحساب',
+            message: 'ينقص حسابك خطوة واحدة: تحديد إن كنت طالبًا أم مدرسًا.',
+            actionLabel: 'اختيار نوع الحساب',
+            onActionTap: () => Navigator.of(context).pushNamedAndRemoveUntil(
+              RoutePaths.roleSelection,
+              (Route<dynamic> route) => false,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

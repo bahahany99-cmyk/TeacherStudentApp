@@ -1,111 +1,132 @@
 # دليل ربط Firebase — خطوات خارجية مطلوبة
 
-> **الحالة الآن:** Firebase **غير مربوط**. المشروع يهيّئ Firebase عند الإقلاع
-> لكن التهيئة معطّلة افتراضيًا (`ENABLE_FIREBASE=false`)، ولم يُنشأ أي مشروع
-> Firebase ولا أي حساب سحابي. هذا الملف يوضّح ما يلزم لإكمال الربط.
+> **الحالة الآن:** المشروع مكتوب بالكامل للعمل مع Firebase، لكن **لا يوجد مشروع
+> Firebase مُنشأ** ولا أي بيانات اعتماد في المستودع. التطبيق يبقى في الوضع
+> التجريبي حتى تنفّذ الخطوات في §3. هذا الملف هو العقد بين ما ينفّذه الكود وما
+> يجب أن تفعله أنت خارجيًا.
 
 ---
 
-## 1. ما هو منفَّذ في الكود
+## 1. ما هو منفَّذ في الكود (P4)
 
 | العنصر | الملف | الحالة |
 |---|---|---|
-| تهيئة Firebase معزولة عن الواجهات | `lib/core/config/firebase_bootstrap.dart` | منفَّذ (يتعامل مع الفشل بلا تعطيل التطبيق) |
-| علم تفعيل التهيئة | `lib/core/config/app_config.dart` | منفَّذ (`--dart-define=ENABLE_FIREBASE=true`) |
-| اعتمادية `firebase_core` | `pubspec.yaml` | مضافة (`^5.0.0`) |
-| استثناء ملفات الإعداد من Git | `.gitignore` | منفَّذ |
-| المصادقة / Firestore / Storage / FCM | — | **غير منفَّذ** (مراحل لاحقة) |
+| تهيئة Firebase معزولة عن الواجهات | `lib/core/config/firebase_bootstrap.dart` | ✅ منفَّذ — الفشل لا يعطّل التطبيق |
+| إعدادات المشروع من `--dart-define` | `lib/core/config/firebase_config.dart` | ✅ منفَّذ — بلا ملفات أسرار في Git |
+| مصادقة Google + بريد/كلمة مرور | `lib/data/firebase/firebase_auth_service.dart` | ✅ مكتوب مقابل `firebase_auth` |
+| مستند المستخدم والدور (`users/{uid}`) | نفسه | ✅ قراءة عند كل دخول + كتابة مرة واحدة عند الاختيار |
+| شاشة اختيار الدور (أول دخول فقط) | `lib/features/auth/presentation/role_selection_screen.dart` | ✅ منفَّذ |
+| شاشة البريد/كلمة المرور | `lib/features/auth/presentation/email_auth_screen.dart` | ✅ منفَّذ |
+| ترجمة أخطاء Firebase إلى عربية | `lib/core/errors/firebase_error_mapper.dart` | ✅ منفَّذ + مُختبَر |
+| أدنى إصدار أندرويد | `tool/scaffold_android.sh` | ✅ `minSdk = 23` (متطلب Auth/Firestore) |
+| قواعد أمان Firestore | — | ❌ **لم تُكتب ولم تُنشر** (تحتاج موافقتك — قاعدة A-09) |
+| مستودعات Firestore (مدرسون/مجموعات/حجوزات) | — | ❌ **P5** — ما زالت تجريبية |
 
-## 2. ما لا يمكن تنفيذه من داخل بيئة التطوير الحالية
+### ما يكتبه التطبيق في Firestore (فقط)
 
-1. **إنشاء مشروع Firebase** — يتطلب حساب Google وملكية المشروع، وقرارًا صريحًا
-   من صاحب المشروع (قاعدة A-08). لا يُنشأ تلقائيًا.
-2. **توليد `firebase_options.dart`** — يحتاج `flutterfire configure` + Flutter SDK
-   (غير متاح في بيئة التنفيذ).
-3. **تفعيل مزوّد Google** — يحتاج إعداد شاشة الموافقة (OAuth consent) في
-   Google Cloud Console.
-4. **بصمات SHA-1/SHA-256** — تُستخرج من جهاز البناء/التوقيع، ولا يمكن توليدها هنا.
+```jsonc
+// users/{uid}
+{
+  "displayName": "…",
+  "email": "…",            // أو null
+  "role": "student",       // أو "teacher" — يُكتب مرة واحدة فقط
+  "createdAt": <Timestamp>,
+  "roleChosenAt": <Timestamp>
+}
+```
+
+لا يكتب التطبيق أي حقل إداري (`approved`, `isFeatured`, `isAdmin`…) ولا أي
+قاعدة أمان. الدور يُقرأ من الخادم في كل دخول؛ وتغييره بعد الاختيار لا يحدث من
+التطبيق.
+
+## 2. ما لا يمكن تنفيذه من داخل بيئة التطوير
+
+1. **إنشاء مشروع Firebase** — يتطلب حسابك وملكيته (قاعدة A-08). **أنت** من ينشئه.
+2. **بصمات SHA-1 / SHA-256** — تُستخرج من مفتاح التوقيع؛ بدونها لا يعمل Google.
+3. **تفعيل المزوّدات** — يُفعَّل من Firebase Console، لا من الكود.
+4. **اختبار الدخول فعليًا** — يحتاج جهازًا/محاكيًا ومشروعًا حقيقيًا؛ لا يمكن
+   التحقق منه في CI.
 
 ## 3. الخطوات المطلوبة بالترتيب
 
-### 3.1 إنشاء المشروع (مرة واحدة، بموافقة صاحب المشروع)
+### 3.1 إنشاء المشروع (مرة واحدة)
 
-1. أنشئ مشروعًا في Firebase Console (مقترح: مشروعان `dev` و`prod` — انظر T-06، أو مشروع واحد مبدئيًا).
-2. أضف تطبيق Android بالتطبيق `applicationId` المتفق عليه.
-   - قيمة مقترحة: `com.example.teacher_student_app` — **يجب حسمها قبل أول إصدار**، وتُثبَّت في `android/app/build.gradle.kts`.
-3. أضف بصمة SHA-1 (وبصمة SHA-256) لبناء التطوير، ثم لبصمة الإصدار لاحقًا.
-   - بدون SHA-1 لن يعمل تسجيل Google على Android.
-4. نزّل `google-services.json` وضعه في `android/app/` — **لا يُرفع إلى Git**.
+1. Firebase Console ← **Add project**. اختر اسمًا للمشروع.
+2. بعد الإنشاء: **Firestore Database ← Create database**.
+   - **المنطقة: `me-central1`** (قرار صاحب المشروع 2026-10-27، A-22).
+   - ⚠️ **المنطقة لا تُغيَّر بعد الإنشاء** بلا ترحيل مكلف — تأكّد قبل الضغط.
+   - ابدأ في وضع **Production mode** (لا قواعد مفتوحة)؛ القواعد تُكتب في مرحلة
+     لاحقة بموافقتك.
+3. **Authentication ← Get started**، ثم فعّل:
+   - **Email/Password**
+   - **Google** (يطلب بريد دعم للمشروع)
+4. **Project settings ← Your apps ← Add app ← Android**:
+   - Android package name: **`com.darsly.app`** (G1 المعتمد).
+   - App nickname: `درسلي (dev)`.
+   - **Add fingerprint**: SHA-1 لبناء التطوير، ثم SHA-256.
+     استخرجه من جهازك:
+     ```bash
+     # مفتاح التصحيح الافتراضي
+     keytool -list -v -keystore ~/.android/debug.keystore \
+       -alias androiddebugkey -storepass android -keypass android
+     ```
+     (لمفتاح إصدار لاحقًا: `keytool -list -v -keystore <your>.jks`.)
 
-### 3.2 توليد إعدادات Flutter
+### 3.2 الحصول على قيم الإعدادات
 
-على جهاز فيه Flutter SDK و`flutterfire_cli`:
+من **Project settings ← General ← Your apps ← SDK setup and configuration**،
+انسخ:
 
+| القيمة في Console | متغيّر `--dart-define` |
+|---|---|
+| `project_id` | `FIREBASE_PROJECT_ID` |
+| `mobilesdk_app_id` | `FIREBASE_APP_ID` |
+| `api_key.current_key` | `FIREBASE_API_KEY` |
+| `project_number` | `FIREBASE_MESSAGING_SENDER_ID` |
+| `storage_bucket` | `FIREBASE_STORAGE_BUCKET` |
+
+> ملاحظة: يمكنك أيضًا تنزيل `google-services.json` واستخدامه محليًا (مستثنى
+> من Git)، لكن الطريقة المعتمدة في هذا المستودع هي `--dart-define` لأنها
+> تُبقي البناء والاختبار يعملان بلا أي ملف أسرار.
+
+### 3.3 تشغيل النسخة المتصلة
+
+```bash
+flutter run \
+  --dart-define=ENABLE_FIREBASE=true \
+  --dart-define=FIREBASE_PROJECT_ID=<project_id> \
+  --dart-define=FIREBASE_APP_ID=<mobilesdk_app_id> \
+  --dart-define=FIREBASE_API_KEY=<api_key> \
+  --dart-define=FIREBASE_MESSAGING_SENDER_ID=<project_number> \
+  --dart-define=FIREBASE_STORAGE_BUCKET=<storage_bucket>
 ```
-dart pub global activate flutterfire_cli
-flutterfire configure --project=<PROJECT_ID> --platforms=android
-```
 
-يُنتج `lib/core/config/firebase_options.dart` — **مستثنى من Git**.
-لذلك على أي جهاز جديد يجب إعادة توليده (وهذا مقصود: لا مفاتيح في المستودع).
+لبناء APK متصل (يدويًا من Actions) أضف نفس القيم في خطوة البناء، أو شغّله
+محليًا بالأمر أعلاه مع `build apk`.
 
-### 3.3 تفعيل التهيئة في الكود
+### 3.4 أول تشغيل: ما يجب أن يحدث
 
-في `lib/core/config/firebase_bootstrap.dart` استبدل:
+1. شاشة الدخول: زر Google وزر «الدخول بالبريد الإلكتروني» يعملان (لا رسالة
+   «غير متاحة»).
+2. بعد أول دخول تظهر **شاشة اختيار نوع الحساب** مرة واحدة.
+3. بعد الاختيار: يُكتب `users/{uid}.role` وتُفتح الواجهة المناسبة.
+4. في الدخول التالي **لا تظهر شاشة الاختيار** (الدور يُقرأ من الخادم).
+5. بطاقة «معاينة الواجهات» تختفي تلقائيًا (لأنها تظهر فقط في
+   `AppConfig.isDemoMode`).
 
-```dart
-await Firebase.initializeApp();
-```
+## 4. أسئلة مفتوحة (تحتاج قرارك قبل الإنتاج)
 
-بـ:
+| السؤال | الأثر |
+|---|---|
+| هل يُسمح بتغيير الدور بعد الاختيار؟ وكيف (طلب للدعم/أداة إدارية)؟ | شاشة/مسار إداري + قاعدة أمان |
+| هل يُمنع الحساب المدرسي الذي لم يُعتمد من استقبال الحجوزات في القواعد؟ | قواعد Firestore (P5/P8) |
+| إعادة تعيين كلمة المرور: بريد Firebase الافتراضي أم قالب مخصص؟ | تجربة المستخدم + تكلفة |
+| ماذا لو سجّل مستخدم بـGoogle ثم بالبريد بنفس العنوان؟ | ربط الحسابات (linking) |
 
-```dart
-await Firebase.initializeApp(
-  options: DefaultFirebaseOptions.currentPlatform,
-);
-```
+## 5. ما لم يُتحقق منه بعد
 
-مع إضافة الاستيراد المقابل، ثم شغّل:
-
-```
-flutter run --dart-define=ENABLE_FIREBASE=true
-```
-
-### 3.4 تفعيل تسجيل Google (المرحلة 4)
-
-1. Firebase Console → Authentication → Sign-in method → **Google: تمكين**.
-2. إضافة `google_sign_in` و`firebase_auth` إلى `pubspec.yaml` (حسب A-11 عند التنفيذ).
-3. ضبط `Web client ID` (مطلوب لـ `idToken` على Android).
-4. تنفيذ `AuthService` الحقيقي واستبدال `DemoAuthService` في `AppServices`.
-
-### 3.5 Firestore
-
-1. إنشاء قاعدة البيانات (اختيار المنطقة له أثر على التكلفة والزمن).
-2. **كتابة قواعد الأمان أولًا** — لا تُفتح القواعد للجميع إطلاقًا.
-3. إنشاء الفهارس المركبة المطلوبة للفلاتر (تُبنى حسب تصميم الاستعلامات في Phase 6).
-4. مراجعة حدود الحصص (F-09): عدد القراءات/الكتابات يوميًا.
-
-### 3.6 Storage و FCM
-
-- **Storage:** تحديد المسارات `teachers/{teacherId}/…` وقيود الحجم والنوع، وقواعد تمنع الكتابة على مسار مدرس آخر.
-- **FCM:** إضافة الحزمة، طلب إذن الإشعارات من المستخدم، حفظ الرموز (tokens) في Firestore، والإرسال من دالة خادمية.
-
-## 4. ما يجب ألا يظهر في المستودع أبدًا
-
-| الملف | السبب | الحالة |
-|---|---|---|
-| `google-services.json` | مفاتيح/إعدادات المشروع | مستثنى |
-| `lib/core/config/firebase_options.dart` | مفاتيح API للمشروع | مستثنى |
-| `*.jks` / `key.properties` | توقيع الإصدار | مستثنى |
-| أي `service account` JSON | صلاحيات إدارية كاملة | ممنوع تمامًا داخل التطبيق |
-| `.env` | أسرار محلية | مستثنى |
-
-## 5. قبل أي إطلاق — قائمة تحقق
-
-- [ ] قواعد Firestore مكتوبة ومختبرة (اختبارات قواعد، لا فقط تجربة يدوية).
-- [ ] قواعد Storage مكتوبة ومختبرة.
-- [ ] لا كتابة مباشرة من العميل على الحقول الحسّاسة (الحالة، السعة، الاعتماد).
-- [ ] App Check مُقيَّم ومُفعَّل (T-05).
-- [ ] تنبيهات ميزانية/حصة مضبوطة (T-11).
-- [ ] `google-services.json` وبصمات التوقيع موجودة لبناء الإصدار.
-- [ ] الوضع التجريبي (`startDemoSession` و`DemoBanner` و`AppServices.demo()`) معطّل أو محذوف.
+- ❌ لم يُنشأ مشروع Firebase، ولم يُجرَّب تسجيل الدخول الحقيقي (لا جهاز ولا مفاتيح).
+- ❌ لا قواعد أمان منشورة: **الوصول إلى Firestore مفتوح/مغلق حسب إعدادك اليدوي**،
+  ولا تعتمد على التطبيق في الفرض.
+- ❌ بناء APK بعد إضافة `firebase_auth`/`cloud_firestore` لم يُجرَّب في CI بعد
+  (البناء اليدوي غير متاح لبيئة التطوير). أول بناء يدوي منك هو نقطة التحقق.
