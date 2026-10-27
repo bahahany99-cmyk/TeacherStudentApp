@@ -1,6 +1,7 @@
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
+import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
@@ -25,21 +26,26 @@ class AppServices {
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
-  /// - Firebase جاهز ← مصادقة حقيقية (`FirebaseAuthService`).
-  /// - غير جاهز ← حزمة تجريبية كاملة، والتطبيق يعمل بلا خادم.
+  /// - Firebase جاهز ← مصادقة وقراءة حقيقية من Firestore (P4 + P5).
+  /// - غير جاهز ← حزمة تجريبية كاملة (وضع الزائر)، والتطبيق يعمل بلا خادم.
   ///
-  /// ملاحظة صريحة: بقية المستودعات (المدرسون/المجموعات/الحجوزات) ما زالت
-  /// تجريبية. قراءتها من Firestore هو عمل P5، وليس شيئًا تم تنفيذه هنا.
+  /// التبديل يحدث **هنا فقط**: الشاشات لا تعرف أي تنفيذ وراء العقد، ولا تستورد
+  /// Firebase.
   factory AppServices.bootstrap() {
     if (FirebaseBootstrap.status == FirebaseStatus.ready) {
-      return AppServices(
-        auth: FirebaseAuthService(),
-        teachers: DemoTeacherRepository(),
-        groups: DemoGroupRepository(),
-        bookings: DemoBookingRepository(),
-      );
+      return AppServices.firebase();
     }
     return AppServices.demo();
+  }
+
+  /// حزمة متصلة بـFirestore (تُستخدم فقط بعد نجاح التهيئة).
+  factory AppServices.firebase() {
+    return AppServices(
+      auth: FirebaseAuthService(),
+      teachers: FirestoreTeacherRepository(),
+      groups: FirestoreGroupRepository(),
+      bookings: FirestoreBookingRepository(),
+    );
   }
 
   /// حزمة تجريبية كاملة للعمل بلا خادم (الوضع الافتراضي في المرحلة 2).

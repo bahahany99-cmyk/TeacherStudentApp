@@ -24,6 +24,7 @@ class StudyGroup {
     required this.seatsTaken,
     required this.meetingMode,
     this.scheduleNote,
+    this.isActive = true,
   });
 
   final String id;
@@ -38,6 +39,11 @@ class StudyGroup {
 
   /// وصف نصي مؤقت للموعد (الجدولة الحقيقية مؤجلة - Q-13).
   final String? scheduleNote;
+
+  /// هل المجموعة منشورة؟ المجموعة الموقوفة لا تظهر في الاستكشاف.
+  ///
+  /// الافتراضي `true` حتى لا تتغيّر البيانات التجريبية الحالية.
+  final bool isActive;
 
   /// عدد المقاعد المتاحة (لا يقل عن صفر).
   ///

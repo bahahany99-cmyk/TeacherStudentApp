@@ -1,0 +1,142 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// قواعد أمان Firestore — تطبيق «درسلي»
+//
+// السياسة المعتمدة (A-42، 2026-10-27):
+//   1. users/{uid}: قراءة/كتابة لصاحبه فقط، والدور لا يتغيّر بعد الكتابة الأولى.
+//   2. teacherProfiles/{uid}: القراءة العامة للملفات المعتمدة فقط؛ صاحبه يرى
+//      ملفه بكل حالاته ولا يستطيع تغيير status.
+//   3. لا وصول إداري من التطبيق: الاعتماد والتمييز بأدوات إدارية خارجية
+//      (Firebase Console أو سكربت بمفتاح خدمة لا يصل للتطبيق).
+//
+// المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
+// مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
+//
+// ⚠️ هذه القواعد لم تُنشر بعد. النشر يتم من صاحب المشروع (انظر docs/P5_FIRESTORE.md).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── دوال مساعدة ──────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // حساب إداري: يُمنح فقط عبر Custom Claim يُضبط بمفتاح خدمة خارج التطبيق.
+    // التطبيق لا يستطيع منح نفسه هذا الادعاء إطلاقًا.
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    // ── 1) users/{uid} ───────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+
+      allow create: if isSelf(uid)
+        && request.resource.data.role in ['student', 'teacher']
+        && request.resource.data.keys().hasOnly(
+             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80;
+
+      // الدور ثابت: أي محاولة لتغييره تُرفض. بقية الحقول (الاسم/البريد) يجوز
+      // تحديثها، والحقول غير المعروفة مرفوضة.
+      allow update: if isSelf(uid)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.keys().hasOnly(
+             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80;
+
+      // لا حذف من التطبيق: حذف الحساب إجراء إداري (سياسة الاحتفاظ T-10).
+      allow delete: if isAdmin();
+    }
+
+    // ── 2) teacherProfiles/{uid} ─────────────────────────────────────────────
+    match /teacherProfiles/{uid} {
+      // القراءة: الملف المعتمد للجميع، وصاحبه يرى ملفه بأي حالة.
+      allow read: if isAdmin()
+        || resource.data.status == 'approved'
+        || isSelf(uid);
+
+      // الإنشاء: صاحبه فقط، وبداية دورة المراجعة إجبارية.
+      allow create: if isSelf(uid)
+        && request.resource.data.status == 'pendingReview'
+        && request.resource.data.ownerId == uid
+        && request.resource.data.keys().hasOnly(
+             ['ownerId', 'displayName', 'status', 'createdAt',
+              'subject', 'stage', 'area', 'bio', 'priceHint'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80;
+
+      // التحديث: صاحبه يعدّل حقوله الوصفية فقط.
+      // - status و ownerId ثابتان (يُضبطان إداريًا أو عند الإنشاء).
+      // - isFeatured و rating و reviewsCount غير مذكورة في hasOnly ⇒ لا يكتبها
+      //   التطبيق إطلاقًا.
+      allow update: if isAdmin() || (
+        isSelf(uid)
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.keys().hasOnly(
+             ['ownerId', 'displayName', 'status', 'createdAt',
+              'subject', 'stage', 'area', 'bio', 'priceHint'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80
+      );
+
+      // لا حذف من التطبيق.
+      allow delete: if isAdmin();
+    }
+
+    // ── 3) studyGroups/{groupId} ─────────────────────────────────────────────
+    // الواجهة تقرأ فقط في هذه المرحلة (إنشاء/تعديل المجموعات = P7).
+    match /studyGroups/{groupId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.isActive == true
+             || request.auth.uid == resource.data.teacherId
+           ));
+
+      // الكتابة من التطبيق ممنوعة الآن. تُفتح في P7 بشروط السعة والمواعيد.
+      allow write: if isAdmin();
+
+      // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
+      // الطالب لا يرى أسماء بقية الطلاب (خصوصية).
+      match /members/{memberId} {
+        allow read: if isAdmin()
+          || (signedIn()
+              && request.auth.uid ==
+                 get(/databases/$(database)/documents/studyGroups/$(groupId))
+                   .data.teacherId);
+        allow write: if isAdmin();
+      }
+    }
+
+    // ── 4) bookingRequests/{bookingId} ───────────────────────────────────────
+    // القراءة لطرفي الطلب فقط. الكتابة (إنشاء/قبول/رفض) = P8.
+    match /bookingRequests/{bookingId} {
+      allow read: if isAdmin()
+        || (signedIn() && (
+             request.auth.uid == resource.data.studentId
+             || request.auth.uid == resource.data.teacherId
+           ));
+
+      allow write: if isAdmin();
+    }
+
+    // ── 5) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

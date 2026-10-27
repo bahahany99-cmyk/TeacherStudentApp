@@ -1,0 +1,7 @@
+{
+  "//": "إعداد Firebase CLI — لا يحتوي أي سر. النشر يتم من صاحب المشروع بعد مراجعة القواعد.",
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

@@ -73,6 +73,9 @@ jobs:
             exit "$status"
           fi
 
+      - name: Firestore rules sanity check
+        run: python3 tool/ci/check_rules.py
+
       - name: Analyze
         run: |
           set -o pipefail

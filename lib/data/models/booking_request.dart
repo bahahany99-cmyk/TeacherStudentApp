@@ -23,6 +23,8 @@ class BookingRequest {
     required this.id,
     required this.teacherName,
     required this.studentName,
+    this.teacherId,
+    this.studentId,
     required this.subject,
     required this.requestedAt,
     required this.status,
@@ -32,6 +34,13 @@ class BookingRequest {
   final String id;
   final String teacherName;
   final String studentName;
+
+  /// معرّفات الأطراف — لازمة لاستعلام «طلباتي» ولقواعد الأمان.
+  ///
+  /// اختيارية لأن البيانات التجريبية بُنيت قبل وجود المصادقة؛ أي طلب قادم من
+  /// Firestore يحملها دائمًا.
+  final String? teacherId;
+  final String? studentId;
   final String subject;
   final DateTime requestedAt;
   final BookingStatus status;
