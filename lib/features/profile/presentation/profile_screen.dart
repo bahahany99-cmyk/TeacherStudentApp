@@ -77,13 +77,14 @@ class ProfileScreen extends StatelessWidget {
                             style: theme.textTheme.titleLarge,
                           ),
                           const SizedBox(height: AppSpacing.xxs),
-                          Row(
+                          Wrap(
+                            spacing: AppSpacing.xxs,
+                            runSpacing: AppSpacing.xxs,
                             children: <Widget>[
                               StatusChip(
                                 label: user?.role.label ?? '—',
                                 color: theme.colorScheme.primary,
                               ),
-                              const SizedBox(width: AppSpacing.xxs),
                               if (session.isDemoSession)
                                 const StatusChip(
                                   label: 'حساب تجريبي',

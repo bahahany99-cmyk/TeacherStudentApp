@@ -48,9 +48,11 @@ class TeacherHomeScreen extends StatelessWidget {
                             style: theme.textTheme.titleMedium,
                           ),
                         ),
-                        const StatusChip(
-                          label: 'قيد المراجعة',
-                          color: AppColors.statusPending,
+                        const Flexible(
+                          child: StatusChip(
+                            label: 'قيد المراجعة',
+                            color: AppColors.statusPending,
+                          ),
                         ),
                       ],
                     ),
