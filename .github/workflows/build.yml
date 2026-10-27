@@ -7,8 +7,10 @@ name: Build & Verify
 # سياسة الموارد (قرار 2026-10-27، مُحدَّثة بعد ملاحظات صاحب المشروع):
 # - كل دفعة (push / PR): `analyze` + `test` فقط. **لا بناء APK إطلاقًا** —
 #   لا استهلاك لدقائق CI ولا حصة تخزين.
-# - البناء عند الطلب فقط (`workflow_dispatch`) ويظهر كـ artifact مؤقت
-#   (7 أيام) ولا يُنشر في Releases.
+# - البناء عند الطلب فقط: `workflow_dispatch` يدويًا، أو دفعة تحمل وسم
+#   `[build-release]` في رسالتها (لأن تفعيل workflow_dispatch من بيئة العمل
+#   محجوب؛ الوسم يبقى «طلبًا صريحًا» لا بناءً تلقائيًا).
+# - الناتج artifact مؤقت (7 أيام) ولا يُنشر في Releases.
 # - Releases للنسخ النهائية الكبرى فقط، وتُنشر يدويًا من صاحب المشروع.
 
 permissions:
@@ -128,13 +130,74 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  # ── قواعد Firestore على المحاكي (P6) ─────────────────────────────────────────
+  # يتطلب Java (المحاكي يعمل على JVM) وNode. يشغّل القواعد على محاكي حقيقي
+  # ويطابق الحالات المسموحة/المرفوضة في tool/rules_tests/tests/.
+  rules:
+    name: firestore rules (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tool/rules_tests/package-lock.json
+
+      # حزمة المحاكي (~60 م.ب) تُحمَّل مرة وتُخزَّن، فلا تُنزَّل في كل دفعة.
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('tool/rules_tests/package-lock.json') }}
+
+      - name: Install rules-test deps
+        run: npm ci --prefix tool/rules_tests --no-audit --no-fund
+
+      - name: Run rules tests
+        run: |
+          set -o pipefail
+          status=0
+          npm --prefix tool/rules_tests test > /tmp/rules.txt 2>&1 || status=$?
+          tail -80 /tmp/rules.txt
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/rules.txt "firestore-rules"
+            exit "$status"
+          fi
+
+          echo "✅ قواعد Firestore: كل حالات السماح/الرفض صحيحة على المحاكي."
+
+      - name: Upload rules log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-test-log
+          path: /tmp/rules.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
   # ── بناء APK: عند الطلب فقط، ونتيجة مؤقتة (لا Releases) ─────────────────────
   build_apk:
-    name: build apk (يدوي)
+    name: build apk (عند الطلب)
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      inputs.build_apk == true
-    needs: verify
+      needs.verify.result == 'success' && needs.rules.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) ||
+        (github.event_name == 'push' &&
+         contains(github.event.head_commit.message, '[build-release]'))
+      )
+    needs: [verify, rules]
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -157,6 +220,15 @@ jobs:
       - name: Scaffold Android platform (deterministic, com.darsly.app)
         run: bash tool/scaffold_android.sh
 
+      # التوقيع يُحقن فقط إن كانت الأسرار موجودة؛ وإلا يبقى توقيع debug.
+      - name: Apply release signing (إن توفّرت الأسرار)
+        env:
+          DARSLY_KEYSTORE_BASE64: ${{ secrets.DARSLY_KEYSTORE_BASE64 }}
+          DARSLY_STORE_PASSWORD: ${{ secrets.DARSLY_STORE_PASSWORD }}
+          DARSLY_KEY_ALIAS: ${{ secrets.DARSLY_KEY_ALIAS }}
+          DARSLY_KEY_PASSWORD: ${{ secrets.DARSLY_KEY_PASSWORD }}
+        run: python3 tool/ci/apply_signing.py
+
       - name: Resolve dependencies
         run: flutter pub get
 
@@ -164,7 +236,8 @@ jobs:
       # واحد يحمل مكتبات كل المعماريات (Firebase تضيف مكتبات أصلية كبيرة).
       - name: Build APK
         env:
-          MODE: ${{ inputs.build_mode }}
+          # وسم الدفعة يعني release دائمًا؛ وإلا نأخذ مدخلات التشغيل اليدوي.
+          MODE: ${{ inputs.build_mode || 'release' }}
         run: |
           set -o pipefail
           status=0
@@ -181,11 +254,47 @@ jobs:
 
           ls -l build/app/outputs/flutter-apk/*.apk
 
+      # الحجم الحقيقي يُنشر كـannotation لأن سجلات Actions محجوبة عن بيئة
+      # التطوير؛ هكذا يُقاس الحجم فعليًا لا تقديرًا.
+      - name: Report APK sizes
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, os
+          lines = []
+          for path in sorted(glob.glob('build/app/outputs/flutter-apk/*.apk')):
+              mb = os.path.getsize(path) / (1024 * 1024)
+              lines.append(f"{os.path.basename(path)} = {mb:.1f} MiB")
+              print(f"::notice title=APK size::{os.path.basename(path)} = {mb:.1f} MiB")
+          open('/tmp/apk_sizes.txt', 'w').write("\n".join(lines))
+          PYEOF
+
+      # التحقق من التوقيع: يظهر في annotations حتى نعرف أي مفتاح وُقّع به.
+      - name: Report signing (بدون كشف أي سر)
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import base64, hashlib, pathlib, re
+          gradle = None
+          for name in ('build.gradle.kts', 'build.gradle'):
+              p = pathlib.Path('android/app') / name
+              if p.exists():
+                  gradle = p
+                  break
+          if gradle is None:
+              print('::warning::لم أجد ملف Gradle لتقرير التوقيع')
+          else:
+              text = gradle.read_text(encoding='utf-8')
+              uses_release = 'signingConfigs.release' in text or 'getByName("release")' in text
+              msg = 'توقيع الإصدار (keystore)' if uses_release else 'توقيع debug (لم تُضبط الأسرار)'
+              print(f'::notice title=APK signing::{msg}')
+          PYEOF
+
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ inputs.build_mode }}
+          name: apk-${{ inputs.build_mode || 'release' }}
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
           retention-days: 7
