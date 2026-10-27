@@ -4,6 +4,9 @@ name: Build & Verify
 # بيئة العمل لا تحتوي Flutter/Dart وpub.dev محجوب، لذلك التحقق الآلي الحقيقي
 # (analyze / test / APK) يجري على GitHub Actions.
 
+permissions:
+  contents: write # لنشر ملخص النتائج كتعليق على الكوميت عند الفشل
+
 on:
   push:
     branches:
@@ -51,25 +54,20 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
-      # التحليل يُنشر أيضًا كتعليق على الكوميت، لأن سجلات Actions محجوبة عن
-      # بيئة العمل الحالية (الوصول لـ blob storage غير متاح) — هكذا تبقى
-      # نتائج التحليل قابلة للقراءة والمراجعة.
       - name: Analyze
-        id: analyze
         run: |
           set -o pipefail
           status=0
           dart analyze --format=machine > /tmp/analyze.txt 2>&1 || status=$?
 
           if [ "$status" -eq 0 ]; then
-            echo "✅ flutter/dart analyze: لا أخطاء ولا تحذيرات."
+            echo "✅ dart analyze: لا أخطاء ولا تحذيرات."
             exit 0
           fi
 
           echo "❌ analyze فشل — الرسائل:"
           cat /tmp/analyze.txt
 
-          # ملاحظات داخل صفحة التشغيل (أول 10 رسائل).
           head -10 /tmp/analyze.txt | while IFS='|' read -r sev type code file line col len msg; do
             case "$sev" in
               ERROR)   echo "::error file=$file,line=$line,col=$col::$code: $msg" ;;
@@ -78,22 +76,7 @@ jobs:
             esac
           done
 
-          # التعليق الكامل على الكوميت (قابل للقراءة عبر API).
-          {
-            echo "### نتيجة \`dart analyze\` (فشل)"
-            echo
-            echo '```'
-            head -250 /tmp/analyze.txt
-            echo '```'
-          } > /tmp/comment.md
-
-          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
-            -f body="$(cat /tmp/comment.md)" \
-            -H "Accept: application/vnd.github+json" || echo "تعذّر نشر التعليق."
-
           exit "$status"
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Upload analyze log
         if: always()
@@ -104,30 +87,19 @@ jobs:
           if-no-files-found: ignore
 
       - name: Test
-        id: test
         run: |
           set -o pipefail
           status=0
           flutter test --reporter expanded > /tmp/test.txt 2>&1 || status=$?
-          cat /tmp/test.txt
+          tail -120 /tmp/test.txt
 
           if [ "$status" -ne 0 ]; then
-            {
-              echo "### نتيجة \`flutter test\` (فشل)"
-              echo
-              echo '```'
-              tail -300 /tmp/test.txt
-              echo '```'
-            } > /tmp/testcomment.md
-
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
-              -f body="$(cat /tmp/testcomment.md)" \
-              -H "Accept: application/vnd.github+json" || echo "تعذّر نشر التعليق."
+            # سجلات Actions محجوبة عن بيئة العمل، لذا ننشر الناتج كملاحظات API.
+            python3 tool/ci/annotate_log.py /tmp/test.txt "flutter-test"
+            exit "$status"
           fi
 
-          exit "$status"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          echo "✅ flutter test: كل الاختبارات ناجحة."
 
       - name: Upload test log
         if: always()
@@ -142,8 +114,7 @@ jobs:
 
       - name: Report APK
         if: always()
-        run: |
-          ls -lh build/app/outputs/flutter-apk/ || true
+        run: ls -lh build/app/outputs/flutter-apk/ || true
 
       - name: Upload APK artifact
         if: success()
