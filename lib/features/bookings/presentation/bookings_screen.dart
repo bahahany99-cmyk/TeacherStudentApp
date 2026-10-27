@@ -99,9 +99,11 @@ class BookingsScreen extends StatelessWidget {
                                         style: theme.textTheme.titleMedium,
                                       ),
                                     ),
-                                    StatusChip(
-                                      label: booking.status.label,
-                                      color: _statusColor(booking.status),
+                                    Flexible(
+                                      child: StatusChip(
+                                        label: booking.status.label,
+                                        color: _statusColor(booking.status),
+                                      ),
                                     ),
                                   ],
                                 ),

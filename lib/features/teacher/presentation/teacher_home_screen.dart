@@ -129,9 +129,11 @@ class TeacherHomeScreen extends StatelessWidget {
                                       ],
                                     ),
                                   ),
-                                  const StatusChip(
-                                    label: 'بانتظار المراجعة',
-                                    color: AppColors.statusPending,
+                                  const Flexible(
+                                    child: StatusChip(
+                                      label: 'بانتظار المراجعة',
+                                      color: AppColors.statusPending,
+                                    ),
                                   ),
                                 ],
                               ),
