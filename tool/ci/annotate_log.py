@@ -28,6 +28,13 @@ MARKERS = (
     'Error:',
     'error •',
     'FAILED',
+    # صيغة `node --test`: كل فشل يبدأ بـ✖، وتفاصيله في قسم «failing tests».
+    '✖',
+    'not ok',
+    'failing tests',
+    'AssertionError',
+    'PERMISSION_DENIED',
+    'Missing or insufficient permissions',
 )
 
 

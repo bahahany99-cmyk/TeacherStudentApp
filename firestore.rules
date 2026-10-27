@@ -183,8 +183,7 @@ service cloud.firestore {
       // الأخير لا يمرّان: الثاني يرى seatsTaken مساويًا للسعة فيُرفض.
       allow update: if isGroupOwner()
         && resource.data.isActive == true
-        && request.resource.data.diff(resource.data)
-             .affectedKeys().hasOnly(['seatsTaken'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seatsTaken'])
         && request.resource.data.seatsTaken == resource.data.seatsTaken + 1
         && request.resource.data.seatsTaken <= resource.data.seatsTotal;
 
@@ -199,8 +198,7 @@ service cloud.firestore {
       // باسم طالب آخر.
       match /members/{memberId} {
         function parentTeacherId() {
-          return get(/databases/$(database)/documents/studyGroups/$(groupId))
-            .data.teacherId;
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
         }
 
         allow read: if isAdmin()
@@ -235,10 +233,17 @@ service cloud.firestore {
                 'decidedBy'];
       }
 
+      // سطر واحد لكل تعبير: أسهل في المراجعة، ولا يعتمد على متابعة السطر.
+      function groupIsActive(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.isActive == true;
+      }
+
+      function groupHasFreeSeat(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken < get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+      }
+
       function groupIsJoinable(groupId) {
-        let group = get(/databases/$(database)/documents/studyGroups/$(groupId));
-        return group.data.isActive == true
-          && group.data.seatsTaken < group.data.seatsTotal;
+        return groupIsActive(groupId) && groupHasFreeSeat(groupId);
       }
 
       function validNewRequest() {
@@ -268,9 +273,7 @@ service cloud.firestore {
         && requestId == request.resource.data.groupId + '_' + request.auth.uid
         && validNewRequest()
         && groupIsJoinable(request.resource.data.groupId)
-        && request.resource.data.teacherId ==
-             get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId))
-               .data.teacherId
+        && request.resource.data.teacherId == get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)).data.teacherId
         && request.resource.data.teacherId != request.auth.uid;
 
       // (أ) قرار المدرس: pending ← accepted/rejected، وبلا لمس أي حقل آخر.
@@ -280,16 +283,14 @@ service cloud.firestore {
         && request.resource.data.status in ['accepted', 'rejected']
         && request.resource.data.decidedBy == request.auth.uid
         && request.resource.data.decidedAt is timestamp
-        && request.resource.data.diff(resource.data)
-             .affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
 
       // (ب) إلغاء الطالب لطلبه المعلّق — الحالة فقط.
       allow update: if signedIn()
         && resource.data.studentId == request.auth.uid
         && resource.data.status == 'pending'
         && request.resource.data.status == 'cancelled'
-        && request.resource.data.diff(resource.data)
-             .affectedKeys().hasOnly(['status']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
 
       // (ج) إعادة الطلب بعد رفض/إلغاء: نفس المستند يعود pending، بشرط أن
       // تكون المجموعة ما زالت منشورة وبها مقعد (السعة تُفحص من جديد).

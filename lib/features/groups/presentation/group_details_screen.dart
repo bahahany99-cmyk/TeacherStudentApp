@@ -523,20 +523,11 @@ class _JoinPanelState extends State<_JoinPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          'الانضمام للمجموعة',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                      ),
-                      PillChip(
-                        label: JoinRules.capacityLine(widget.group),
-                        dense: true,
-                        icon: Icons.event_seat_outlined,
-                      ),
-                    ],
+                  // سطر واحد مرن: عنوان اللوحة فقط. شريحة السعة في بطاقة
+                  // المجموعة أعلاه، ووضعها هنا مع عنوان طويل يفيض على 360dp.
+                  Text(
+                    'الانضمام للمجموعة',
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   if (snapshot.connectionState == ConnectionState.waiting)
