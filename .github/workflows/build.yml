@@ -224,6 +224,35 @@ jobs:
       - name: Scaffold Android platform (deterministic, com.darsly.app)
         run: bash tool/scaffold_android.sh
 
+      # تأكيد Edge-to-Edge على مستوى المنصة: بدون شريط حالة شفاف في styles.xml
+      # يعود الشريط الأسود في شاشة الإقلاع ومعاينة «التطبيقات الحديثة»، وهذه
+      # الخطوة تُثبت أن التعديل طُبِّق فعلًا (سجلات Actions محجوبة عني).
+      - name: Verify edge-to-edge theme
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          required = [
+              'android:statusBarColor">@android:color/transparent',
+              'android:navigationBarColor">@android:color/transparent',
+              'android:windowLightStatusBar">true',
+          ]
+          ok = True
+          for name in ('values', 'values-night'):
+              path = pathlib.Path(f'android/app/src/main/res/{name}/styles.xml')
+              if not path.exists():
+                  print(f'::warning title=edge-to-edge::{path} غير موجود')
+                  continue
+              text = path.read_text(encoding='utf-8')
+              missing = [r for r in required if r not in text]
+              if missing:
+                  ok = False
+                  print(f'::error title=edge-to-edge::{path} ينقصه {len(missing)} عنصر')
+              else:
+                  print(f'::notice title=edge-to-edge::{name}/styles.xml مطابق (شريط شفاف)')
+          sys.exit(0 if ok else 1)
+          PYEOF
+
       # التوقيع يُحقن فقط إن كانت الأسرار موجودة؛ وإلا يبقى توقيع debug.
       - name: Apply release signing (إن توفّرت الأسرار)
         env:
