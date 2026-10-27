@@ -695,11 +695,18 @@ class FirestoreGroupRepository implements GroupRepository {
     });
   }
 
-  /// نقل عضو بين مجموعتين في **معاملة واحدة** (A-71).
+  /// نقل عضو بين مجموعتين في **معاملة واحدة** (A-71، A-73).
   ///
-  /// نقرأ المجموعتين والعضوية داخل المعاملة، فلا يمكن أن يمرّ النقل إلى مجموعة
-  /// امتلأت بين عرض الشاشة والكتابة. لا توسيع للسعة هنا إطلاقًا: الهدف بلا
-  /// مقعد ⇒ رفض برسالة صريحة.
+  /// نقرأ المجموعتين والعضوية **وصفوف الانضمام/الانتظار** داخل المعاملة، فلا
+  /// يمكن أن يمرّ النقل إلى مجموعة امتلأت بين عرض الشاشة والكتابة. لا توسيع
+  /// للسعة هنا إطلاقًا: الهدف بلا مقعد ⇒ رفض برسالة صريحة.
+  ///
+  /// وفي المعاملة نفسها يُنظَّف ما يتركه النقل من حالات شبح:
+  /// - **الهدف:** طلب معلّق ⇒ `accepted`، وصف انتظار ⇒ `promoted` (الطالب صار
+  ///   داخلًا فعلًا؛ إبقاء الصف معلّقًا يعني دعوة للمدرس لقبوله مرتين).
+  /// - **المصدر:** طلب `pending`/`accepted` وصف انتظار `waiting`/`promoted`
+  ///   تُحذف — لا معنى لطلب «مقبول» لطالب خارج المجموعة. السجلات المغلقة
+  ///   (مرفوض/ملغى/غادر) تبقى كما هي لأنها تاريخ لا حالة.
   @override
   Future<MemberMove> moveMember({
     required String memberId,
@@ -721,6 +728,30 @@ class FirestoreGroupRepository implements GroupRepository {
           .collection(FirestoreCollections.groupMembers)
           .doc(memberId);
 
+      // معرّفات الصفوف حتمية (`groupId_studentId`)، فلا حاجة إلى استعلام.
+      final DocumentReference<Map<String, dynamic>> fromRequestRef = _joinRequests
+          .doc(
+            GroupJoinRequest.idFor(
+              groupId: fromGroupId,
+              studentId: memberId,
+            ),
+          );
+      final DocumentReference<Map<String, dynamic>> toRequestRef = _joinRequests
+          .doc(
+            GroupJoinRequest.idFor(groupId: toGroupId, studentId: memberId),
+          );
+      final DocumentReference<Map<String, dynamic>> fromWaitlistRef = _waitlist
+          .doc(
+            GroupWaitlistEntry.idFor(
+              groupId: fromGroupId,
+              studentId: memberId,
+            ),
+          );
+      final DocumentReference<Map<String, dynamic>> toWaitlistRef = _waitlist
+          .doc(
+            GroupWaitlistEntry.idFor(groupId: toGroupId, studentId: memberId),
+          );
+
       return _firestore.runTransaction<MemberMove>((
         Transaction transaction,
       ) async {
@@ -732,6 +763,14 @@ class FirestoreGroupRepository implements GroupRepository {
             await transaction.get(fromMemberRef);
         final DocumentSnapshot<Map<String, dynamic>> targetMemberSnapshot =
             await transaction.get(toMemberRef);
+        final DocumentSnapshot<Map<String, dynamic>> fromRequestSnapshot =
+            await transaction.get(fromRequestRef);
+        final DocumentSnapshot<Map<String, dynamic>> toRequestSnapshot =
+            await transaction.get(toRequestRef);
+        final DocumentSnapshot<Map<String, dynamic>> fromWaitlistSnapshot =
+            await transaction.get(fromWaitlistRef);
+        final DocumentSnapshot<Map<String, dynamic>> toWaitlistSnapshot =
+            await transaction.get(toWaitlistRef);
 
         final Map<String, Object?>? fromData = fromSnapshot.data();
         final Map<String, Object?>? toData = toSnapshot.data();
@@ -780,6 +819,25 @@ class FirestoreGroupRepository implements GroupRepository {
 
         final int fromSeats = from.seatsTaken > 0 ? from.seatsTaken - 1 : 0;
         final int toSeats = JoinRules.seatsAfterAccept(to.seatsTaken);
+        final DateTime now = DateTime.now();
+
+        // ما ينبغي تنظيفه — يُحسب قبل الكتابة حتى تُعاد النتيجة للواجهة.
+        final String? fromRequestStatus =
+            fromRequestSnapshot.data()?['status'] as String?;
+        final bool clearsFromRequest =
+            fromRequestSnapshot.exists &&
+            (fromRequestStatus == JoinRequestStatus.pending.name ||
+                fromRequestStatus == JoinRequestStatus.accepted.name);
+        final String? fromWaitlistStatus =
+            fromWaitlistSnapshot.data()?['status'] as String?;
+        final bool clearsFromWaitlist =
+            fromWaitlistSnapshot.exists &&
+            (fromWaitlistStatus == WaitlistStatus.waiting.name ||
+                fromWaitlistStatus == WaitlistStatus.promoted.name);
+        final bool acceptsToRequest =
+            toRequestSnapshot.data()?['status'] == JoinRequestStatus.pending.name;
+        final bool promotesToWaitlist =
+            toWaitlistSnapshot.data()?['status'] == WaitlistStatus.waiting.name;
 
         // (1) المصدر ينقص مقعدًا — ولا حقل آخر يتغيّر.
         transaction.update(fromRef, <String, Object?>{'seatsTaken': fromSeats});
@@ -794,12 +852,44 @@ class FirestoreGroupRepository implements GroupRepository {
           'name': member.name,
           'joinedAt': member.joinedAt,
           'status': 'active',
+          // أثر النقل: يشرح للمدرس من أين جاء العضو، ويبقى بعد النقل لأن
+          // العضوية نفسها تنتقل بتاريخ انضمامها الأصلي (A-73).
+          'movedAt': now,
+          'movedFromGroupTitle': from.title,
         });
+
+        // (4) الهدف: إغلاق الصفوف المفتوحة بدل تركها معلّقة لعضو صار داخلًا.
+        if (acceptsToRequest) {
+          transaction.update(toRequestRef, <String, Object?>{
+            'status': JoinRequestStatus.accepted.name,
+            'decidedAt': now,
+            'decidedBy': teacherId,
+          });
+        }
+        if (promotesToWaitlist) {
+          transaction.update(toWaitlistRef, <String, Object?>{
+            'status': WaitlistStatus.promoted.name,
+            'decidedAt': now,
+            'decidedBy': teacherId,
+          });
+        }
+
+        // (5) المصدر: حذف الصفوف التي صارت بلا معنى بعد خروج العضو.
+        if (clearsFromRequest) {
+          transaction.delete(fromRequestRef);
+        }
+        if (clearsFromWaitlist) {
+          transaction.delete(fromWaitlistRef);
+        }
 
         return MemberMove(
           member: member,
           from: _withSeats(from, fromSeats),
           to: _withSeats(to, toSeats),
+          acceptedJoinRequest: acceptsToRequest,
+          promotedWaitlist: promotesToWaitlist,
+          clearedSourceRecords:
+              (clearsFromRequest ? 1 : 0) + (clearsFromWaitlist ? 1 : 0),
         );
       });
     });

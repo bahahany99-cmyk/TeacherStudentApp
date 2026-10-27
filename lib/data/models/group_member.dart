@@ -9,12 +9,28 @@ class GroupMember {
     required this.name,
     required this.joinedAt,
     this.status = GroupMemberStatus.active,
+    this.movedAt,
+    this.movedFromGroupTitle,
   });
 
   final String id;
   final String name;
   final DateTime joinedAt;
   final GroupMemberStatus status;
+
+  /// لحظة النقل من مجموعة أخرى — `null` للعضوية العادية.
+  ///
+  /// **لماذا حقل على العضو؟** لأن النقل لا ينشئ عضوية جديدة: العضو نفسه ينتقل
+  /// بتاريخ انضمامه الأصلي. هذا الحقل هو الأثر الوحيد الذي يشرح للمدرس أن
+  /// العضو جاء من مجموعة أخرى (P9 — لا إشعارات ولا دوال خادم، A-67).
+  final DateTime? movedAt;
+
+  /// عنوان المجموعة التي جاء منها العضو — للنص فقط، ويُحفظ وقت النقل لأن
+  /// عنوان المجموعة المصدري قد يتغيّر أو تُوقَف لاحقًا.
+  final String? movedFromGroupTitle;
+
+  /// هل وصل هذا العضو إلى المجموعة بنقل من مجموعة أخرى؟
+  bool get wasMoved => movedAt != null;
 
   String get initials {
     final String trimmed = name.trim();

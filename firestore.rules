@@ -20,6 +20,9 @@ rules_version = '2';
 //   7. سعة المجموعة (P9): حدّ **صارم 40**، ولا تُقلَّب تحت المنضمين، ولا
 //      تتغيّر مع seatsTaken في كتابة واحدة. والنقل بين مجموعتين يحرّك مقعدًا
 //      في كل اتجاه ويُنشئ عضوية تحمل groupId مطابقًا لمسارها.
+//   8. تنظيف صفوف النقل (P9): المالك يحذف طلب انضمام أو صف انتظار **لطالب ليس
+//      عضوًا** في المجموعة. لا يُفتح الحذف على العضوية ولا على المقاعد، فلا
+//      يستطيع أحد «تحرير مقعد» بالحذف.
 //
 // المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
 // مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
@@ -218,7 +221,9 @@ service cloud.firestore {
       // ومعرّف المستند يجب أن يساوي معرّف الطالب نفسه، فلا يمكن كتابة عضو
       // مزيّف باسم طالب آخر. ويُشترط أيضًا:
       //   - `groupId` داخل المستند يساوي مسار المجموعة (ربط صريح لا يُزوَّر)،
-      //   - ألّا تتجاوز العضوية سعة المجموعة (A-71).
+      //   - ألّا تتجاوز العضوية سعة المجموعة (A-71)،
+      //   - وحقول أثر النقل (`movedAt` / `movedFromGroupTitle`) اختيارية
+      //     ومقيّدة النوع والحجم — يكتبها التطبيق وحده في معاملة النقل.
       match /members/{memberId} {
         function parentTeacherId() {
           return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
@@ -241,7 +246,13 @@ service cloud.firestore {
           && request.auth.uid == parentTeacherId()
           && memberId == request.resource.data.studentId
           && request.resource.data.keys().hasOnly(
-               ['studentId', 'groupId', 'name', 'joinedAt', 'status'])
+               ['studentId', 'groupId', 'name', 'joinedAt', 'status',
+                'movedAt', 'movedFromGroupTitle'])
+          && (!('movedAt' in request.resource.data.keys())
+              || request.resource.data.movedAt is timestamp)
+          && (!('movedFromGroupTitle' in request.resource.data.keys())
+              || (request.resource.data.movedFromGroupTitle is string
+                  && request.resource.data.movedFromGroupTitle.size() <= 80))
           && request.resource.data.groupId == groupId
           && request.resource.data.status == 'active'
           && request.resource.data.joinedAt is timestamp
@@ -439,8 +450,15 @@ service cloud.firestore {
         && request.resource.data.teacherId == resource.data.teacherId
         && groupIsJoinable(resource.data.groupId);
 
-      // لا حذف من التطبيق: سجل الطلب يبقى للسجل التاريخي.
-      allow delete: if isAdmin();
+      // حذف السجل (P9): صاحب المجموعة، وفقط لصف طالب **ليس عضوًا** فيها الآن.
+      // يُستخدم في معاملة نقل العضو: صفوف المجموعة المصدر تُحذف بعد خروج
+      // العضو، فلا يبقى طلب «مقبول» لطالب لم يعد عضوًا (حالة شبح). ولا يمسّ
+      // الحذف المقاعد ولا العضوية، ولذلك لا يحتاج أي فحص سعة.
+      allow delete: if isAdmin() || (
+        signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && !exists(/databases/$(database)/documents/studyGroups/$(resource.data.groupId)/members/$(resource.data.studentId))
+      );
     }
 
     // ── 4-ب) groupWaitlist/{entryId} — قائمة انتظار المجموعة المكتملة (P9) ──
@@ -524,8 +542,14 @@ service cloud.firestore {
         && groupIsActive(resource.data.groupId)
         && groupIsFull(resource.data.groupId);
 
-      // لا حذف من التطبيق: سجل الانتظار يبقى.
-      allow delete: if isAdmin();
+      // حذف الصف (P9): صاحب المجموعة، وفقط لطالب **ليس عضوًا** فيها الآن.
+      // نفس منطق طلبات الانضمام: تنظيف صفوف المجموعة المصدر في معاملة النقل،
+      // ولا أثر على المقاعد.
+      allow delete: if isAdmin() || (
+        signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && !exists(/databases/$(database)/documents/studyGroups/$(resource.data.groupId)/members/$(resource.data.studentId))
+      );
     }
 
     // ── 5) bookingRequests/{bookingId} ───────────────────────────────────────

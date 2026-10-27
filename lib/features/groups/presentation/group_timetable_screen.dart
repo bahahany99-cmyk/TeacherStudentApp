@@ -24,6 +24,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
+import 'package:teacher_student_app/data/validation/move_rules.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
 
 /// الجدول الأسبوعي للمجموعة (P9).
@@ -255,6 +256,8 @@ class _TimetableBody extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                const InfoNote(text: MoveRules.notMemberHint),
                 const SizedBox(height: AppSpacing.sm),
                 FilledButton(
                   onPressed: () => Navigator.of(context).pushNamed(

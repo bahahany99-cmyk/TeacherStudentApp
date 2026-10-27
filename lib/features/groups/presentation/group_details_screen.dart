@@ -474,6 +474,13 @@ class _JoinPanelState extends State<_JoinPanel> {
     final GroupRepository groups = AppServicesScope.of(context).groups;
     final String studentId = CurrentStudent.idOf(session);
     return _JoinState(
+      // العضوية تُقرأ من مستند العضو نفسه لا من سجل الطلب: الطالب المنقول من
+      // مجموعة أخرى قد يحمل طلبًا قديمًا حالته «مرفوض» أو «ملغى»، فلا يجوز أن
+      // تظهر له دعوة لإعادة الطلب وهو عضو بالفعل (A-73).
+      isMember: await groups.isMember(
+        groupId: widget.group.id,
+        userId: studentId,
+      ),
       request: await groups.findMyRequest(
         groupId: widget.group.id,
         studentId: studentId,
@@ -665,6 +672,18 @@ class _JoinPanelState extends State<_JoinPanel> {
     final GroupJoinRequest? request = state?.request;
     final GroupWaitlistEntry? waitlist = state?.waitlist;
 
+    // العضوية أولًا وقبل أي حالة قديمة: من نُقل إلى هذه المجموعة عضوٌ فعلًا
+    // حتى لو بقي له صفّ قديم في الطلبات أو قائمة الانتظار.
+    if (state?.isMember ?? false) {
+      return const Row(
+        children: <Widget>[
+          Icon(Icons.verified_outlined, color: AppColors.statusAccepted),
+          SizedBox(width: AppSpacing.xs),
+          Expanded(child: Text('أنت عضو في هذه المجموعة.')),
+        ],
+      );
+    }
+
     // سبب إضافي غير مرتبط بالطلب نفسه (مجموعة موقوفة/مكتملة/أنت المدرس).
     final String? blocked = JoinRules.requestBlockReason(
       group: widget.group,
@@ -800,9 +819,16 @@ class _JoinPanelState extends State<_JoinPanel> {
   }
 }
 
-/// حالة الانضمام للطالب: طلب انضمام + صف قائمة انتظار (P9).
+/// حالة الانضمام للطالب: عضوية + طلب انضمام + صف قائمة انتظار (P9).
 class _JoinState {
-  const _JoinState({required this.request, required this.waitlist});
+  const _JoinState({
+    required this.isMember,
+    required this.request,
+    required this.waitlist,
+  });
+
+  /// عضو مقبول الآن — المرجع الأول لأي قرار في اللوحة.
+  final bool isMember;
 
   final GroupJoinRequest? request;
   final GroupWaitlistEntry? waitlist;

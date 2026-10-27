@@ -23,6 +23,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
+import 'package:teacher_student_app/data/validation/move_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// محادثة المجموعة (P9) — قناة واحدة لكل مجموعة.
@@ -183,6 +184,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                   ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
+                          const SizedBox(height: AppSpacing.xs),
+                          const InfoNote(text: MoveRules.notMemberHint),
                           const SizedBox(height: AppSpacing.sm),
                           FilledButton(
                             onPressed: () => Navigator.of(context).pushNamed(

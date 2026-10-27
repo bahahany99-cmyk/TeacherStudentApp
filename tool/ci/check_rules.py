@@ -12,6 +12,7 @@
 5. أن كل `match` لمجموعة معروفة موجود.
 6. أن إزالة العضو تحرّر مقعدًا واحدًا، وأن قائمة الانتظار للمكتملة فقط.
 7. أن سعة المجموعة محدودة بـ40، وأن العضو يحمل `groupId` مطابقًا لمساره.
+8. أن حذف صفوف الطلبات/الانتظار للمالك مشروط بألّا يكون الطالب عضوًا.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -174,6 +175,10 @@ def main() -> int:
         problems.append('studyGroups: لا قاعدة لزيادة مقعد عند النقل/القبول')
     if 'validSeats()' not in code or 'request.resource.data.seatsTotal >= request.resource.data.seatsTaken' not in code:
         problems.append('studyGroups: السعة قد تقل عن المنضمين')
+    if "'movedAt', 'movedFromGroupTitle'" not in code:
+        problems.append('members: حقول أثر النقل غير مسموح بها')
+    if code.count('!exists(/databases/$(database)/documents/studyGroups/$(resource.data.groupId)/members/$(resource.data.studentId))') != 2:
+        problems.append('الحذف النظيف لصفوف النقل غير مفروض على الطلبات والانتظار')
 
     # 11) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):

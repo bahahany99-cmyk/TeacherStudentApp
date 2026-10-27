@@ -162,6 +162,16 @@ const asAdmin = () =>
   testEnv.authenticatedContext('admin-1', { admin: true }).firestore();
 const asGuest = () => testEnv.unauthenticatedContext().firestore();
 
+/** يقرأ مستندًا متجاوزًا القواعد — للتحقق من الحالة النهائية لا من الصلاحية. */
+async function readAsAdmin(path) {
+  let data = null;
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const snap = await getDoc(doc(context.firestore(), path));
+    data = snap.exists() ? snap.data() : null;
+  });
+  return data;
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
@@ -1580,14 +1590,7 @@ describe('P9 — نقل العضو بين مجموعتين (معاملة واح�
       });
     });
 
-  const snapshot = async (path) => {
-    let data;
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const snap = await getDoc(doc(context.firestore(), path));
-      data = snap.exists() ? snap.data() : null;
-    });
-    return data;
-  };
+  const snapshot = readAsAdmin;
 
   it('النقل يحرّك مقعدًا في كل اتجاه وينقل ارتباط العضو', async () => {
     await seedTwoGroups();
@@ -1677,6 +1680,204 @@ describe('P9 — نقل العضو بين مجموعتين (معاملة واح�
     // الربط الصحيح ⇒ قبول.
     await assertSucceeds(
       setDoc(doc(asTeacher(), 'studyGroups/g2/members/student-7'), member('g2')),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P9 — تنظيف صفوف الطلبات والانتظار عند نقل العضو', () => {
+  const requestDoc = (groupId, studentId, status = 'pending') => ({
+    groupId,
+    groupTitle: 'الرياضيات',
+    teacherId: 'teacher-1',
+    studentId,
+    studentName: 'طالب',
+    status,
+    requestedAt: now(),
+    ...(status === 'pending' ? {} : { decidedAt: now(), decidedBy: 'teacher-1' }),
+  });
+
+  const waitlistDoc = (groupId, studentId, status = 'waiting') => ({
+    groupId,
+    groupTitle: 'الرياضيات',
+    teacherId: 'teacher-1',
+    studentId,
+    studentName: 'طالب',
+    status,
+    addedAt: now(),
+    ...(status === 'waiting' ? {} : { decidedAt: now(), decidedBy: 'teacher-1' }),
+  });
+
+  const requestPath = joinPath;
+
+  it('المالك يحذف صف طالب ليس عضوًا (طلب انضمام)', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'accepted') },
+    ]);
+
+    await assertSucceeds(
+      deleteDoc(doc(asTeacher(), requestPath('g1', 'student-9'))),
+    );
+    assert.equal(
+      await readAsAdmin(requestPath('g1', 'student-9')),
+      null,
+    );
+  });
+
+  it('لا يُحذف صف طالب عضو في المجموعة', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 1 }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+      { path: requestPath('g1', 'student-1'), data: requestDoc('g1', 'student-1', 'accepted') },
+    ]);
+
+    await assertFails(deleteDoc(doc(asTeacher(), requestPath('g1', 'student-1'))));
+  });
+
+  it('مدرس آخر والطالب لا يحذفان صفوف الطلبات', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'rejected') },
+    ]);
+
+    await assertFails(
+      deleteDoc(
+        doc(testEnv.authenticatedContext('teacher-2').firestore(), requestPath('g1', 'student-9')),
+      ),
+    );
+    await assertFails(
+      deleteDoc(doc(asStudent(), requestPath('g1', 'student-9'))),
+    );
+  });
+
+  it('المالك يحذف صف انتظار لطالب ليس عضوًا فقط', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: 6 }) },
+      { path: waitlistPath('g1', 'student-9'), data: waitlistDoc('g1', 'student-9', 'promoted') },
+    ]);
+
+    await assertFails(
+      deleteDoc(doc(asStudent(), waitlistPath('g1', 'student-9'))),
+    );
+    await assertSucceeds(
+      deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-9'))),
+    );
+  });
+
+  it('لا يُحذف صف انتظار طالب عضو في المجموعة', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: 6 }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1', 'waiting') },
+    ]);
+
+    await assertFails(deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))));
+  });
+
+  it('المعاملة الكاملة: نقل + تنظيف في دفعة واحدة', async () => {
+    await seed([
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: 3 }),
+      },
+      {
+        path: 'studyGroups/g2',
+        data: groupDoc('teacher-1', { title: 'الفيزياء', seatsTotal: 5, seatsTaken: 2 }),
+      },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+      // سجل قديم في المصدر + صفوف مفتوحة في الهدف.
+      { path: requestPath('g1', 'student-1'), data: requestDoc('g1', 'student-1', 'accepted') },
+      { path: requestPath('g2', 'student-1'), data: requestDoc('g2', 'student-1', 'pending') },
+      { path: waitlistPath('g2', 'student-1'), data: waitlistDoc('g2', 'student-1', 'waiting') },
+    ]);
+
+    const db = asTeacher();
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const fromSnap = await tx.get(doc(db, 'studyGroups/g1'));
+        const toSnap = await tx.get(doc(db, 'studyGroups/g2'));
+        const from = fromSnap.data();
+        const to = toSnap.data();
+
+        tx.update(doc(db, 'studyGroups/g1'), { seatsTaken: from.seatsTaken - 1 });
+        tx.update(doc(db, 'studyGroups/g2'), { seatsTaken: to.seatsTaken + 1 });
+
+        tx.delete(doc(db, 'studyGroups/g1/members/student-1'));
+        tx.set(doc(db, 'studyGroups/g2/members/student-1'), {
+          studentId: 'student-1',
+          groupId: 'g2',
+          name: 'طالب',
+          joinedAt: now(),
+          status: 'active',
+          movedAt: now(),
+          movedFromGroupTitle: 'الرياضيات',
+        });
+
+        // الهدف: إغلاق الصفوف المفتوحة.
+        tx.update(doc(db, requestPath('g2', 'student-1')), {
+          status: 'accepted',
+          decidedAt: now(),
+          decidedBy: 'teacher-1',
+        });
+        tx.update(doc(db, waitlistPath('g2', 'student-1')), {
+          status: 'promoted',
+          decidedAt: now(),
+          decidedBy: 'teacher-1',
+        });
+
+        // المصدر: حذف السجل الذي صار بلا معنى.
+        tx.delete(doc(db, requestPath('g1', 'student-1')));
+      }),
+    );
+
+    const movedMember = await readAsAdmin('studyGroups/g2/members/student-1');
+    assert.equal(movedMember.groupId, 'g2');
+    assert.equal(movedMember.movedFromGroupTitle, 'الرياضيات');
+    assert.ok(movedMember.movedAt, 'أثر النقل مكتوب');
+
+    assert.equal(await readAsAdmin(requestPath('g1', 'student-1')), null, 'سجل المصدر محذوف');
+    assert.equal((await readAsAdmin(requestPath('g2', 'student-1'))).status, 'accepted');
+    assert.equal((await readAsAdmin(waitlistPath('g2', 'student-1'))).status, 'promoted');
+    assert.equal((await readAsAdmin('studyGroups/g1')).seatsTaken, 2);
+    assert.equal((await readAsAdmin('studyGroups/g2')).seatsTaken, 3);
+  });
+
+  it('العضو مع أثر النقل: حقول مسموحة بأنواع صحيحة فقط', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 2 }) },
+    ]);
+
+    const base = {
+      studentId: 'student-5',
+      groupId: 'g1',
+      name: 'طالب',
+      joinedAt: now(),
+      status: 'active',
+    };
+    const path = 'studyGroups/g1/members/student-5';
+
+    await assertFails(
+      setDoc(doc(asTeacher(), path), { ...base, movedAt: 'أمس' }),
+    );
+    await assertFails(
+      setDoc(doc(asTeacher(), path), { ...base, movedFromGroupTitle: 42 }),
+    );
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), path), {
+        ...base,
+        movedAt: now(),
+        movedFromGroupTitle: 'الرياضيات',
+      }),
     );
   });
 });

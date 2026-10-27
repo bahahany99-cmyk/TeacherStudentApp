@@ -186,6 +186,8 @@ GroupMember? groupMemberFromMap(String id, Map<String, Object?> data) {
     status: readString(data['status']) == 'waitlist'
         ? GroupMemberStatus.waitlist
         : GroupMemberStatus.active,
+    movedAt: readDate(data['movedAt']),
+    movedFromGroupTitle: readString(data['movedFromGroupTitle']),
   );
 }
 

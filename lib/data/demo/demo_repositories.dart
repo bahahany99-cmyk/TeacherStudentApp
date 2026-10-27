@@ -556,7 +556,8 @@ class DemoGroupRepository implements GroupRepository {
     });
   }
 
-  /// نقل عضو بين مجموعتين — بنفس ضمانات المعاملة في Firestore.
+  /// نقل عضو بين مجموعتين — بنفس ضمانات المعاملة في Firestore، بما فيها تنظيف
+  /// صفوف الانضمام والانتظار (A-73).
   @override
   Future<MemberMove> moveMember({
     required String memberId,
@@ -577,6 +578,7 @@ class DemoGroupRepository implements GroupRepository {
 
       final StudyGroup from = _groups[fromIndex];
       final StudyGroup to = _groups[toIndex];
+      final DateTime now = DateTime.now();
       if (from.teacherId != teacherId || to.teacherId != teacherId) {
         throw const AppException.permission(debugMessage: 'not group owner');
       }
@@ -637,6 +639,8 @@ class DemoGroupRepository implements GroupRepository {
           name: moving.name,
           // تاريخ الانضمام الأصلي محفوظ: النقل ليس عضوية جديدة.
           joinedAt: moving.joinedAt,
+          movedAt: now,
+          movedFromGroupTitle: from.title,
         ),
       );
       _acceptedMembers[to.id] = toAccepted;
@@ -655,7 +659,30 @@ class DemoGroupRepository implements GroupRepository {
       _groups[fromIndex] = fromAfter;
       _groups[toIndex] = toAfter;
 
-      return MemberMove(member: moving, from: fromAfter, to: toAfter);
+      // ── تنظيف صفوف الانضمام/الانتظار (A-73) ────────────────────────────
+      // الهدف: إغلاق الصفوف المفتوحة. المصدر: حذف الصفوف التي صارت بلا معنى.
+      final bool acceptedRequest = _resolveRequestInTarget(
+        groupId: to.id,
+        studentId: memberId,
+        now: now,
+        teacherId: teacherId,
+      );
+      final bool promotedWaitlist = _resolveWaitlistInTarget(
+        groupId: to.id,
+        studentId: memberId,
+        now: now,
+        teacherId: teacherId,
+      );
+      final int cleared = _clearSourceRecords(from.id, memberId);
+
+      return MemberMove(
+        member: moving,
+        from: fromAfter,
+        to: toAfter,
+        acceptedJoinRequest: acceptedRequest,
+        promotedWaitlist: promotedWaitlist,
+        clearedSourceRecords: cleared,
+      );
     });
   }
 
@@ -883,6 +910,88 @@ class DemoGroupRepository implements GroupRepository {
   }
 
   /// نسخة من المجموعة بمقاعد مشغولة مختلفة — تُستخدم في الإزالة والقبول.
+  /// طلب معلّق في المجموعة الهدف ⇒ `accepted` (الطالب صار داخلًا فعلًا).
+  bool _resolveRequestInTarget({
+    required String groupId,
+    required String studentId,
+    required DateTime now,
+    required String teacherId,
+  }) {
+    final String id = GroupJoinRequest.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+    for (int i = 0; i < _joinRequests.length; i++) {
+      if (_joinRequests[i].id != id || !_joinRequests[i].isPending) {
+        continue;
+      }
+      _joinRequests[i] = _joinRequests[i].copyWith(
+        status: JoinRequestStatus.accepted,
+        decidedAt: now,
+        decidedBy: teacherId,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /// صف انتظار `waiting` في المجموعة الهدف ⇒ `promoted`.
+  bool _resolveWaitlistInTarget({
+    required String groupId,
+    required String studentId,
+    required DateTime now,
+    required String teacherId,
+  }) {
+    final String id = GroupWaitlistEntry.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+    for (int i = 0; i < _waitlist.length; i++) {
+      if (_waitlist[i].id != id || !_waitlist[i].isWaiting) {
+        continue;
+      }
+      _waitlist[i] = _waitlist[i].copyWith(
+        status: WaitlistStatus.promoted,
+        decidedAt: now,
+        decidedBy: teacherId,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /// حذف صفوف المجموعة المصدر التي لم تعد تعبّر عن حالة حقيقية.
+  ///
+  /// نُبقي السجلات المغلقة (مرفوض/ملغى/غادر) لأنها تاريخ، ونحذف فقط ما يظهر
+  /// كحالة قائمة: طلب `pending`/`accepted` لم يعد عضوًا، وانتظار
+  /// `waiting`/`promoted` لطالب خارج المجموعة.
+  int _clearSourceRecords(String groupId, String studentId) {
+    final String requestId = GroupJoinRequest.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+    final String waitlistId = GroupWaitlistEntry.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+
+    final int before =
+        _joinRequests.length + _waitlist.length;
+    _joinRequests.removeWhere(
+      (GroupJoinRequest r) =>
+          r.id == requestId &&
+          (r.status == JoinRequestStatus.pending ||
+              r.status == JoinRequestStatus.accepted),
+    );
+    _waitlist.removeWhere(
+      (GroupWaitlistEntry e) =>
+          e.id == waitlistId &&
+          (e.status == WaitlistStatus.waiting ||
+              e.status == WaitlistStatus.promoted),
+    );
+    return before - (_joinRequests.length + _waitlist.length);
+  }
+
   StudyGroup _copyWithSeats(StudyGroup group, int seatsTaken, {int? seatsTotal}) {
     return StudyGroup(
       id: group.id,

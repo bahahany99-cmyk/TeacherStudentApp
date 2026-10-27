@@ -237,7 +237,8 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
       }
       AppSnackBar.show(
         context,
-        'نُقل «${move.member.name}» إلى «${move.to.title}».',
+        'نُقل «${move.member.name}» إلى «${move.to.title}»'
+        '${move.summary}',
         type: AppMessageType.success,
       );
     } on AppException catch (error) {
@@ -484,6 +485,17 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
+                          if (member.wasMoved) ...<Widget>[
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              'نُقل من '
+                              '«${member.movedFromGroupTitle ?? 'مجموعة أخرى'}» '
+                              'في ${_formatDate(member.movedAt!)}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
