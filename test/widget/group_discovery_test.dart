@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
+import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
@@ -85,7 +86,8 @@ void main() {
       await tester.pumpWidget(_host(_services()));
       await tester.pumpAndSettle();
 
-      await tapVisible(tester, find.text('مكتملة'));
+      // «مكتملة» تظهر أيضًا كشارة على بطاقة المجموعة، فنضغط حبة الفلتر نفسها.
+      await tapVisible(tester, find.widgetWithText(PillChip, 'مكتملة'));
 
       expect(find.text('مجموعة الفيزياء — الحديثة'), findsOneWidget);
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsNothing);
@@ -104,7 +106,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('لا نتائج'), findsOneWidget);
-      expect(find.textContaining('تفريغ الفلاتر'), findsOneWidget);
+      // زر التفريغ يظهر في الشريط وفي حالة «لا نتائج» معًا.
+      expect(find.textContaining('تفريغ الفلاتر'), findsWidgets);
     });
 
     testWidgets('تفريغ الفلاتر يعيد كل المجموعات ويخفي الزر', (
@@ -120,7 +123,7 @@ void main() {
       expect(find.text('تأسيس النحو'), findsOneWidget);
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsNothing);
 
-      await tapVisible(tester, find.textContaining('تفريغ الفلاتر'));
+      await tapVisible(tester, find.text('تفريغ الفلاتر (1)'));
 
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsOneWidget);
       expect(find.textContaining('تفريغ الفلاتر'), findsNothing);

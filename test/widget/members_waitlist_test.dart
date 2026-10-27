@@ -70,7 +70,8 @@ void main() {
 
       expect(find.text('الأعضاء'), findsOneWidget);
       expect(find.text('قائمة الانتظار'), findsOneWidget);
-      expect(find.text('سلمى مجدي'), findsOneWidget);
+      // الاسم يظهر في الأعضاء (من مولّد الأسماء) وفي قائمة الانتظار معًا.
+      expect(find.text('سلمى مجدي'), findsWidgets);
       expect(find.text('كريم طارق'), findsOneWidget);
       expect(find.text('6 / 6 مقعد'), findsOneWidget);
       expect(tester.takeException(), isNull);
