@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
@@ -80,24 +81,31 @@ class _AppShellState extends State<AppShell> {
           final AppTabSpec currentSpec = specs[index < 0 ? 0 : index];
 
           return PopScope(
-            // من الرئيسية نسمح بالخروج؛ ومن أي قسم آخر نعترض الرجوع.
-            canPop: effectiveTab == firstTab,
+            // نعترض الرجوع دائمًا لتنفيذ سلوك واحد واضح:
+            // - من قسم غير الرئيسية → العودة للرئيسية.
+            // - من الرئيسية → تلميح أول مرة، ثم خروج فعلي في المرة الثانية.
+            canPop: false,
             onPopInvokedWithResult: (bool didPop, Object? result) {
               if (didPop) {
                 return;
               }
+
               if (effectiveTab != firstTab) {
                 _shell.goTo(firstTab);
                 return;
               }
+
               if (!_exitHintShown) {
-                _exitHintShown = true;
+                setState(() => _exitHintShown = true);
                 AppSnackBar.show(
                   context,
                   'اضغط رجوع مرة أخرى للخروج من التطبيق',
                   type: AppMessageType.info,
                 );
+                return;
               }
+
+              SystemNavigator.pop();
             },
             child: Scaffold(
               appBar: AppBar(

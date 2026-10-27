@@ -13,8 +13,8 @@ from __future__ import annotations
 import pathlib
 import sys
 
-MAX_ANNOTATIONS = 10
-LINES_PER_ANNOTATION = 40
+MAX_ANNOTATIONS = 40
+LINES_PER_ANNOTATION = 60
 
 
 def escape(value: str) -> str:
