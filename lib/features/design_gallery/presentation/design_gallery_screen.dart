@@ -129,7 +129,7 @@ class DesignGalleryScreen extends StatelessWidget {
                   title: 'مقياس المسافات',
                   subtitle: 'xxs 4 · xs 8 · sm 12 · md 16 · lg 24 · xl 32 · xxl 48',
                 ),
-                AppCard(
+                const AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -170,7 +170,7 @@ class DesignGalleryScreen extends StatelessWidget {
 
                 // ---------- الحقول ----------
                 const SectionHeader(title: 'الحقول'),
-                AppCard(
+                const AppCard(
                   child: Column(
                     children: <Widget>[
                       const TextField(
@@ -208,7 +208,7 @@ class DesignGalleryScreen extends StatelessWidget {
                   subtitle: 'خلفيات ناعمة وسطوح عائمة بدل الألوان المسطّحة',
                   icon: Icons.gradient_outlined,
                 ),
-                AppCard(
+                const AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -304,7 +304,7 @@ class DesignGalleryScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                AppCard(
+                const AppCard(
                   child: Wrap(
                     spacing: AppSpacing.xs,
                     runSpacing: AppSpacing.xs,
