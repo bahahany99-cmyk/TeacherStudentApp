@@ -56,12 +56,14 @@ abstract final class AppSnackBar {
     switch (type) {
       case AppMessageType.info:
         return theme.colorScheme.primary;
+      // v4.1: لا أخضر في التطبيق (A-54)؛ النجاح وردي فاتح واضح على الشريط
+      // الداكن، والتحذير مغرة دافئة، والخطأ وردي محروق.
       case AppMessageType.success:
-        return const Color(0xFF4ADE80);
+        return const Color(0xFFE9A7B8);
       case AppMessageType.warning:
-        return const Color(0xFFFBBF24);
+        return const Color(0xFFE0B27A);
       case AppMessageType.error:
-        return const Color(0xFFF87171);
+        return const Color(0xFFE88A96);
     }
   }
 

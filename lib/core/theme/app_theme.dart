@@ -7,18 +7,19 @@ import 'package:teacher_student_app/core/theme/app_typography.dart';
 
 /// الثيم الموحّد للتطبيق (فاتح/داكن).
 ///
-/// نسخة 2 من النظام البصري (المعتمدة 2026-10-27):
+/// النسخة 4.1 (2026-10-27):
 /// - **حواف دائرية واضحة**: الأزرار والشرائح `StadiumBorder` (حبة دواء)،
 ///   والبطاقات 24، والحقول 18.
-/// - **سطوح عائمة**: خلفية الشاشة تدرّج ناعم (`AppGradients.page`) والبطاقات
-///   بيضاء بظل مزدوج رقيق (`AppShadows.card`).
-/// - **أزرار أعلى**: 54 نقطة لأزرار الإجراء الأساسية، مع حشوة أفقية أوسع.
+/// - **سطوح عائمة**: خلفية بيضاء بلمسة بلاش علوية (`AppGradients.page`)،
+///   والبطاقات بيضاء بظل مزدوج رقيق (`AppShadows.card`).
+/// - **نص داكن حادّ**: `onSurface` شبه أسود و`onSurfaceVariant` رمادي متوسط،
+///   بلا زرقة ولا صبغة وردية على النص — أعلى تباين ممكن على الأبيض.
 ///
 /// ملاحظة: لا نضيف تخصيصات لمكوّنات لا تُستخدم فعليًا، لتقليل المخاطر عند
 /// ترقية Flutter.
 abstract final class AppTheme {
   static ThemeData get light => _build(
-    ColorScheme.fromSeed(seedColor: AppColors.seed),
+    _lightScheme(),
     Brightness.light,
   );
 
@@ -29,6 +30,23 @@ abstract final class AppTheme {
     ),
     Brightness.dark,
   );
+
+  /// لوحة النظام في الوضع الفاتح.
+  ///
+  /// `ColorScheme.fromSeed` يشتق نصًا بنفسجيًا مسائيًا (`onSurface` مائل
+  /// للبنفسجي) وخلفيات مصبوغة قليلًا؛ نستبدلها صراحة:
+  /// - `onSurface` شبه أسود (تباين 17:1 على الأبيض) ⇒ «حِدّة» الطباعة.
+  /// - `onSurfaceVariant` رمادي دافئ متوسط (6.4:1) للنص الثانوي.
+  /// - `surface` أبيض صريح: البطاقات والحقول بيضاء لا «بيضاء مائلة».
+  static ColorScheme _lightScheme() {
+    final ColorScheme seeded = ColorScheme.fromSeed(seedColor: AppColors.seed);
+    return seeded.copyWith(
+      surface: Colors.white,
+      onSurface: AppColors.textPrimary,
+      onSurfaceVariant: AppColors.textSecondary,
+      outlineVariant: const Color(0xFFEADFE4),
+    );
+  }
 
   static ThemeData _build(ColorScheme scheme, Brightness brightness) {
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);

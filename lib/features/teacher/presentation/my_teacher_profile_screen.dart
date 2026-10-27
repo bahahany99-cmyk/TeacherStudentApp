@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -83,7 +84,9 @@ class _MyProfileBody extends StatelessWidget {
                   Expanded(
                     child: Text(
                       profile.displayName,
-                      style: theme.textTheme.titleLarge,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
@@ -103,10 +106,11 @@ class _MyProfileBody extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sectionGap),
         const SectionHeader(
           title: 'المعلومات الظاهرة للطلاب',
           subtitle: 'هذه هي الحقول التي تُعرض في ملفك العام',
+          icon: Icons.visibility_outlined,
         ),
         AppCard(
           child: Column(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
@@ -105,7 +106,9 @@ class _TeacherProfileBody extends StatelessWidget {
                       children: <Widget>[
                         Text(
                           teacher.displayName,
-                          style: theme.textTheme.titleLarge,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.xxs),
                         Text(
@@ -158,10 +161,11 @@ class _TeacherProfileBody extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sectionGap),
         const SectionHeader(
           title: 'نبذة',
           subtitle: 'كما كتبها المدرس في ملفه',
+          icon: Icons.article_outlined,
         ),
         AppCard(
           child: Text(
@@ -169,10 +173,11 @@ class _TeacherProfileBody extends StatelessWidget {
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.7),
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sectionGap),
         const SectionHeader(
           title: 'مجموعات هذا المدرس',
-          subtitle: 'السعة معروضة للعلم فقط؛ الانضمام غير مفعّل بعد',
+          subtitle: 'افتح المجموعة لإرسال طلب انضمام ينتظر موافقة المدرس',
+          icon: Icons.groups_outlined,
         ),
         AsyncView<List<StudyGroup>>(
           load: () => AppServicesScope.of(
@@ -200,7 +205,7 @@ class _TeacherProfileBody extends StatelessWidget {
             );
           },
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sectionGap),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(

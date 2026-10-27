@@ -5,6 +5,7 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
@@ -13,6 +14,7 @@ import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
+import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// أسماء المجموعات في Firestore — مكان واحد، مطابقة لـ`firestore.rules`.
@@ -21,6 +23,7 @@ abstract final class FirestoreCollections {
   static const String teacherProfiles = 'teacherProfiles';
   static const String studyGroups = 'studyGroups';
   static const String groupMembers = 'members';
+  static const String groupJoinRequests = 'groupJoinRequests';
   static const String bookingRequests = 'bookingRequests';
 }
 
@@ -241,6 +244,317 @@ class FirestoreGroupRepository implements GroupRepository {
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
+
+  // ── P8: طلبات الانضمام ────────────────────────────────────────────────────
+
+  CollectionReference<Map<String, dynamic>> get _joinRequests =>
+      _firestore.collection(FirestoreCollections.groupJoinRequests);
+
+  /// طلب انضمام داخل معاملة: نقرأ المجموعة **طازجة** لا من نسخة الواجهة.
+  ///
+  /// القواعد تشترط أن يكون الطلب لطالب مسجّل، والمجموعة نشطة، وأن المعرّف
+  /// `groupId_studentId`؛ والتحقق هنا يعطي رسالة عربية قبل الوصول للخادم.
+  @override
+  Future<GroupJoinRequest> requestToJoin({
+    required StudyGroup group,
+    required String studentId,
+    required String studentName,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        group.id,
+      );
+      final DocumentReference<Map<String, dynamic>> requestRef = _joinRequests
+          .doc(
+            GroupJoinRequest.idFor(groupId: group.id, studentId: studentId),
+          );
+
+      return _firestore.runTransaction<GroupJoinRequest>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? current = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+
+        final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
+            await transaction.get(requestRef);
+        final JoinRequestStatus? existing = requestSnapshot.exists
+            ? JoinRequestStatus.parse(
+                requestSnapshot.data()?['status'],
+              )
+            : null;
+
+        final String? reason = JoinRules.requestBlockReason(
+          group: current,
+          viewerId: studentId,
+          existingStatus: existing,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'join blocked',
+          );
+        }
+
+        final GroupJoinRequest request = buildJoinRequest(
+          group: current,
+          studentId: studentId,
+          studentName: studentName,
+        );
+        final ValidationResult valid = JoinRules.validateRequest(
+          groupTitle: request.groupTitle,
+          studentName: request.studentName,
+          studentId: request.studentId,
+          groupId: request.groupId,
+        );
+        if (!valid.isValid) {
+          throw AppException.invalidInput(debugMessage: valid.firstMessage);
+        }
+
+        // `set` متعمّد: إعادة الطلب بعد رفض/إلغاء تستبدل المستند نفسه.
+        transaction.set(requestRef, request.toCreateMap());
+        return request;
+      });
+    });
+  }
+
+  @override
+  Future<GroupJoinRequest?> findMyRequest({
+    required String groupId,
+    required String studentId,
+  }) {
+    return _guard(() async {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _joinRequests
+          .doc(GroupJoinRequest.idFor(groupId: groupId, studentId: studentId))
+          .get();
+      final Map<String, Object?>? data = doc.data();
+      if (!doc.exists || data == null) {
+        return null;
+      }
+      return joinRequestFromMap(doc.id, data);
+    });
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> listRequestsForGroup(String groupId) {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _joinRequests
+          .where('groupId', isEqualTo: groupId)
+          .get();
+      return sortJoinRequests(
+        mapDocuments(snapshot.docs.map(_entry), joinRequestFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> listMyRequests(String studentId) {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _joinRequests
+          .where('studentId', isEqualTo: studentId)
+          .get();
+      return sortJoinRequests(
+        mapDocuments(snapshot.docs.map(_entry), joinRequestFromMap),
+      );
+    });
+  }
+
+  /// **العملية الذرّية الحاسمة:** القبول يزيد المقعد ويغيّر حالة الطلب وينشئ
+  /// العضو في معاملة واحدة. لو حُسب المقعد في الواجهة لكان طلبان متزامنان
+  /// يحصلان على المقعد الأخير معًا.
+  @override
+  Future<GroupJoinRequest> decideJoinRequest({
+    required GroupJoinRequest request,
+    required String teacherId,
+    required bool approve,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        request.groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> requestRef = _joinRequests
+          .doc(request.id);
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(request.studentId);
+
+      return _firestore.runTransaction<GroupJoinRequest>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
+            await transaction.get(requestRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        final Map<String, Object?>? requestData = requestSnapshot.data();
+        if (!groupSnapshot.exists ||
+            groupData == null ||
+            !requestSnapshot.exists ||
+            requestData == null) {
+          throw const AppException.notFound(
+            debugMessage: 'group or request missing',
+          );
+        }
+
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        final GroupJoinRequest? current = joinRequestFromMap(
+          requestSnapshot.id,
+          requestData,
+        );
+        if (group == null || current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group or request unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+
+        final DateTime now = DateTime.now();
+
+        if (!approve) {
+          if (!current.isPending) {
+            throw const AppException(
+              AppErrorKind.invalidInput,
+              overrideMessage: 'هذا الطلب لم يعد معلّقًا.',
+            );
+          }
+          transaction.update(requestRef, <String, Object?>{
+            'status': JoinRequestStatus.rejected.name,
+            'decidedAt': now,
+            'decidedBy': teacherId,
+          });
+          return current.copyWith(
+            status: JoinRequestStatus.rejected,
+            decidedAt: now,
+            decidedBy: teacherId,
+          );
+        }
+
+        // فحص السعة على القراءة الطازجة داخل المعاملة.
+        final String? reason = JoinRules.acceptBlockReason(
+          group: group,
+          request: current,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'accept blocked',
+          );
+        }
+
+        transaction.update(groupRef, <String, Object?>{
+          'seatsTaken': JoinRules.seatsAfterAccept(group.seatsTaken),
+        });
+        transaction.update(requestRef, <String, Object?>{
+          'status': JoinRequestStatus.accepted.name,
+          'decidedAt': now,
+          'decidedBy': teacherId,
+        });
+        transaction.set(memberRef, <String, Object?>{
+          'studentId': current.studentId,
+          'name': current.studentName,
+          'joinedAt': now,
+          'status': 'active',
+        });
+
+        return current.copyWith(
+          status: JoinRequestStatus.accepted,
+          decidedAt: now,
+          decidedBy: teacherId,
+        );
+      });
+    });
+  }
+
+  @override
+  Future<GroupJoinRequest> cancelJoinRequest({
+    required GroupJoinRequest request,
+    required String studentId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> requestRef = _joinRequests
+          .doc(request.id);
+
+      return _firestore.runTransaction<GroupJoinRequest>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot =
+            await transaction.get(requestRef);
+        final Map<String, Object?>? data = snapshot.data();
+        if (!snapshot.exists || data == null) {
+          throw const AppException.notFound(debugMessage: 'request missing');
+        }
+        final GroupJoinRequest? current = joinRequestFromMap(
+          snapshot.id,
+          data,
+        );
+        if (current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'request unreadable',
+          );
+        }
+        if (current.studentId != studentId) {
+          throw const AppException.permission(
+            debugMessage: 'not request owner',
+          );
+        }
+        if (!current.isPending) {
+          throw const AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: 'لا يمكن إلغاء طلب تم البتّ فيه.',
+          );
+        }
+
+        final DateTime now = DateTime.now();
+        // الإلغاء يكتب الحالة فقط: القواعد تقبل تغييرًا لا يمسّ بقية الحقول.
+        transaction.update(requestRef, <String, Object?>{
+          'status': JoinRequestStatus.cancelled.name,
+        });
+        return current.copyWith(
+          status: JoinRequestStatus.cancelled,
+          decidedAt: now,
+          decidedBy: studentId,
+        );
+      });
+    });
+  }
+}
+
+/// ترتيب طلبات الانضمام: المعلّقة أولًا (الأقدم أولًا) ثم المقرَّرة.
+///
+/// لماذا في العميل؟ تجنّب فهرس مركّب آخر مقابل ترتيب بسيط لقائمة قصيرة
+/// (طلبات مجموعة واحدة لا تتجاوز عشرات).
+List<GroupJoinRequest> sortJoinRequests(List<GroupJoinRequest> requests) {
+  final List<GroupJoinRequest> sorted = <GroupJoinRequest>[...requests];
+  sorted.sort((GroupJoinRequest a, GroupJoinRequest b) {
+    if (a.isPending != b.isPending) {
+      return a.isPending ? -1 : 1;
+    }
+    return a.requestedAt.compareTo(b.requestedAt);
+  });
+  return List<GroupJoinRequest>.unmodifiable(sorted);
 }
 
 /// قراءة طلبات الحجز الخاصة بالمستخدم الحالي.

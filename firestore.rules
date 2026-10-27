@@ -9,6 +9,8 @@ rules_version = '2';
 //      ملفه بكل حالاته ولا يستطيع تغيير status.
 //   3. لا وصول إداري من التطبيق: الاعتماد والتمييز بأدوات إدارية خارجية
 //      (Firebase Console أو سكربت بمفتاح خدمة لا يصل للتطبيق).
+//   4. المجموعات (P7) وصاحبها فقط يكتب، والطلبات (P8) لكل طالب طلبه الواحد،
+//      وحجز المقعد زيادة واحدة ذرّية يقبلها الخادم لا الواجهة.
 //
 // المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
 // مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
@@ -132,6 +134,12 @@ service cloud.firestore {
           && request.resource.data.seatsTotal >= request.resource.data.seatsTaken;
       }
 
+      function groupKeys() {
+        return ['teacherId', 'teacherName', 'title', 'subject', 'stage',
+                'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
+                'isActive'];
+      }
+
       allow read: if isAdmin()
         || (signedIn() && (
              resource.data.isActive == true
@@ -140,10 +148,7 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.teacherId == request.auth.uid
-        && request.resource.data.keys().hasOnly([
-             'teacherId', 'teacherName', 'title', 'subject', 'stage',
-             'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
-             'isActive'])
+        && request.resource.data.keys().hasOnly(groupKeys())
         && request.resource.data.seatsTaken == 0
         && request.resource.data.isActive == true
         && validGroupPayload()
@@ -154,15 +159,13 @@ service cloud.firestore {
                  && request.resource.data.scheduleNote.size() <= 120)
            );
 
-      // التعديل: المالك فقط، ولا يغيّر المالك ولا المقاعد المشغولة.
+      // (أ) تعديل البيانات العادي: المالك فقط، ولا يغيّر المالك ولا المقاعد
+      // المشغولة. قبول الطلبات له قاعدة منفصلة (ب) لأن القواعد تُقيَّم كـOR.
       allow update: if isAdmin() || (
         isGroupOwner()
         && request.resource.data.teacherId == resource.data.teacherId
         && request.resource.data.seatsTaken == resource.data.seatsTaken
-        && request.resource.data.keys().hasOnly([
-             'teacherId', 'teacherName', 'title', 'subject', 'stage',
-             'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
-             'isActive'])
+        && request.resource.data.keys().hasOnly(groupKeys())
         && validGroupPayload()
         && validSeats()
         && (
@@ -172,24 +175,139 @@ service cloud.firestore {
            )
       );
 
+      // (ب) حجز مقعد عند قبول طلب انضمام (P8):
+      //   - المالك فقط، والمجموعة منشورة.
+      //   - **لا يتغيّر أي حقل آخر** غير seatsTaken (diff.hasOnly).
+      //   - الزيادة **واحد بالضبط** ولا تتجاوز السعة الكلية.
+      // وبما أن المعاملة تُعيد قراءة المستند، فإن قبولين متزامنين على المقعد
+      // الأخير لا يمرّان: الثاني يرى seatsTaken مساويًا للسعة فيُرفض.
+      allow update: if isGroupOwner()
+        && resource.data.isActive == true
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['seatsTaken'])
+        && request.resource.data.seatsTaken == resource.data.seatsTaken + 1
+        && request.resource.data.seatsTaken <= resource.data.seatsTotal;
+
       allow delete: if isAdmin();
 // (نص scheduleNote الفارغ مقبول: يعني «بلا موعد محدد».)
 
       // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
-      // الطالب لا يرى أسماء بقية الطلاب (خصوصية)، والانضمام (P8) يتم على
-      // الخادم بعملية ذرية تمنع تجاوز السعة.
+      // الطالب لا يرى أسماء بقية الطلاب (خصوصية).
+      //
+      // الإنشاء مسموح للمالك فقط لأنه يحدث داخل معاملة قبول الطلب؛ ومعرّف
+      // المستند يجب أن يساوي معرّف الطالب نفسه، فلا يمكن كتابة عضو مزيّف
+      // باسم طالب آخر.
       match /members/{memberId} {
+        function parentTeacherId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId))
+            .data.teacherId;
+        }
+
         allow read: if isAdmin()
-          || (signedIn()
-              && request.auth.uid ==
-                 get(/databases/$(database)/documents/studyGroups/$(groupId))
-                   .data.teacherId);
-        allow write: if isAdmin();
+          || (signedIn() && request.auth.uid == parentTeacherId());
+
+        allow create: if isAdmin() || (
+          signedIn()
+          && request.auth.uid == parentTeacherId()
+          && memberId == request.resource.data.studentId
+          && request.resource.data.keys().hasOnly(
+               ['studentId', 'name', 'joinedAt', 'status'])
+          && request.resource.data.status == 'active'
+          && request.resource.data.joinedAt is timestamp
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+        );
+
+        // لا تعديل ولا إزالة من التطبيق (إزالة عضو إجراء إداري لاحقًا).
+        allow update, delete: if isAdmin();
       }
     }
 
-    // ── 4) bookingRequests/{bookingId} ───────────────────────────────────────
-    // القراءة لطرفي الطلب فقط. الكتابة (إنشاء/قبول/رفض) = P8.
+    // ── 4) groupJoinRequests/{requestId} — طلبات الانضمام (P8) ───────────────
+    // المعرّف حتمي: `groupId_studentId`، فطلب واحد لكل طالب في كل مجموعة.
+    // المالك منسوخ في المستند (teacherId) حتى تكون القراءة فحصًا على حقول
+    // المستند نفسه بلا get() لكل سطر في القائمة.
+    match /groupJoinRequests/{requestId} {
+      function joinRequestKeys() {
+        return ['groupId', 'groupTitle', 'teacherId', 'studentId',
+                'studentName', 'status', 'requestedAt', 'decidedAt',
+                'decidedBy'];
+      }
+
+      function groupIsJoinable(groupId) {
+        let group = get(/databases/$(database)/documents/studyGroups/$(groupId));
+        return group.data.isActive == true
+          && group.data.seatsTaken < group.data.seatsTotal;
+      }
+
+      function validNewRequest() {
+        return request.resource.data.groupId is string
+          && request.resource.data.groupTitle is string
+          && request.resource.data.groupTitle.size() >= 3
+          && request.resource.data.groupTitle.size() <= 80
+          && request.resource.data.teacherId is string
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && request.resource.data.requestedAt is timestamp
+          && request.resource.data.status == 'pending'
+          && request.resource.data.keys().hasOnly(joinRequestKeys());
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.studentId == request.auth.uid
+             || resource.data.teacherId == request.auth.uid
+           ));
+
+      // الطالب ينشئ طلبه فقط، لطالب مسجّل، لمجموعة منشورة بها مقعد، وبمعرّف
+      // المستند المشتق. لا يستطيع كتابة حالة غير pending ولا نسب الطلب لمدرس آخر.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && requestId == request.resource.data.groupId + '_' + request.auth.uid
+        && validNewRequest()
+        && groupIsJoinable(request.resource.data.groupId)
+        && request.resource.data.teacherId ==
+             get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId))
+               .data.teacherId
+        && request.resource.data.teacherId != request.auth.uid;
+
+      // (أ) قرار المدرس: pending ← accepted/rejected، وبلا لمس أي حقل آخر.
+      allow update: if signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+
+      // (ب) إلغاء الطالب لطلبه المعلّق — الحالة فقط.
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['status']);
+
+      // (ج) إعادة الطلب بعد رفض/إلغاء: نفس المستند يعود pending، بشرط أن
+      // تكون المجموعة ما زالت منشورة وبها مقعد (السعة تُفحص من جديد).
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status in ['rejected', 'cancelled']
+        && validNewRequest()
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.teacherId == resource.data.teacherId
+        && groupIsJoinable(resource.data.groupId);
+
+      // لا حذف من التطبيق: سجل الطلب يبقى للسجل التاريخي.
+      allow delete: if isAdmin();
+    }
+
+    // ── 5) bookingRequests/{bookingId} ───────────────────────────────────────
+    // القراءة لطرفي الطلب فقط. الكتابة (إنشاء/قبول/رفض) لم تُفتح بعد.
     match /bookingRequests/{bookingId} {
       allow read: if isAdmin()
         || (signedIn() && (
@@ -200,7 +318,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ── 5) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
+    // ── 6) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

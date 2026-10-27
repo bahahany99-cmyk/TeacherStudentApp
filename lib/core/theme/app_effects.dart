@@ -4,39 +4,42 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 
 /// التدرّجات اللونية الناعمة.
 ///
-/// النسخة 4 (2026-10-27): اللوحة كلها **وردية فاخرة** بدل الأخضر/النعناع.
-/// لا كتل مشبعة: غسيل وردي باهت أعلى الصفحة يتلاشى إلى الأبيض، ثم لمسة لافندر
-/// وردية في الأسفل — نفس بنية المرجع البصري.
+/// النسخة 4.1 (2026-10-27): **الخلفية بيضاء صريحة**، والوردي محصور في الحافة
+/// العلوية ثم يتلاشى إلى الأبيض قبل أول بطاقة. لا غسيل في الأسفل ولا هالات
+/// ملوّنة: البطاقات البيضاء هي التي تحمل العمق، والظل المزدوج هو ما يفصلها.
 ///
 /// القاعدة الحاكمة: **لا يُكتب تدرّج داخل شاشة**. كل خلفية أو سطح متدرّج يأتي
 /// من هنا، حتى يبقى المظهر موحّدًا وقابلًا للتعديل من نقطة واحدة (A-44).
 abstract final class AppGradients {
-  /// خلفية الصفحات: وردي باهت ← أبيض ← أبيض ← لافندر وردي.
+  /// خلفية الصفحات: بلاش في الحافة العلوية فقط ← أبيض صريح لبقية الشاشة.
   ///
-  /// النسب مقصودة: التلاشي إلى الأبيض يبدأ مبكرًا (35%) حتى تبقى مساحة واسعة
-  /// نظيفة للبطاقات البيضاء، فلا تظهر أي «كتلة لون» خلف المحتوى.
+  /// المحطتان الأولى والثانية تصنعان «تلاشيًا رقيقًا»: اللون يذوب إلى الأبيض
+  /// عند 26% من ارتفاع الشاشة تقريبًا، أي قبل أول بطاقة على أي هاتف — فلا
+  /// تُصبغ مساحة المحتوى بالوردي، وتبقى البطاقات بيضاء على أبيض مع ظلالها.
   static const LinearGradient page = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: <Color>[
-      AppColors.washRose,
+      AppColors.blushTop,
+      AppColors.blushSoft,
       Color(0xFFFFFFFF),
       Color(0xFFFFFFFF),
-      AppColors.washLilac,
     ],
-    stops: <double>[0.0, 0.35, 0.72, 1.0],
+    stops: <double>[0.0, 0.12, 0.30, 1.0],
   );
 
-  /// خلفية أدفأ (صفحات الحساب/الملف الشخصي) — خوخي ← أبيض ← وردي.
+  /// نفس البنية بلمسة خوخية دافئة (صفحات الحساب/الملف الشخصي).
+  /// تبقى بيضاء في معظم الشاشة، فالفرق بين الصفحتين «مزاج» لا «لون».
   static const LinearGradient pageWarm = LinearGradient(
     begin: AlignmentDirectional.topEnd,
     end: AlignmentDirectional.bottomStart,
     colors: <Color>[
+      AppColors.blushTop,
       AppColors.washPeach,
       Color(0xFFFFFFFF),
-      AppColors.washRose,
+      Color(0xFFFFFFFF),
     ],
-    stops: <double>[0.0, 0.45, 1.0],
+    stops: <double>[0.0, 0.10, 0.28, 1.0],
   );
 
   /// سطح «لمعة» للبطاقات التمهيدية (بديل الكتلة المشبعة).
@@ -47,11 +50,11 @@ abstract final class AppGradients {
     begin: AlignmentDirectional.topStart,
     end: AlignmentDirectional.bottomEnd,
     colors: <Color>[
-      AppColors.washRose,
+      AppColors.blushSoft,
       Color(0xFFFFFFFF),
-      AppColors.washLilac,
+      Color(0xFFFFFFFF),
     ],
-    stops: <double>[0.0, 0.55, 1.0],
+    stops: <double>[0.0, 0.42, 1.0],
   );
 
   /// التدرّج الوحيد المشبع — محصور في شعار صغير (84 نقطة) على شاشة الدخول.

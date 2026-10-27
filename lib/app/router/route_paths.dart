@@ -32,6 +32,10 @@ abstract final class RoutePaths {
   /// أعضاء مجموعة (واجهة المدرس). `arguments` = معرّف المجموعة.
   static const String groupMembers = '/group/members';
 
+  /// طلبات الانضمام (P8). `arguments` = معرّف المجموعة للمدرس، ويُتجاهل في
+  /// واجهة الطالب (تعرض طلباته في كل المجموعات).
+  static const String groupRequests = '/group/requests';
+
   /// تفاصيل طلب حجز. `arguments` = معرّف الطلب.
   static const String bookingDetails = '/booking';
 

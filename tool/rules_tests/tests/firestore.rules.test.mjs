@@ -28,6 +28,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
   updateDoc,
   where,
@@ -79,6 +80,20 @@ const groupDoc = (teacherId, overrides = {}) => ({
   isActive: true,
   ...overrides,
 });
+
+/** طلب انضمام (P8): المالك منسوخ في المستند، والمعرّف `groupId_studentId`. */
+const joinRequestDoc = (groupId, studentId, overrides = {}) => ({
+  groupId,
+  groupTitle: 'التفاضل',
+  teacherId: 'teacher-1',
+  studentId,
+  studentName: 'طالب',
+  status: 'pending',
+  requestedAt: now(),
+  ...overrides,
+});
+
+const joinPath = (groupId, studentId) => `groupJoinRequests/${groupId}_${studentId}`;
 
 const bookingDoc = (studentId, teacherId, overrides = {}) => ({
   studentId,
@@ -308,7 +323,7 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-describe('studyGroups — قراءة مقيّدة، وكل كتابة مرفوضة الآن', () => {
+describe('studyGroups — قراءة مقيّدة وكتابة للمالك فقط', () => {
   it('الطالب يقرأ المجموعة النشطة فقط', async () => {
     await seed([
       {
@@ -522,6 +537,326 @@ describe('studyGroups/{id}/members — خصوصية أسماء الطلاب', ()
         doc(asStudent(), 'studyGroups/g1/members/student-1'),
         member('student-1'),
       ),
+    );
+  });
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P8 — طلبات الانضمام: من ينشئها ومن يقرأها', () => {
+  const seedGroup = (overrides = {}) =>
+    seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1', overrides) }]);
+
+  it('الطالب ينشئ طلبه لمجموعة منشورة وبها مقعد', async () => {
+    await seedGroup({ seatsTaken: 3 });
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('لا ينشئ طالب طلبًا باسم طالب آخر', async () => {
+    await seedGroup();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-2')),
+        joinRequestDoc('g1', 'student-2'),
+      ),
+    );
+  });
+
+  it('المعرّف المشتق إلزامي (لا مستندان لطالب واحد)', async () => {
+    await seedGroup();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'groupJoinRequests/طلب-عشوائي'),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('المجموعة الموقوفة لا تقبل طلبات', async () => {
+    await seedGroup({ isActive: false });
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('المجموعة المكتملة لا تقبل طلبات', async () => {
+    await seedGroup({ seatsTaken: 12 });
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('لا يُنشأ طلب بحالة مقبولة، ولا بحقل إضافي، ولا بمالك مختلف', async () => {
+    await seedGroup();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1', { status: 'accepted' }),
+      ),
+    );
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1', { teacherId: 'teacher-2' }),
+      ),
+    );
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        { ...joinRequestDoc('g1', 'student-1'), isAdmin: true },
+      ),
+    );
+  });
+
+  it('المدرس يقرأ طلبات مجموعته، والطالب يقرأ طلبه فقط', async () => {
+    await seedGroup();
+    await seed([
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+    const path = joinPath('g1', 'student-1');
+    await assertSucceeds(getDoc(doc(asTeacher(), path)));
+    await assertSucceeds(getDoc(doc(asStudent(), path)));
+    await assertFails(getDoc(doc(asOther(), path)));
+
+    // قائمة طلبات مجموعة: للمدرس فقط.
+    const listFor = (db, groupId) =>
+      getDocs(query(collection(db, 'groupJoinRequests'), where('groupId', '==', groupId)));
+    await assertSucceeds(listFor(asTeacher(), 'g1'));
+    await assertFails(listFor(asStudent(), 'g1'));
+  });
+});
+
+describe('P8 — القبول الذرّي وحجز المقعد', () => {
+  const seedFull = (seatsTaken) =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+  it('القبول يزيد المقعد واحدًا بالضبط ويغيّر الطلب', async () => {
+    await seedFull(3);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 4 }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), joinPath('g1', 'student-1')), {
+        status: 'accepted',
+        decidedAt: now(),
+        decidedBy: 'teacher-1',
+      }),
+    );
+  });
+
+  it('لا يمكن زيادة أكثر من مقعد، ولا تغيير حقل آخر مع الزيادة', async () => {
+    await seedFull(3);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 5 }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), {
+        seatsTaken: 4,
+        title: 'عنوان جديد',
+      }),
+    );
+  });
+
+  it('لا قبول عندما تكون المجموعة مكتملة', async () => {
+    await seedFull(12);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 13 }),
+    );
+  });
+
+  it('المجموعة الموقوفة لا تُقبل طلباتها', async () => {
+    await seed([
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTaken: 3, isActive: false }),
+      },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 4 }),
+    );
+  });
+
+  it('الطالب لا يقبل طلبه، ولا يعدّل طلب غيره، والطالب الآخر لا يقرر', async () => {
+    await seedFull(3);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        status: 'accepted',
+        decidedAt: now(),
+        decidedBy: 'student-1',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asOther(), joinPath('g1', 'student-1')), {
+        status: 'rejected',
+        decidedAt: now(),
+        decidedBy: 'stranger-9',
+      }),
+    );
+  });
+
+  it('لا قرار على طلب تم البتّ فيه', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'accepted' }),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), joinPath('g1', 'student-1')), {
+        status: 'rejected',
+        decidedAt: now(),
+        decidedBy: 'teacher-1',
+      }),
+    );
+  });
+
+  it('آخر مقعد: معاملتان متزامنتان، واحدة فقط تحجز', async () => {
+    // السعة 12 والمشغول 11: مقعد واحد متبقٍّ. معاملتان تُعيدان القراءة،
+    // والقواعد ترفض أي زيادة تتجاوز السعة، فلا يمكن أن يحصل الطالبان معًا.
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 11 }) },
+    ]);
+
+    const db = asTeacher();
+    const accept = () =>
+      runTransaction(db, async (tx) => {
+        const snap = await tx.get(doc(db, 'studyGroups/g1'));
+        const data = snap.data();
+        if (data.seatsTaken >= data.seatsTotal) {
+          throw new Error('group is full');
+        }
+        tx.update(doc(db, 'studyGroups/g1'), { seatsTaken: data.seatsTaken + 1 });
+      });
+
+    const results = await Promise.allSettled([accept(), accept()]);
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+
+    assert.equal(succeeded, 1, 'يجب أن تنجح معاملة واحدة فقط على المقعد الأخير');
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const snap = await getDoc(doc(context.firestore(), 'studyGroups/g1'));
+      assert.equal(snap.data().seatsTaken, 12, 'لا يُحجز المقعد مرتين');
+    });
+  });
+
+  it('إنشاء العضو: المالك فقط وبمعرّف الطالب نفسه', async () => {
+    await seedFull(3);
+    const member = (studentId) => ({
+      studentId,
+      name: 'طالب',
+      joinedAt: now(),
+      status: 'active',
+    });
+
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'studyGroups/g1/members/student-1'), member('student-1')),
+    );
+    await assertFails(
+      setDoc(doc(asTeacher(), 'studyGroups/g1/members/student-1'), member('student-9')),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), 'studyGroups/g1/members/student-1'), member('student-1')),
+    );
+  });
+});
+
+describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
+  it('الطالب يلغي طلبه المعلّق، ولا يلغي طلبًا مقبولًا', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+      {
+        path: joinPath('g1', 'student-2'),
+        data: joinRequestDoc('g1', 'student-2', { status: 'accepted' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        status: 'cancelled',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-2')), {
+        status: 'cancelled',
+      }),
+    );
+  });
+
+  it('إعادة الطلب بعد الرفض مسموحة ما دام هناك مقعد', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'rejected' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('لا حذف لطلب من التطبيق', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      deleteDoc(doc(asStudent(), joinPath('g1', 'student-1'))),
+    );
+    await assertFails(
+      deleteDoc(doc(asTeacher(), joinPath('g1', 'student-1'))),
     );
   });
 });

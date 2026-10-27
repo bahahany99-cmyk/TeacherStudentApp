@@ -7,6 +7,7 @@ import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 
 /// شاشة البداية: هوية بسيطة ثم توجيه حسب حالة الجلسة.
@@ -51,69 +52,64 @@ class _SplashScreenState extends State<SplashScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
-        backgroundColor: Colors.transparent,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[AppColors.seed, Color(0xFF075143)],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg * 1.4),
-                    ),
-                    child: const Icon(
-                      Icons.school_rounded,
-                      size: 52,
-                      color: AppColors.seed,
+      // شفاف: الخلفية العالمية (بلاش علوي ← أبيض) ترسم خلف الشاشة كلها.
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                // الشعار: الموضع الوحيد المسموح فيه بتدرّج مشبع (A-54).
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    gradient: AppGradients.hero,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+                    boxShadow: AppShadows.hero,
+                  ),
+                  child: const Icon(
+                    Icons.school_rounded,
+                    size: 48,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  AppStrings.appName,
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  AppStrings.appTagline,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      theme.colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Text(
-                    AppStrings.appName,
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      color: Colors.white,
-                    ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'المرحلة 4 — أساسيات Firebase',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textMuted,
                   ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    AppStrings.appTagline,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'المرحلة 4 — أساسيات Firebase',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: Colors.white60,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

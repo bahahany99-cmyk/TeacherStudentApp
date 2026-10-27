@@ -17,6 +17,10 @@ abstract final class DemoData {
   /// معرف حساب المدرس المستخدم في وضع المعاينة (يطابق أول مدرس تجريبي).
   static const String demoTeacherId = 'demo-teacher-1';
 
+  /// معرف حساب الطالب في وضع المعاينة (يطابق `studentId` في الحجوزات
+  /// التجريبية وطلبات الانضمام المحلية).
+  static const String demoStudentId = 'demo-student';
+
   static const List<TeacherProfile> teachers = <TeacherProfile>[
     TeacherProfile(
       id: 'demo-teacher-1',

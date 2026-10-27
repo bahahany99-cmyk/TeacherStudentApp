@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -182,6 +183,35 @@ GroupMember? groupMemberFromMap(String id, Map<String, Object?> data) {
     status: readString(data['status']) == 'waitlist'
         ? GroupMemberStatus.waitlist
         : GroupMemberStatus.active,
+  );
+}
+
+/// `groupJoinRequests/{id}` → [GroupJoinRequest].
+///
+/// يعيد `null` إن كان المستند بلا مجموعة أو بلا طالب — طلب بلا طرف لا معنى له
+/// ولا يجوز أن يظهر في قائمة المدرس.
+GroupJoinRequest? joinRequestFromMap(String id, Map<String, Object?> data) {
+  final String? groupId = readString(data['groupId']);
+  final String? studentId = readString(data['studentId']);
+  final String? teacherId = readString(data['teacherId']);
+  if (groupId == null || studentId == null || teacherId == null) {
+    return null;
+  }
+
+  return GroupJoinRequest(
+    id: id,
+    groupId: groupId,
+    groupTitle: readString(data['groupTitle']) ?? 'مجموعة',
+    teacherId: teacherId,
+    studentId: studentId,
+    studentName: readString(data['studentName']) ?? 'طالب',
+    status: JoinRequestStatus.parse(readString(data['status'])),
+    requestedAt:
+        readDate(data['requestedAt']) ??
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    decidedAt: readDate(data['decidedAt']),
+    decidedBy: readString(data['decidedBy']),
   );
 }
 

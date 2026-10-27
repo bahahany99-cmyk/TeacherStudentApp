@@ -27,6 +27,7 @@ REQUIRED_MATCHES = (
     'match /users/{uid}',
     'match /teacherProfiles/{uid}',
     'match /studyGroups/{groupId}',
+    'match /groupJoinRequests/{requestId}',
     'match /bookingRequests/{bookingId}',
 )
 
@@ -103,7 +104,29 @@ def main() -> int:
     if "'scheduleNote'" not in code or '.size() <= 120' not in code:
         problems.append('studyGroups: طول وصف الموعد غير مقيّد')
 
-    # 7) منع الحقول الإدارية في ملف المدرس
+    # 7) الانضمام (P8): حجز المقعد ذرّي وزيادة واحدة، والطلب للطالب نفسه
+    if "affectedKeys().hasOnly(['seatsTaken'])" not in code:
+        problems.append(
+            'studyGroups: قبول الطلب يمكنه تغيير حقول غير seatsTaken'
+        )
+    if 'request.resource.data.seatsTaken == resource.data.seatsTaken + 1' not in code:
+        problems.append('studyGroups: الزيادة عند القبول ليست مقعدًا واحدًا')
+    if 'request.resource.data.seatsTaken <= resource.data.seatsTotal' not in code:
+        problems.append('studyGroups: القبول لا يمنع تجاوز السعة')
+    if "request.resource.data.status == 'pending'" not in code:
+        problems.append('groupJoinRequests: الإنشاء غير مقيّد بحالة pending')
+    if 'request.resource.data.studentId == request.auth.uid' not in code:
+        problems.append('groupJoinRequests: الطلب غير مقيّد بصاحبه')
+    if 'memberId == request.resource.data.studentId' not in code:
+        problems.append('members: معرّف العضو لا يطابق معرّف الطالب')
+    if "resource.data.status == 'pending'" not in code:
+        problems.append('groupJoinRequests: التحديث لا يشترط أن يكون الطلب معلّقًا')
+    if "['rejected', 'cancelled']" not in code:
+        problems.append('groupJoinRequests: لا قاعدة لإعادة الطلب بعد الرفض/الإلغاء')
+    if 'groupIsJoinable(' not in code:
+        problems.append('groupJoinRequests: السعة/النشر غير مفحوصين قبل الطلب')
+
+    # 8) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:

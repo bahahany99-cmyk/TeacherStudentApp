@@ -259,4 +259,76 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('لوحة v4.1 — النقطة الحلوة (بلاش علوي ثم أبيض)', () {
+    test('الخلفية بيضاء في معظمها: التلاشي ينتهي قبل ثلث الشاشة', () {
+      final LinearGradient page = AppGradients.page;
+
+      expect(page.begin, Alignment.topCenter);
+      expect(page.colors.first, AppColors.blushTop);
+      expect(page.colors.last, Colors.white, reason: 'لا غسيل لوني في الأسفل');
+      expect(
+        page.colors.where((Color c) => c == Colors.white).length,
+        2,
+        reason: 'أكثر من نصف التدرّج أبيض صريح',
+      );
+      // الأبيض يبدأ عند 30% أو قبلها: أول بطاقة تقع على أبيض لا على وردي.
+      expect(page.stops![2], lessThanOrEqualTo(0.32));
+      expect(page.stops![3], 1.0);
+    });
+
+    test('البلاش داخل «النقطة الحلوة»: لا باهت ولا صارخ', () {
+      final HSLColor blush = HSLColor.fromColor(AppColors.blushTop);
+
+      // فاتح جدًا (L عالٍ) لكنه ليس أبيض مغبَّشًا: تشبّع كافٍ ليكون مرئيًا.
+      expect(blush.lightness, greaterThanOrEqualTo(0.85));
+      expect(blush.lightness, lessThanOrEqualTo(0.97));
+      expect(blush.saturation, greaterThanOrEqualTo(0.35));
+      expect(blush.saturation, lessThanOrEqualTo(0.75));
+      // قناة حمراء أعلى من الخضراء والزرقاء ⇒ وردي دافئ لا أخضر ولا رمادي.
+      expect(AppColors.blushTop.r, greaterThan(AppColors.blushTop.g));
+      expect(AppColors.blushTop.b, greaterThan(AppColors.blushTop.g));
+    });
+
+    test('النص داكن بتباين حادّ على الأبيض', () {
+      final double white = Colors.white.computeLuminance();
+
+      double contrast(Color color) {
+        final double lum = color.computeLuminance();
+        final double lighter = lum > white ? lum : white;
+        final double darker = lum > white ? white : lum;
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+
+      // WCAG AAA للمتون العادية هو 7:1؛ ونطلب أكثر لأن النص «حادّ».
+      expect(contrast(AppColors.textPrimary), greaterThanOrEqualTo(15));
+      expect(contrast(AppColors.textSecondary), greaterThanOrEqualTo(6));
+      expect(AppTheme.light.colorScheme.onSurface, AppColors.textPrimary);
+      expect(AppTheme.light.colorScheme.surface, Colors.white);
+    });
+
+    test('لا لون أخضر في أي هكس داخل lib (القناة الخضراء ليست الأعلى)', () {
+      // فحص شامل بدل مطاردة ألوان بعينها: أي هكس في الشجرة تكون فيه G أكبر
+      // من R وB يفشل — وهذا يغطي «أخضر»، «نعناعي»، «ليموني»، «زيتوني».
+      final RegExp hex = RegExp(r'0x[Ff][Ff]([0-9A-Fa-f]{6})');
+      final List<String> offenders = <String>[];
+
+      for (final FileSystemEntity entity in Directory('lib').listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) {
+          continue;
+        }
+        for (final RegExpMatch match in hex.allMatches(entity.readAsStringSync())) {
+          final String digits = match.group(1)!;
+          final int r = int.parse(digits.substring(0, 2), radix: 16);
+          final int g = int.parse(digits.substring(2, 4), radix: 16);
+          final int b = int.parse(digits.substring(4, 6), radix: 16);
+          if (g > r && g > b) {
+            offenders.add('${entity.path}: 0x$digits');
+          }
+        }
+      }
+
+      expect(offenders, isEmpty, reason: offenders.join('، '));
+    });
+  });
 }

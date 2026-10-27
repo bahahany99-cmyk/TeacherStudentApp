@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -13,6 +16,7 @@ import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
+import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// تنفيذات تجريبية محلية (بدون Firebase) لعقود طبقة الخدمات.
@@ -111,6 +115,31 @@ class DemoGroupRepository implements GroupRepository {
 
   int _nextId = 1;
 
+  /// طلبات الانضمام المحلية (P8) — تُفقد عند إغلاق التطبيق، مثل بقية الوضع
+  /// التجريبي، ويتضح ذلك للمستخدم في الشاشة.
+  final List<GroupJoinRequest> _joinRequests = <GroupJoinRequest>[];
+
+  /// أعضاء أُضيفوا فعليًا بالقبول (لا الأعضاء الوهميين المولَّدين من `seatsTaken`).
+  final Map<String, List<GroupMember>> _acceptedMembers =
+      <String, List<GroupMember>>{};
+
+  /// «قفل» يحاكي ذرّية المعاملة: كل عملية تُغيّر السعة تُنفَّذ بعد انتهاء ما
+  /// قبلها بالترتيب. بدون هذا، قراءتان متزامنتان ترى كلتاهما مقعدًا متاحًا
+  /// فتُقبلان معًا — وهي المشكلة نفسها التي تحلّها المعاملة في Firestore.
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final Completer<T> completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await action());
+      } on Object catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
   @override
   Future<List<StudyGroup>> listDiscoverable() async {
     return List<StudyGroup>.unmodifiable(
@@ -137,7 +166,20 @@ class DemoGroupRepository implements GroupRepository {
 
   @override
   Future<List<GroupMember>> listMembers(String groupId) async {
-    return DemoData.membersFor(groupId);
+    final List<GroupMember> accepted =
+        _acceptedMembers[groupId] ?? const <GroupMember>[];
+    final StudyGroup? group = _findGroup(groupId);
+    // الأعضاء الوهميون يملؤون ما تبقّى من المقاعد، فلا يتجاوز العدد
+    // `seatsTaken` بعد قبول عضو حقيقي في وضع المعاينة.
+    final int remaining = group == null
+        ? 0
+        : group.seatsTaken - accepted.length;
+    final int generated = remaining < 0 ? 0 : remaining;
+    final List<GroupMember> base = DemoData.membersFor(groupId);
+    return List<GroupMember>.unmodifiable(<GroupMember>[
+      ...accepted,
+      if (base.isNotEmpty) ...base.take(generated),
+    ]);
   }
 
   @override
@@ -211,6 +253,240 @@ class DemoGroupRepository implements GroupRepository {
     if (!result.isValid) {
       throw AppException.invalidInput(debugMessage: result.firstMessage);
     }
+  }
+
+  // ── P8: طلبات الانضمام ────────────────────────────────────────────────────
+
+  StudyGroup? _findGroup(String groupId) {
+    for (final StudyGroup group in _groups) {
+      if (group.id == groupId) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  GroupJoinRequest? _findRequest(String groupId, String studentId) {
+    final String id = GroupJoinRequest.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+    for (final GroupJoinRequest request in _joinRequests) {
+      if (request.id == id) {
+        return request;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<GroupJoinRequest> requestToJoin({
+    required StudyGroup group,
+    required String studentId,
+    required String studentName,
+  }) {
+    return _serialized(() async {
+      final StudyGroup? current = _findGroup(group.id);
+      if (current == null) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+
+      final GroupJoinRequest? existing = _findRequest(group.id, studentId);
+      final String? reason = JoinRules.requestBlockReason(
+        group: current,
+        viewerId: studentId,
+        existingStatus: existing?.status,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'join blocked: ${existing?.status.name}',
+        );
+      }
+
+      final GroupJoinRequest request = buildJoinRequest(
+        group: current,
+        studentId: studentId,
+        studentName: studentName,
+      );
+      final ValidationResult valid = JoinRules.validateRequest(
+        groupTitle: request.groupTitle,
+        studentName: request.studentName,
+        studentId: request.studentId,
+        groupId: request.groupId,
+      );
+      if (!valid.isValid) {
+        throw AppException.invalidInput(debugMessage: valid.firstMessage);
+      }
+
+      // إعادة المحاولة بعد رفض/إلغاء تستبدل الطلب القديم بنفس المعرّف.
+      _joinRequests.removeWhere((GroupJoinRequest r) => r.id == request.id);
+      _joinRequests.add(request);
+      return request;
+    });
+  }
+
+  @override
+  Future<GroupJoinRequest?> findMyRequest({
+    required String groupId,
+    required String studentId,
+  }) async => _findRequest(groupId, studentId);
+
+  @override
+  Future<List<GroupJoinRequest>> listRequestsForGroup(String groupId) async {
+    final List<GroupJoinRequest> mine = _joinRequests
+        .where((GroupJoinRequest r) => r.groupId == groupId)
+        .toList(growable: false);
+    return List<GroupJoinRequest>.unmodifiable(_sortRequests(mine));
+  }
+
+  @override
+  Future<List<GroupJoinRequest>> listMyRequests(String studentId) async {
+    final List<GroupJoinRequest> mine = _joinRequests
+        .where((GroupJoinRequest r) => r.studentId == studentId)
+        .toList(growable: false);
+    return List<GroupJoinRequest>.unmodifiable(_sortRequests(mine));
+  }
+
+  /// المعلّقة أولًا (الأقدم طلبًا أولًا)، ثم المقرَّرة (الأحدث أولًا).
+  List<GroupJoinRequest> _sortRequests(List<GroupJoinRequest> requests) {
+    final List<GroupJoinRequest> sorted = <GroupJoinRequest>[...requests];
+    sorted.sort((GroupJoinRequest a, GroupJoinRequest b) {
+      if (a.isPending != b.isPending) {
+        return a.isPending ? -1 : 1;
+      }
+      return a.requestedAt.compareTo(b.requestedAt);
+    });
+    return sorted;
+  }
+
+  @override
+  Future<GroupJoinRequest> decideJoinRequest({
+    required GroupJoinRequest request,
+    required String teacherId,
+    required bool approve,
+  }) {
+    // المعاملة: قراءة المجموعة + الطلب، ثم الكتابة — كلها داخل القفل.
+    return _serialized(() async {
+      final int groupIndex = _groups.indexWhere(
+        (StudyGroup g) => g.id == request.groupId,
+      );
+      if (groupIndex == -1) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+      final StudyGroup group = _groups[groupIndex];
+      if (group.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      final int requestIndex = _joinRequests.indexWhere(
+        (GroupJoinRequest r) => r.id == request.id,
+      );
+      if (requestIndex == -1) {
+        throw const AppException.notFound(debugMessage: 'demo request missing');
+      }
+      final GroupJoinRequest existing = _joinRequests[requestIndex];
+
+      if (!approve) {
+        if (!existing.isPending) {
+          throw const AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: 'هذا الطلب لم يعد معلّقًا.',
+          );
+        }
+        final GroupJoinRequest rejected = existing.copyWith(
+          status: JoinRequestStatus.rejected,
+          decidedAt: DateTime.now(),
+          decidedBy: teacherId,
+        );
+        _joinRequests[requestIndex] = rejected;
+        return rejected;
+      }
+
+      // القبول: نفس فحص الدالة النقية على **القراءة الطازجة**.
+      final String? reason = JoinRules.acceptBlockReason(
+        group: group,
+        request: existing,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'accept blocked',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      _groups[groupIndex] = StudyGroup(
+        id: group.id,
+        teacherId: group.teacherId,
+        teacherName: group.teacherName,
+        title: group.title,
+        subject: group.subject,
+        stage: group.stage,
+        seatsTotal: group.seatsTotal,
+        seatsTaken: JoinRules.seatsAfterAccept(group.seatsTaken),
+        meetingMode: group.meetingMode,
+        scheduleNote: group.scheduleNote,
+        isActive: group.isActive,
+      );
+
+      final GroupJoinRequest accepted = existing.copyWith(
+        status: JoinRequestStatus.accepted,
+        decidedAt: now,
+        decidedBy: teacherId,
+      );
+      _joinRequests[requestIndex] = accepted;
+
+      final List<GroupMember> members =
+          _acceptedMembers[group.id] ?? <GroupMember>[];
+      if (!members.any((GroupMember m) => m.id == existing.studentId)) {
+        members.add(
+          GroupMember(
+            id: existing.studentId,
+            name: existing.studentName,
+            joinedAt: now,
+          ),
+        );
+      }
+      _acceptedMembers[group.id] = members;
+
+      return accepted;
+    });
+  }
+
+  @override
+  Future<GroupJoinRequest> cancelJoinRequest({
+    required GroupJoinRequest request,
+    required String studentId,
+  }) {
+    return _serialized(() async {
+      final int index = _joinRequests.indexWhere(
+        (GroupJoinRequest r) => r.id == request.id,
+      );
+      if (index == -1) {
+        throw const AppException.notFound(debugMessage: 'demo request missing');
+      }
+      final GroupJoinRequest existing = _joinRequests[index];
+      if (existing.studentId != studentId) {
+        throw const AppException.permission(debugMessage: 'not request owner');
+      }
+      if (!existing.isPending) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: 'لا يمكن إلغاء طلب تم البتّ فيه.',
+        );
+      }
+
+      final GroupJoinRequest cancelled = existing.copyWith(
+        status: JoinRequestStatus.cancelled,
+        decidedAt: DateTime.now(),
+        decidedBy: studentId,
+      );
+      _joinRequests[index] = cancelled;
+      return cancelled;
+    });
   }
 }
 
