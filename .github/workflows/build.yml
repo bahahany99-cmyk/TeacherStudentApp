@@ -3,6 +3,10 @@ name: Build & Verify
 # بوابة G10 (معتمدة من صاحب المشروع 2026-10-26):
 # بيئة العمل لا تحتوي Flutter/Dart وpub.dev محجوب، لذلك التحقق الآلي الحقيقي
 # (analyze / test / APK) يجري على GitHub Actions.
+#
+# سياسة الموارد (قرار 2026-10-27): كل دفعة (push / PR) تُشغّل **الفحص
+# والاختبارات فقط**. بناء APK يجري **يدويًا عند الطلب** عبر workflow_dispatch،
+# حفاظًا على مساحة التخزين، لأن كل بناء ينتج APK بحجم ~70 م.ب.
 
 permissions:
   contents: write # لنشر ملخص النتائج كتعليق على الكوميت عند الفشل
@@ -13,7 +17,7 @@ on:
       - main
       - 'arena/**'
   pull_request:
-  workflow_dispatch:
+  workflow_dispatch: # ← الطلب اليدوي فقط هو ما يبني APK
 
 # نُلغي التشغيلات القديمة على نفس الفرع لتوفير دقائق CI.
 concurrency:
@@ -22,7 +26,7 @@ concurrency:
 
 jobs:
   verify:
-    name: analyze · test · apk
+    name: analyze · test
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -47,9 +51,6 @@ jobs:
           flutter --version
           dart --version
           java -version
-
-      - name: Scaffold Android platform (deterministic, com.darsly.app)
-        run: bash tool/scaffold_android.sh
 
       - name: Resolve dependencies
         run: flutter pub get
@@ -109,6 +110,36 @@ jobs:
           path: /tmp/test.txt
           if-no-files-found: ignore
 
+  # ── بناء APK: يدوي فقط (Actions ← Run workflow) ──────────────────────────────
+  build_apk:
+    name: build apk (يدوي)
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Scaffold Android platform (deterministic, com.darsly.app)
+        run: bash tool/scaffold_android.sh
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
       - name: Build debug APK
         run: flutter build apk --debug
 
@@ -123,10 +154,10 @@ jobs:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       # نسخة من مجلد android المولَّد، ليتمكّن صاحب المشروع من إضافته للمستودع
-      # مرة واحدة إن أراد (وحتى ذلك الحين، CI يولّده في كل تشغيل).
+      # مرة واحدة إن أراد (وحتى ذلك الحين، CI يولّده عند كل بناء يدوي).
       - name: Upload generated android folder
         if: success()
         uses: actions/upload-artifact@v4
@@ -134,4 +165,4 @@ jobs:
           name: generated-android-platform
           path: android/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
