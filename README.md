@@ -44,7 +44,8 @@
 |---|---|
 | التطبيق | **Flutter + Dart** — Android فقط |
 | `applicationId` | **`com.darsly.app`** (معتمد) — الاسم التجاري الظاهر لم يُعتمد بعد |
-| التحقق الآلي | **GitHub Actions**: analyze + test + APK artifact (`.github/workflows/build.yml`) |
+| التحقق الآلي | **GitHub Actions**: analyze + test + بناء APK للتحقق في كل دفعة (`.github/workflows/build.yml`) |
+| الحصول على APK للهاتف | **Releases**: أي دفعة رسالتها تحتوي `[apk]` تنشر APK (arm64 + arm) في صفحة Releases — لا حاجة إلى صلاحية `workflow_dispatch` |
 | الخلفية | **Firebase** (لا Supabase) |
 | المصادقة | **Firebase Authentication** عبر **Google** فقط |
 | قاعدة البيانات | **Cloud Firestore** لكل البيانات |
