@@ -142,6 +142,25 @@ jobs:
           ls -l build/app/outputs/flutter-apk/app-debug.apk
           echo "✅ APK جُرِّب بناؤه بنجاح (بدون رفع في وضع الدفع)."
 
+      # تسليم APK بلا الحاجة إلى workflow_dispatch (الذي لا يملكه وكيل التطوير):
+      # أي دفعة تحتوي «[apk]» في رسالة الكوميت تنشر Release مرفقًا به الملف.
+      # Releases لا تُحتسب من مساحة الـ artifacts.
+      - name: Publish APK release (عند كلمة [apk] في رسالة الكوميت)
+        if: >-
+          success() && github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[apk]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short="${GITHUB_SHA:0:7}"
+          tag="apk-${short}"
+          gh release create "$tag" \
+            build/app/outputs/flutter-apk/app-debug.apk \
+            --title "APK تجريبي ${short} — وضع الزائر" \
+            --notes "بناء تلقائي لوضع الزائر (بيانات تجريبية، بلا Firebase). الفرع: ${GITHUB_REF_NAME}. الإصدار: ${short}." \
+            --repo "${GITHUB_REPOSITORY}"
+
       - name: Upload APK artifact (يدوي فقط)
         if: success() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
