@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
+import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -24,6 +25,7 @@ import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
+import 'package:teacher_student_app/data/validation/move_rules.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
 import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
@@ -622,6 +624,9 @@ class FirestoreGroupRepository implements GroupRepository {
         });
         transaction.set(memberRef, <String, Object?>{
           'studentId': current.studentId,
+          // الربط الصريح: مستند العضو يحمل مجموعة واحدة، والقواعد تتحقق من
+          // مطابقته لمسار المستند.
+          'groupId': group.id,
           'name': current.studentName,
           'joinedAt': now,
           'status': 'active',
@@ -688,6 +693,186 @@ class FirestoreGroupRepository implements GroupRepository {
         );
       });
     });
+  }
+
+  /// نقل عضو بين مجموعتين في **معاملة واحدة** (A-71).
+  ///
+  /// نقرأ المجموعتين والعضوية داخل المعاملة، فلا يمكن أن يمرّ النقل إلى مجموعة
+  /// امتلأت بين عرض الشاشة والكتابة. لا توسيع للسعة هنا إطلاقًا: الهدف بلا
+  /// مقعد ⇒ رفض برسالة صريحة.
+  @override
+  Future<MemberMove> moveMember({
+    required String memberId,
+    required String fromGroupId,
+    required String toGroupId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> fromRef = _groups.doc(
+        fromGroupId,
+      );
+      final DocumentReference<Map<String, dynamic>> toRef = _groups.doc(
+        toGroupId,
+      );
+      final DocumentReference<Map<String, dynamic>> fromMemberRef = fromRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+      final DocumentReference<Map<String, dynamic>> toMemberRef = toRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<MemberMove>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> fromSnapshot =
+            await transaction.get(fromRef);
+        final DocumentSnapshot<Map<String, dynamic>> toSnapshot =
+            await transaction.get(toRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(fromMemberRef);
+        final DocumentSnapshot<Map<String, dynamic>> targetMemberSnapshot =
+            await transaction.get(toMemberRef);
+
+        final Map<String, Object?>? fromData = fromSnapshot.data();
+        final Map<String, Object?>? toData = toSnapshot.data();
+        final Map<String, Object?>? memberData = memberSnapshot.data();
+        if (!fromSnapshot.exists ||
+            fromData == null ||
+            !toSnapshot.exists ||
+            toData == null ||
+            !memberSnapshot.exists ||
+            memberData == null) {
+          throw const AppException.notFound(
+            debugMessage: 'source group, target group or member missing',
+          );
+        }
+
+        final StudyGroup? from = studyGroupFromMap(fromSnapshot.id, fromData);
+        final StudyGroup? to = studyGroupFromMap(toSnapshot.id, toData);
+        final GroupMember? member = groupMemberFromMap(
+          memberSnapshot.id,
+          memberData,
+        );
+        if (from == null || to == null || member == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group or member unreadable',
+          );
+        }
+        if (from.teacherId != teacherId || to.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+
+        final String? reason = MoveRules.blockReason(
+          from: from,
+          to: to,
+          sameOwner: true,
+          isMember: true,
+          targetAlreadyHasMember: targetMemberSnapshot.exists,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'move blocked',
+          );
+        }
+
+        final int fromSeats = from.seatsTaken > 0 ? from.seatsTaken - 1 : 0;
+        final int toSeats = JoinRules.seatsAfterAccept(to.seatsTaken);
+
+        // (1) المصدر ينقص مقعدًا — ولا حقل آخر يتغيّر.
+        transaction.update(fromRef, <String, Object?>{'seatsTaken': fromSeats});
+        // (2) الهدف يزيد مقعدًا — ولا حقل آخر يتغيّر.
+        transaction.update(toRef, <String, Object?>{'seatsTaken': toSeats});
+        // (3) الارتباط ينتقل: حذف من المصدر وإنشاء في الهدف بنفس الهوية
+        //     وتاريخ الانضمام الأصلي (النقل ليس عضوية جديدة).
+        transaction.delete(fromMemberRef);
+        transaction.set(toMemberRef, <String, Object?>{
+          'studentId': member.id,
+          'groupId': to.id,
+          'name': member.name,
+          'joinedAt': member.joinedAt,
+          'status': 'active',
+        });
+
+        return MemberMove(
+          member: member,
+          from: _withSeats(from, fromSeats),
+          to: _withSeats(to, toSeats),
+        );
+      });
+    });
+  }
+
+  /// تعديل السعة وحدها — بلا لمس `seatsTaken` (A-70).
+  @override
+  Future<StudyGroup> updateGroupCapacity({
+    required String groupId,
+    required String teacherId,
+    required int seatsTotal,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _groups.doc(groupId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
+            .get(ref);
+        final Map<String, Object?>? data = snapshot.data();
+        if (!snapshot.exists || data == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(snapshot.id, data);
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+
+        // الفحص على القراءة الطازجة داخل المعاملة، لا على قيمة الواجهة.
+        final String? reason = GroupRules.capacityBlockReason(
+          seatsTotal: seatsTotal,
+          seatsTaken: group.seatsTaken,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'capacity blocked',
+          );
+        }
+
+        transaction.update(ref, <String, Object?>{'seatsTotal': seatsTotal});
+        return _withSeats(group, group.seatsTaken, seatsTotal: seatsTotal);
+      });
+    });
+  }
+
+  /// نسخة من المجموعة بمقاعد معدّلة — لا نعيد بناء النموذج يدويًا في كل موضع.
+  StudyGroup _withSeats(
+    StudyGroup group,
+    int seatsTaken, {
+    int? seatsTotal,
+  }) {
+    return StudyGroup(
+      id: group.id,
+      teacherId: group.teacherId,
+      teacherName: group.teacherName,
+      title: group.title,
+      subject: group.subject,
+      stage: group.stage,
+      seatsTotal: seatsTotal ?? group.seatsTotal,
+      seatsTaken: seatsTaken,
+      meetingMode: group.meetingMode,
+      scheduleNote: group.scheduleNote,
+      isActive: group.isActive,
+    );
   }
 
   // ── P9: قائمة الانتظار ───────────────────────────────────────────────────
@@ -890,6 +1075,7 @@ class FirestoreGroupRepository implements GroupRepository {
         });
         transaction.set(memberRef, <String, Object?>{
           'studentId': current.studentId,
+          'groupId': group.id,
           'name': current.studentName,
           'joinedAt': now,
           'status': 'active',

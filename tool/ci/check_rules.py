@@ -11,6 +11,7 @@
 4. أن `users` يقيّد الدور و`teacherProfiles` يثبّت `status`.
 5. أن كل `match` لمجموعة معروفة موجود.
 6. أن إزالة العضو تحرّر مقعدًا واحدًا، وأن قائمة الانتظار للمكتملة فقط.
+7. أن سعة المجموعة محدودة بـ40، وأن العضو يحمل `groupId` مطابقًا لمساره.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -95,8 +96,8 @@ def main() -> int:
     # 6) المجموعات: الكتابة للمالك فقط، والسعة مقيّدة، والمقاعد المشغولة ثابتة
     if 'validSeats()' not in code:
         problems.append('studyGroups: لا توجد دالة تحقق للسعة (validSeats)')
-    if 'request.resource.data.seatsTotal <= 50' not in code:
-        problems.append('studyGroups: الحد الأعلى للسعة غير مفروض')
+    if 'request.resource.data.seatsTotal <= 40' not in code:
+        problems.append('studyGroups: الحد الأعلى للسعة (40) غير مفروض')
     if 'request.resource.data.seatsTaken == 0' not in code:
         problems.append('studyGroups: الإنشاء غير مقيّد بـseatsTaken = 0')
     if 'request.resource.data.seatsTaken == resource.data.seatsTaken' not in code:
@@ -162,7 +163,19 @@ def main() -> int:
     if "resource.data.status == 'left'" not in code:
         problems.append('groupWaitlist: لا قاعدة للعودة بعد المغادرة')
 
-    # 10) منع الحقول الإدارية في ملف المدرس
+    # 10) P9: نقل الأعضاء وسعة المجموعة
+    if "request.resource.data.groupId == groupId" not in code:
+        problems.append('members: ربط العضو بالمجموعة (groupId) غير مفروض')
+    if 'parentWithinCapacity()' not in code:
+        problems.append('members: لا فحص لسعة المجموعة عند إنشاء عضوية')
+    if "request.resource.data.seatsTaken == resource.data.seatsTaken - 1" not in code:
+        problems.append('studyGroups: لا قاعدة لتحرير مقعد عند النقل/الإزالة')
+    if "request.resource.data.seatsTaken == resource.data.seatsTaken + 1" not in code:
+        problems.append('studyGroups: لا قاعدة لزيادة مقعد عند النقل/القبول')
+    if 'validSeats()' not in code or 'request.resource.data.seatsTotal >= request.resource.data.seatsTaken' not in code:
+        problems.append('studyGroups: السعة قد تقل عن المنضمين')
+
+    # 11) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:

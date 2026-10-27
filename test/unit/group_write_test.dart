@@ -49,9 +49,9 @@ StudyGroup existingGroup({
 
 void main() {
   group('قواعد السعة', () {
-    test('النطاق 2..50 وأقل قيمة مسموحة تراعي المنضمين', () {
+    test('النطاق 2..40 (حدّ صارم) وأقل قيمة مسموحة تراعي المنضمين', () {
       expect(GroupRules.minSeats, 2);
-      expect(GroupRules.maxSeats, 50);
+      expect(GroupRules.maxSeats, 40);
       expect(GroupRules.minAllowedSeats(0), 2);
       expect(GroupRules.minAllowedSeats(1), 2);
       expect(GroupRules.minAllowedSeats(9), 9);

@@ -14,7 +14,7 @@ abstract final class GroupRules {
   /// أقل سعة ذات معنى (مجموعة من مقعد مذاكرة فردية لا مجموعة).
   static const int minSeats = ModelLimits.seatsMin;
 
-  /// أقصى سعة واقعية في هذه المرحلة (C-08: السعة يحددها المدرس).
+  /// أقصى سعة مسموحة — **حدّ صارم 40** (A-70)، مطابق للقواعد.
   static const int maxSeats = ModelLimits.seatsMax;
 
   /// هل يمكن قبول عضو جديد الآن؟
@@ -30,6 +30,41 @@ abstract final class GroupRules {
   /// «ممتلئة سالبًا» وكسرت شاشة العرض.
   static int minAllowedSeats(int seatsTaken) =>
       seatsTaken > minSeats ? seatsTaken : minSeats;
+
+  /// سبب رفض سعة مقترحة — أو `null` إن كانت مقبولة.
+  ///
+  /// ثلاث حدود لا يُستثنى منها شيء:
+  /// 1. لا تقل عن [minSeats].
+  /// 2. لا تزيد عن [maxSeats] (40) — حدّ صارم، فلا «توسيع» يلتف على الاكتمال.
+  /// 3. لا تقل عن عدد المنضمين فعلًا؛ وإلا صارت المجموعة ممتلئة بالسالب.
+  ///
+  /// الدالة تُستخدم في نموذج التعديل وفي المستودعين **داخل المعاملة** على
+  /// القراءة الطازجة، فلا تنفع قيمة قديمة من واجهة المستخدم.
+  static String? capacityBlockReason({
+    required int seatsTotal,
+    required int seatsTaken,
+  }) {
+    if (seatsTotal < minSeats) {
+      return 'السعة لا تقل عن $minSeats مقعدين.';
+    }
+    if (seatsTotal > maxSeats) {
+      return 'الحد الأقصى لسعة المجموعة $maxSeats مقعدًا.';
+    }
+    if (seatsTotal < seatsTaken) {
+      return 'لا يمكن تقليل السعة عن $seatsTaken عضوًا منضمًا.';
+    }
+    return null;
+  }
+
+  static bool canSetCapacity({
+    required int seatsTotal,
+    required int seatsTaken,
+  }) =>
+      capacityBlockReason(
+        seatsTotal: seatsTotal,
+        seatsTaken: seatsTaken,
+      ) ==
+      null;
 
   /// تحقق كامل من المسودة (إنشاء أو تعديل).
   ///

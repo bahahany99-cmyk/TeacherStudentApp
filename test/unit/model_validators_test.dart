@@ -99,7 +99,7 @@ void main() {
       );
     });
 
-    test('السعة خارج النطاق مرفوضة (أقل من 2 أو أكثر من 50)', () {
+    test('السعة خارج النطاق مرفوضة (أقل من 2 أو أكثر من 40)', () {
       for (final int seats in <int>[0, 1, ModelLimits.seatsMax + 1]) {
         final ValidationResult result = validateGroupDraft(
           title: 'مجموعة',

@@ -3,6 +3,7 @@ import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
+import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 
 /// عقد قراءة وكتابة المجموعات الدراسية.
@@ -34,6 +35,35 @@ abstract interface class GroupRepository {
     required String groupId,
     required String memberId,
     required String teacherId,
+  });
+
+  /// **نقل عضو بين مجموعتين في معاملة واحدة** (P9).
+  ///
+  /// الشروط الصارمة (A-71): المجموعتان للمدرس نفسه، والهدف منشور وبه مقعد حر،
+  /// والعضو في المصدر وليس في الهدف.
+  ///
+  /// العملية الذرّية:
+  /// 1. `seatsTaken` في المصدر تنقص واحدًا.
+  /// 2. `seatsTaken` في الهدف تزيد واحدًا.
+  /// 3. ارتباط العضو ينتقل (حذف مستند عضويته من المصدر وإنشاء مثيله في الهدف).
+  ///
+  /// لا توسيع للسعة أثناء النقل: الهدف المكتمل يُرفض برسالة
+  /// [MoveRules.targetFullMessage]. وإذا فشلت أي خطوة فلا تُكتب أي منها.
+  Future<MemberMove> moveMember({
+    required String memberId,
+    required String fromGroupId,
+    required String toGroupId,
+    required String teacherId,
+  });
+
+  /// تعديل **سعة** المجموعة فقط (P9).
+  ///
+  /// لا يمسّ `seatsTaken` ولا أي حقل آخر. الحدود: 2..[GroupRules.maxSeats]،
+  /// ولا تقل عن المنضمين. مسموح في أي وقت، بما في ذلك المجموعة الموقوفة.
+  Future<StudyGroup> updateGroupCapacity({
+    required String groupId,
+    required String teacherId,
+    required int seatsTotal,
   });
 
   // ── P9: قائمة الانتظار (المجموعة المكتملة) ──────────────────────────────

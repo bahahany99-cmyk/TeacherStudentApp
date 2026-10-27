@@ -22,7 +22,7 @@ import 'package:teacher_student_app/data/validation/model_validators.dart';
 /// إنشاء مجموعة دراسية جديدة أو تعديل مجموعة قائمة (P7).
 ///
 /// قواعد العمل المنفَّذة:
-/// - السعة بين [GroupRules.minSeats] و[GroupRules.maxSeats] (2..50).
+/// - السعة بين [GroupRules.minSeats] و[GroupRules.maxSeats] (2..40، حدّ صارم).
 /// - عند التعديل **لا يمكن** تقليل السعة تحت عدد المنضمين فعلًا.
 /// - المجموعة يمكن إيقافها (`isActive = false`) بدل حذفها، فتُخفى عن الطلاب
 ///   ويبقى سجل أعضائها.
@@ -290,7 +290,9 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                     // ── السعة ──────────────────────────────────────────────
                     const SectionHeader(
                       title: 'السعة',
-                      subtitle: 'بين 2 و50 مقعدًا · لا تقل عن عدد المنضمين',
+                      subtitle:
+                          'بين ${GroupRules.minSeats} و${GroupRules.maxSeats} '
+                          'مقعدًا · لا تقل عن عدد المنضمين',
                       icon: Icons.event_seat_outlined,
                     ),
                     AppCard(

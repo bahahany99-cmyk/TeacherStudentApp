@@ -17,6 +17,9 @@ rules_version = '2';
 //   6. قائمة الانتظار (P9): للمجموعة **المكتملة** فقط، والمنتظر لا يشغل مقعدًا
 //      ولا يرى الجدول/المحادثة. إزالة عضو تنقص المقعد، وقبول منتظر يزيده —
 //      كلاهما بمعاملة، والقواعد تحدّ الفرق بمقعد واحد في الاتجاهين.
+//   7. سعة المجموعة (P9): حدّ **صارم 40**، ولا تُقلَّب تحت المنضمين، ولا
+//      تتغيّر مع seatsTaken في كتابة واحدة. والنقل بين مجموعتين يحرّك مقعدًا
+//      في كل اتجاه ويُنشئ عضوية تحمل groupId مطابقًا لمسارها.
 //
 // المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
 // مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
@@ -132,11 +135,13 @@ service cloud.firestore {
           && request.resource.data.isActive is bool;
       }
 
-      // السعة: عدد صحيح داخل النطاق، ولا تقل عن المنضمين فعلًا.
+      // السعة: عدد صحيح بين 2 و**40 حدًّا صارمًا** (A-70)، ولا تقل عن المنضمين.
+      // هذا الفحص يغطي تعديل السعة في أي وقت، ويبقى seatsTaken مشدودًا في
+      // قاعدة التعديل العامة (أ): أي محاولة لتغيير الاثنين معًا تُرفض.
       function validSeats() {
         return request.resource.data.seatsTotal is int
           && request.resource.data.seatsTotal >= 2
-          && request.resource.data.seatsTotal <= 50
+          && request.resource.data.seatsTotal <= 40
           && request.resource.data.seatsTotal >= request.resource.data.seatsTaken;
       }
 
@@ -181,7 +186,8 @@ service cloud.firestore {
            )
       );
 
-      // (ب) حجز مقعد عند قبول طلب انضمام (P8):
+      // (ب) حجز مقعد عند قبول طلب انضمام (P8) أو قبول منتظر أو **نقل عضو**
+      // إلى هذه المجموعة (P9):
       //   - المالك فقط، والمجموعة منشورة.
       //   - **لا يتغيّر أي حقل آخر** غير seatsTaken (diff.hasOnly).
       //   - الزيادة **واحد بالضبط** ولا تتجاوز السعة الكلية.
@@ -193,7 +199,7 @@ service cloud.firestore {
         && request.resource.data.seatsTaken == resource.data.seatsTaken + 1
         && request.resource.data.seatsTaken <= resource.data.seatsTotal;
 
-      // (ج) تحرير مقعد عند إزالة عضو (P9):
+      // (ج) تحرير مقعد عند إزالة عضو **أو نقل عضو خارج المجموعة** (P9):
       //   - المالك فقط (يعمل مع المجموعة الموقوفة أيضًا: الإدارة لا تتوقف).
       //   - **لا يتغيّر أي حقل آخر** غير seatsTaken، والنقص واحد بالضبط.
       //   - لا يصبح العدد سالبًا.
@@ -208,9 +214,11 @@ service cloud.firestore {
       // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
       // الطالب لا يرى أسماء بقية الطلاب (خصوصية).
       //
-      // الإنشاء مسموح للمالك فقط لأنه يحدث داخل معاملة قبول الطلب؛ ومعرّف
-      // المستند يجب أن يساوي معرّف الطالب نفسه، فلا يمكن كتابة عضو مزيّف
-      // باسم طالب آخر.
+      // الإنشاء مسموح للمالك فقط لأنه يحدث داخل معاملة قبول الطلب أو النقل؛
+      // ومعرّف المستند يجب أن يساوي معرّف الطالب نفسه، فلا يمكن كتابة عضو
+      // مزيّف باسم طالب آخر. ويُشترط أيضًا:
+      //   - `groupId` داخل المستند يساوي مسار المجموعة (ربط صريح لا يُزوَّر)،
+      //   - ألّا تتجاوز العضوية سعة المجموعة (A-71).
       match /members/{memberId} {
         function parentTeacherId() {
           return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
@@ -219,17 +227,28 @@ service cloud.firestore {
         allow read: if isAdmin()
           || (signedIn() && request.auth.uid == parentTeacherId());
 
+        // في معاملة/دفعة، تُقيَّم القواعد على **الحالة بعد الكتابة**، فشرط
+        // «مقعد حر» قبل الكتابة كان سيرفض حجز **المقعد الأخير** نفسه (لحظة
+        // الاكتمال). لذلك نفحص ألّا تتجاوز العضوية السعة بعد التنفيذ؛ أما
+        // ضمان «مقعد واحد مقابل كل حجز» فهو حصرًا في قاعدتي studyGroups
+        // (ب) و(ج) — زيادة/نقصان **واحد بالضبط** بلا تغيير أي حقل آخر.
+        function parentWithinCapacity() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken <= get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+        }
+
         allow create: if isAdmin() || (
           signedIn()
           && request.auth.uid == parentTeacherId()
           && memberId == request.resource.data.studentId
           && request.resource.data.keys().hasOnly(
-               ['studentId', 'name', 'joinedAt', 'status'])
+               ['studentId', 'groupId', 'name', 'joinedAt', 'status'])
+          && request.resource.data.groupId == groupId
           && request.resource.data.status == 'active'
           && request.resource.data.joinedAt is timestamp
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 80
+          && parentWithinCapacity()
         );
 
         // التعديل إداري فقط (لا حالة عضو تُكتب من التطبيق).

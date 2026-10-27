@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
+import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -25,6 +26,7 @@ import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
+import 'package:teacher_student_app/data/validation/move_rules.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
 import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
@@ -554,6 +556,147 @@ class DemoGroupRepository implements GroupRepository {
     });
   }
 
+  /// نقل عضو بين مجموعتين — بنفس ضمانات المعاملة في Firestore.
+  @override
+  Future<MemberMove> moveMember({
+    required String memberId,
+    required String fromGroupId,
+    required String toGroupId,
+    required String teacherId,
+  }) {
+    return _serialized(() async {
+      final int fromIndex = _groups.indexWhere(
+        (StudyGroup g) => g.id == fromGroupId,
+      );
+      final int toIndex = _groups.indexWhere(
+        (StudyGroup g) => g.id == toGroupId,
+      );
+      if (fromIndex == -1 || toIndex == -1) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+
+      final StudyGroup from = _groups[fromIndex];
+      final StudyGroup to = _groups[toIndex];
+      if (from.teacherId != teacherId || to.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      // العضو قد يكون مقبولًا فعلًا أو من الأعضاء المولّدين للتجربة.
+      final List<GroupMember> fromAccepted =
+          _acceptedMembers[from.id] ?? <GroupMember>[];
+      GroupMember? member;
+      for (final GroupMember candidate in fromAccepted) {
+        if (candidate.id == memberId) {
+          member = candidate;
+          break;
+        }
+      }
+      final Set<String> removedFromSource =
+          _removedMemberIds[from.id] ?? <String>{};
+      if (member == null) {
+        for (final GroupMember candidate in DemoData.membersFor(from.id)) {
+          if (candidate.id == memberId &&
+              !removedFromSource.contains(candidate.id)) {
+            member = candidate;
+            break;
+          }
+        }
+      }
+
+      final bool targetHasMember =
+          (await listMembers(to.id)).any((GroupMember m) => m.id == memberId);
+      final String? reason = MoveRules.blockReason(
+        from: from,
+        to: to,
+        sameOwner: true,
+        isMember: member != null,
+        targetAlreadyHasMember: targetHasMember,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'move blocked',
+        );
+      }
+
+      // ── الكتابة «الذرّية»: المصدر والهدف والارتباط معًا ────────────────
+      final GroupMember moving = member!;
+      if (fromAccepted.any((GroupMember m) => m.id == memberId)) {
+        fromAccepted.removeWhere((GroupMember m) => m.id == memberId);
+        _acceptedMembers[from.id] = fromAccepted;
+      } else {
+        _removedMemberIds.putIfAbsent(from.id, () => <String>{}).add(memberId);
+      }
+
+      final List<GroupMember> toAccepted =
+          _acceptedMembers[to.id] ?? <GroupMember>[];
+      toAccepted.add(
+        GroupMember(
+          id: moving.id,
+          name: moving.name,
+          // تاريخ الانضمام الأصلي محفوظ: النقل ليس عضوية جديدة.
+          joinedAt: moving.joinedAt,
+        ),
+      );
+      _acceptedMembers[to.id] = toAccepted;
+      // نقل ذهابًا وإيابًا: لو كان العضو قد أُزيل من الهدف سابقًا فلا بد أن
+      // يعود للظهور فيه.
+      _removedMemberIds[to.id]?.remove(memberId);
+
+      final StudyGroup fromAfter = _copyWithSeats(
+        from,
+        from.seatsTaken > 0 ? from.seatsTaken - 1 : 0,
+      );
+      final StudyGroup toAfter = _copyWithSeats(
+        to,
+        JoinRules.seatsAfterAccept(to.seatsTaken),
+      );
+      _groups[fromIndex] = fromAfter;
+      _groups[toIndex] = toAfter;
+
+      return MemberMove(member: moving, from: fromAfter, to: toAfter);
+    });
+  }
+
+  @override
+  Future<StudyGroup> updateGroupCapacity({
+    required String groupId,
+    required String teacherId,
+    required int seatsTotal,
+  }) {
+    return _serialized(() async {
+      final int index = _groups.indexWhere((StudyGroup g) => g.id == groupId);
+      if (index == -1) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+      final StudyGroup group = _groups[index];
+      if (group.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      final String? reason = GroupRules.capacityBlockReason(
+        seatsTotal: seatsTotal,
+        seatsTaken: group.seatsTaken,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'capacity blocked',
+        );
+      }
+
+      final StudyGroup updated = _copyWithSeats(
+        group,
+        group.seatsTaken,
+        seatsTotal: seatsTotal,
+      );
+      _groups[index] = updated;
+      return updated;
+    });
+  }
+
   @override
   Future<GroupWaitlistEntry> joinWaitlist({
     required StudyGroup group,
@@ -740,7 +883,7 @@ class DemoGroupRepository implements GroupRepository {
   }
 
   /// نسخة من المجموعة بمقاعد مشغولة مختلفة — تُستخدم في الإزالة والقبول.
-  StudyGroup _copyWithSeats(StudyGroup group, int seatsTaken) {
+  StudyGroup _copyWithSeats(StudyGroup group, int seatsTaken, {int? seatsTotal}) {
     return StudyGroup(
       id: group.id,
       teacherId: group.teacherId,
@@ -748,7 +891,7 @@ class DemoGroupRepository implements GroupRepository {
       title: group.title,
       subject: group.subject,
       stage: group.stage,
-      seatsTotal: group.seatsTotal,
+      seatsTotal: seatsTotal ?? group.seatsTotal,
       seatsTaken: seatsTaken,
       meetingMode: group.meetingMode,
       scheduleNote: group.scheduleNote,

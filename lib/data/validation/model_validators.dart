@@ -59,10 +59,11 @@ abstract final class ModelLimits {
   static const int scheduleNote = 120;
   static const int bookingNote = 200;
 
-  /// لا مجموعات أقل من مقعدين (لا معنى لمجموعة من مقعد) ولا أكثر من 50
-  /// (سعة واقعية للحصة في هذه المرحلة).
+  /// لا مجموعات أقل من مقعدين (لا معنى لمجموعة من مقعد) ولا أكثر من 40 —
+  /// **حدّ صارم** مطابق لـ`firestore.rules` (A-70): الحصة الواقعية لا تزيد عن
+  /// ذلك، وسقف واضح يمنع «توسيع السعة» كوسيلة للالتفاف على الاكتمال.
   static const int seatsMin = 2;
-  static const int seatsMax = 50;
+  static const int seatsMax = 40;
 }
 
 /// يحذف المسافات الطرفية ويحوّل النص الفارغ إلى `null`.

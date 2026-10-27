@@ -18,10 +18,13 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
+import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
+import 'package:teacher_student_app/data/validation/group_rules.dart';
+import 'package:teacher_student_app/data/validation/move_rules.dart';
 import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 
 /// أعضاء المجموعة وإدارتها (P9) — واجهة المدرس صاحب المجموعة.
@@ -82,11 +85,17 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
           )
         : const <GroupWaitlistEntry>[];
 
+    // مجموعات المدرس نفسه — هي وحدها أهداف النقل المسموحة.
+    final List<StudyGroup> ownedGroups = isOwner
+        ? await services.groups.listForTeacher(group.teacherId)
+        : const <StudyGroup>[];
+
     return _MembersData(
       group: group,
       teacherId: viewerId,
       members: members,
       waitlist: waitlist,
+      ownedGroups: ownedGroups,
       isOwner: isOwner,
     );
   }
@@ -163,6 +172,117 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
       AppSnackBar.show(
         context,
         'قُبل «${entry.studentName}» وأصبح عضوًا بمقعد.',
+        type: AppMessageType.success,
+      );
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        _busy = false;
+        _reload();
+      }
+    }
+  }
+
+  /// ورقة اختيار المجموعة الهدف ثم تنفيذ النقل.
+  ///
+  /// الهدف المكتمل **يُعرض** مع سبب الرفض بدل إخفائه: المدرس يرى لماذا لا
+  /// يستطيع النقل، والضغط عليه يعطي التنبيه الصريح نفسه الذي ترفعه القاعدة.
+  Future<void> _moveMember(_MembersData data, GroupMember member) async {
+    final List<StudyGroup> targets = MoveRules.targets(
+      from: data.group,
+      ownedGroups: data.ownedGroups,
+    );
+    if (targets.isEmpty) {
+      AppSnackBar.show(
+        context,
+        'لا توجد مجموعة أخرى لنقل العضو إليها.',
+        type: AppMessageType.warning,
+      );
+      return;
+    }
+
+    final String? targetId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) => _MoveSheet(
+        member: member,
+        source: data.group,
+        targets: targets,
+      ),
+    );
+    if (targetId == null || !mounted) {
+      return;
+    }
+
+    final GroupRepository groups = AppServicesScope.of(context).groups;
+    setState(() => _busy = true);
+    try {
+      final MemberMove move = await groups.moveMember(
+        memberId: member.id,
+        fromGroupId: data.group.id,
+        toGroupId: targetId,
+        teacherId: data.teacherId,
+      );
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        'نُقل «${move.member.name}» إلى «${move.to.title}».',
+        type: AppMessageType.success,
+      );
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        _busy = false;
+        _reload();
+      }
+    }
+  }
+
+  /// تعديل سعة المجموعة — الحد الأقصى [GroupRules.maxSeats] ولا تقل عن المنضمين.
+  Future<void> _editCapacity(_MembersData data) async {
+    final int? seatsTotal = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) => _CapacitySheet(group: data.group),
+    );
+    if (seatsTotal == null || !mounted) {
+      return;
+    }
+
+    final GroupRepository groups = AppServicesScope.of(context).groups;
+    setState(() => _busy = true);
+    try {
+      await groups.updateGroupCapacity(
+        groupId: data.group.id,
+        teacherId: data.teacherId,
+        seatsTotal: seatsTotal,
+      );
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        'حُدّثت السعة إلى $seatsTotal مقعدًا.',
         type: AppMessageType.success,
       );
     } on AppException catch (error) {
@@ -294,6 +414,15 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              const SizedBox(height: AppSpacing.xxs),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: _busy ? null : () => _editCapacity(data),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('تعديل السعة'),
+                ),
+              ),
             ],
           ),
         ),
@@ -359,6 +488,12 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
                       ),
                     ),
                     IconButton(
+                      tooltip: 'نقل إلى مجموعة أخرى',
+                      onPressed: _busy ? null : () => _moveMember(data, member),
+                      icon: const Icon(Icons.swap_horiz, size: 20),
+                      color: theme.colorScheme.primary,
+                    ),
+                    IconButton(
                       tooltip: 'إزالة العضو',
                       onPressed: _busy
                           ? null
@@ -420,6 +555,7 @@ class _MembersData {
     required this.teacherId,
     required this.members,
     required this.waitlist,
+    required this.ownedGroups,
     required this.isOwner,
   });
 
@@ -427,6 +563,9 @@ class _MembersData {
   final String teacherId;
   final List<GroupMember> members;
   final List<GroupWaitlistEntry> waitlist;
+
+  /// كل مجموعات المدرس — أهداف النقل المحتملة.
+  final List<StudyGroup> ownedGroups;
   final bool isOwner;
 }
 
@@ -519,6 +658,270 @@ class _WaitlistCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// ورقة اختيار المجموعة الهدف للنقل.
+///
+/// كل مجموعة تظهر مع سعتها؛ والمكتملة تُعرض مع السبب **وتُعيد رفضًا صريحًا**
+/// عند الضغط (`MoveRules.targetFullMessage`)، ولا تُستدعى المعاملة أصلًا.
+class _MoveSheet extends StatelessWidget {
+  const _MoveSheet({
+    required this.member,
+    required this.source,
+    required this.targets,
+  });
+
+  final GroupMember member;
+  final StudyGroup source;
+  final List<StudyGroup> targets;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.radiusXl),
+        ),
+      ),
+      padding: const EdgeInsetsDirectional.fromSTEB(
+        AppSpacing.pageGutter,
+        AppSpacing.md,
+        AppSpacing.pageGutter,
+        AppSpacing.lg,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text('نقل العضو', style: theme.textTheme.titleLarge),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              '«${member.name}» من «${source.title}» إلى:',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            for (final StudyGroup target in targets)
+              Padding(
+                padding: AppSpacing.listGap,
+                child: _MoveTargetTile(
+                  target: target,
+                  onTap: () {
+                    final String? blocked = MoveRules.targetBlockReason(target);
+                    if (blocked != null) {
+                      AppSnackBar.show(
+                        context,
+                        blocked,
+                        type: AppMessageType.error,
+                      );
+                      return;
+                    }
+                    Navigator.of(context).pop(target.id);
+                  },
+                ),
+              ),
+            const SizedBox(height: AppSpacing.xs),
+            const InfoNote(
+              text:
+                  'النقل يحدث في معاملة واحدة: مقعد ينقص في المجموعة الحالية، '
+                  'ومقعد يزيد في الجديدة، وارتباط العضو ينتقل معه. المجموعة '
+                  'المكتملة لا تستقبل نقلًا، ولا تُوسّع سعتها تلقائيًا.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// صف هدف نقل: العنوان والسعة وحالة القبول.
+class _MoveTargetTile extends StatelessWidget {
+  const _MoveTargetTile({required this.target, required this.onTap});
+
+  final StudyGroup target;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String? blocked = MoveRules.targetBlockReason(target);
+
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Icon(
+            blocked == null ? Icons.swap_horiz : Icons.block,
+            color: blocked == null
+                ? theme.colorScheme.primary
+                : AppColors.statusRejected,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  target.title,
+                  style: theme.textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  blocked ?? '${target.seatsAvailable} مقعد متاح',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: blocked == null
+                        ? theme.colorScheme.onSurfaceVariant
+                        : AppColors.statusRejected,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          PillChip(
+            label: '${target.seatsTaken} / ${target.seatsTotal}',
+            dense: true,
+            color: blocked == null ? null : AppColors.statusRejected,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ورقة تعديل السعة — الحد الأقصى [GroupRules.maxSeats] والأرضية عدد المنضمين.
+class _CapacitySheet extends StatefulWidget {
+  const _CapacitySheet({required this.group});
+
+  final StudyGroup group;
+
+  @override
+  State<_CapacitySheet> createState() => _CapacitySheetState();
+}
+
+class _CapacitySheetState extends State<_CapacitySheet> {
+  late int _seats = widget.group.seatsTotal;
+
+  /// الأرضية: عدد المنضمين (ولا تقل عن حدّ المجموعة الأدنى).
+  int get _min => GroupRules.minAllowedSeats(widget.group.seatsTaken);
+
+  String? get _error => GroupRules.capacityBlockReason(
+    seatsTotal: _seats,
+    seatsTaken: widget.group.seatsTaken,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.radiusXl),
+        ),
+      ),
+      padding: const EdgeInsetsDirectional.fromSTEB(
+        AppSpacing.pageGutter,
+        AppSpacing.md,
+        AppSpacing.pageGutter,
+        AppSpacing.lg,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text('سعة المجموعة', style: theme.textTheme.titleLarge),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'بين ${GroupRules.minSeats} و${GroupRules.maxSeats} مقعدًا، '
+              'ولا تقل عن ${widget.group.seatsTaken} منضمًا حاليًا.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'عدد المقاعد',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'تقليل',
+                  onPressed: _seats > _min
+                      ? () => setState(() => _seats--)
+                      : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                Text(
+                  '$_seats',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'زيادة',
+                  onPressed: _seats < GroupRules.maxSeats
+                      ? () => setState(() => _seats++)
+                      : null,
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                _error!,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.statusRejected,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            FilledButton(
+              onPressed: _error != null
+                  ? null
+                  : () => Navigator.of(context).pop(_seats),
+              child: const Text('حفظ السعة'),
+            ),
+          ],
+        ),
       ),
     );
   }

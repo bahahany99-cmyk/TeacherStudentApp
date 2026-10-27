@@ -436,8 +436,8 @@ describe('studyGroups — قراءة مقيّدة وكتابة للمالك فق
     );
   });
 
-  it('الإنشاء مرفوض بسعة خارج 2..50', async () => {
-    for (const seats of [0, 1, 51]) {
+  it('الإنشاء مرفوض بسعة خارج 2..40 (حدّ صارم)', async () => {
+    for (const seats of [0, 1, 41]) {
       await assertFails(
         setDoc(
           doc(asTeacher(), `studyGroups/seat-${seats}`),
@@ -838,8 +838,9 @@ describe('P8 — القبول الذرّي وحجز المقعد', () => {
 
   it('إنشاء العضو: المالك فقط وبمعرّف الطالب نفسه', async () => {
     await seedFull(3);
-    const member = (studentId) => ({
+    const member = (studentId, groupId = 'g1') => ({
       studentId,
+      groupId,
       name: 'طالب',
       joinedAt: now(),
       status: 'active',
@@ -1364,6 +1365,7 @@ describe('P9 — قبول المنتظر: مقعد واحد وعضوية واح�
     await assertSucceeds(
       setDoc(doc(db, 'studyGroups/g1/members/student-1'), {
         studentId: 'student-1',
+        groupId: 'g1',
         name: 'طالب',
         joinedAt: now(),
         status: 'active',
@@ -1448,6 +1450,233 @@ describe('P9 — قبول المنتظر: مقعد واحد وعضوية واح�
     );
     await assertFails(
       deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P9 — سعة المجموعة: حدّ صارم 40 ولا تنزل تحت المنضمين', () => {
+  const seedGroup = (overrides = {}) =>
+    seed([
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTotal: 12, seatsTaken: 9, ...overrides }),
+      },
+    ]);
+
+  it('المالك يرفع السعة في أي وقت بدون تغيير المشغول', async () => {
+    await seedGroup();
+    const db = asTeacher();
+
+    await assertSucceeds(
+      updateDoc(doc(db, 'studyGroups/g1'), { seatsTotal: 20 }),
+    );
+    const snap = await getDoc(doc(db, 'studyGroups/g1'));
+    assert.equal(snap.data().seatsTotal, 20);
+    assert.equal(snap.data().seatsTaken, 9, 'seatsTaken لم يتغيّر');
+  });
+
+  it('السعة القصوى 40: 41 مرفوضة و40 مقبولة', async () => {
+    await seedGroup();
+    const db = asTeacher();
+
+    await assertFails(updateDoc(doc(db, 'studyGroups/g1'), { seatsTotal: 41 }));
+    await assertSucceeds(updateDoc(doc(db, 'studyGroups/g1'), { seatsTotal: 40 }));
+  });
+
+  it('لا تنزل السعة تحت المنضمين', async () => {
+    await seedGroup({ seatsTaken: 9 });
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTotal: 8 }),
+    );
+    // الحد نفسه (9) مسموح.
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTotal: 9 }),
+    );
+  });
+
+  it('لا تُعدَّل السعة مع المقاعد المشغولة في كتابة واحدة', async () => {
+    await seedGroup({ seatsTaken: 9 });
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), {
+        seatsTotal: 20,
+        seatsTaken: 10,
+      }),
+    );
+  });
+
+  it('مدرس آخر والطالب لا يعدّلان السعة', async () => {
+    await seedGroup();
+
+    await assertFails(
+      updateDoc(
+        doc(testEnv.authenticatedContext('teacher-2').firestore(), 'studyGroups/g1'),
+        { seatsTotal: 20 },
+      ),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'studyGroups/g1'), { seatsTotal: 20 }),
+    );
+  });
+});
+
+describe('P9 — نقل العضو بين مجموعتين (معاملة واحدة)', () => {
+  const seedTwoGroups = ({
+    fromTaken = 3,
+    toTotal = 5,
+    toTaken = 2,
+    toActive = true,
+  } = {}) =>
+    seed([
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: fromTaken }),
+      },
+      {
+        path: 'studyGroups/g2',
+        data: groupDoc('teacher-1', {
+          title: 'الفيزياء',
+          seatsTotal: toTotal,
+          seatsTaken: toTaken,
+          isActive: toActive,
+        }),
+      },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: {
+          studentId: 'student-1',
+          groupId: 'g1',
+          name: 'طالب',
+          joinedAt: now(),
+          status: 'active',
+        },
+      },
+    ]);
+
+  /** نقل كما ينفّذه التطبيق: قراءة ثم أربع كتابات. */
+  const move = (db, { check = true } = {}) =>
+    runTransaction(db, async (tx) => {
+      const fromSnap = await tx.get(doc(db, 'studyGroups/g1'));
+      const toSnap = await tx.get(doc(db, 'studyGroups/g2'));
+      if (!fromSnap.exists() || !toSnap.exists()) {
+        throw new Error('missing group');
+      }
+      const from = fromSnap.data();
+      const to = toSnap.data();
+      if (check && to.seatsTaken >= to.seatsTotal) {
+        throw new Error('target full');
+      }
+      tx.update(doc(db, 'studyGroups/g1'), { seatsTaken: from.seatsTaken - 1 });
+      tx.update(doc(db, 'studyGroups/g2'), { seatsTaken: to.seatsTaken + 1 });
+      tx.delete(doc(db, 'studyGroups/g1/members/student-1'));
+      tx.set(doc(db, 'studyGroups/g2/members/student-1'), {
+        studentId: 'student-1',
+        groupId: 'g2',
+        name: 'طالب',
+        joinedAt: now(),
+        status: 'active',
+      });
+    });
+
+  const snapshot = async (path) => {
+    let data;
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const snap = await getDoc(doc(context.firestore(), path));
+      data = snap.exists() ? snap.data() : null;
+    });
+    return data;
+  };
+
+  it('النقل يحرّك مقعدًا في كل اتجاه وينقل ارتباط العضو', async () => {
+    await seedTwoGroups();
+
+    await assertSucceeds(move(asTeacher()));
+
+    assert.equal((await snapshot('studyGroups/g1')).seatsTaken, 2);
+    assert.equal((await snapshot('studyGroups/g2')).seatsTaken, 3);
+    assert.equal(await snapshot('studyGroups/g1/members/student-1'), null);
+    const moved = await snapshot('studyGroups/g2/members/student-1');
+    assert.equal(moved.groupId, 'g2');
+    assert.equal(moved.studentId, 'student-1');
+  });
+
+  it('الهدف المكتمل: القواعد ترفض النقل ولو تجاهل العميل الفحص', async () => {
+    await seedTwoGroups({ toTotal: 3, toTaken: 3 });
+
+    await assertFails(move(asTeacher(), { check: false }));
+
+    // ولا كتابة جزئية: المصدر والعضوية كما كانا.
+    assert.equal((await snapshot('studyGroups/g1')).seatsTaken, 3);
+    assert.notEqual(await snapshot('studyGroups/g1/members/student-1'), null);
+  });
+
+  it('الهدف الموقوف لا يستقبل نقلًا', async () => {
+    await seedTwoGroups({ toActive: false });
+
+    await assertFails(move(asTeacher(), { check: false }));
+  });
+
+  it('الطالب ومدرس آخر لا ينقلان', async () => {
+    await seedTwoGroups();
+
+    await assertFails(move(asStudent()));
+    await assertFails(
+      move(testEnv.authenticatedContext('teacher-2').firestore()),
+    );
+  });
+
+  it('المقعد الأخير: النقل إلى آخر مقعد حر ينجح', async () => {
+    // الهدف 5/5 بعد النقل: لو فحصت القواعد «مقعد حر» على حالة ما بعد
+    // المعاملة لرفضت هذا النقل — وهو أخطر خطأ ممكن في هذا النموذج.
+    await seedTwoGroups({ toTotal: 5, toTaken: 4 });
+
+    await assertSucceeds(move(asTeacher()));
+
+    assert.equal((await snapshot('studyGroups/g2')).seatsTaken, 5);
+    assert.equal((await snapshot('studyGroups/g1')).seatsTaken, 2);
+  });
+
+  it('ربط العضو بالمجموعة إلزامي ومطابق للمسار', async () => {
+    await seed([
+      {
+        path: 'studyGroups/g2',
+        data: groupDoc('teacher-1', { seatsTotal: 5, seatsTaken: 2 }),
+      },
+    ]);
+
+    const member = (groupId) => ({
+      studentId: 'student-7',
+      groupId,
+      name: 'طالب',
+      joinedAt: now(),
+      status: 'active',
+    });
+
+    // ربط مغلوط ⇒ رفض.
+    await assertFails(
+      setDoc(doc(asTeacher(), 'studyGroups/g2/members/student-7'), member('g1')),
+    );
+    // بلا groupId (حقل ناقص) ⇒ رفض.
+    await assertFails(
+      setDoc(doc(asTeacher(), 'studyGroups/g2/members/student-7'), {
+        studentId: 'student-7',
+        name: 'طالب',
+        joinedAt: now(),
+        status: 'active',
+      }),
+    );
+    // حقل زائد ⇒ رفض.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/g2/members/student-7'),
+        { ...member('g2'), seatsTotal: 3 },
+      ),
+    );
+    // الربط الصحيح ⇒ قبول.
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'studyGroups/g2/members/student-7'), member('g2')),
     );
   });
 });
