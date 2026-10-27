@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
+import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -15,21 +16,23 @@ import '../helpers/test_app.dart';
 /// يبني شاشة النموذج داخل حزمة خدمات تجريبية وجلسة مدرس.
 Widget _host({String? groupId, AppServices? services}) {
   final AppServices resolved = services ?? AppServices.demo();
-  // الجلسة تُنشأ لضمان وجود حالة مدرس في الشجرة (تُقرأ من SessionScope أدناه).
-  SessionController(resolved.auth).startDemoSession(UserRole.teacher);
+  final SessionController session = SessionController(resolved.auth)
+    ..startDemoSession(UserRole.teacher);
 
   return AppServicesScope(
     services: resolved,
-    child: MaterialApp(
-      theme: AppTheme.light,
-      onGenerateRoute: (RouteSettings settings) {
-        return MaterialPageRoute<void>(
+    child: SessionScope(
+      controller: session,
+      child: MaterialApp(
+        theme: AppTheme.light,
+        onGenerateRoute: (RouteSettings settings) => MaterialPageRoute<void>(
           settings: settings,
-          builder: (BuildContext context) =>
-              GroupFormScreen(groupId: groupId ?? settings.arguments as String?),
-        );
-      },
-      home: GroupFormScreen(groupId: groupId),
+          builder: (BuildContext context) => GroupFormScreen(
+            groupId: groupId ?? settings.arguments as String?,
+          ),
+        ),
+        home: GroupFormScreen(groupId: groupId),
+      ),
     ),
   );
 }
@@ -149,7 +152,13 @@ void main() {
     await tester.pumpAndSettle();
 
     await tapVisible(tester, find.text('واجهة المدرس'));
-    await tapVisible(tester, find.text('مجموعاتي'));
+    await tapVisible(
+      tester,
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('مجموعاتي'),
+      ),
+    );
 
     final NavigatorState navigator = tester.state<NavigatorState>(
       find.byType(Navigator).first,
