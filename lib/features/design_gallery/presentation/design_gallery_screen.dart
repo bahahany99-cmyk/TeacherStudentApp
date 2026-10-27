@@ -173,15 +173,15 @@ class DesignGalleryScreen extends StatelessWidget {
                 const AppCard(
                   child: Column(
                     children: <Widget>[
-                      const TextField(
+                      TextField(
                         decoration: InputDecoration(
                           labelText: 'الاسم',
                           hintText: 'اكتب اسمك',
                           prefixIcon: Icon(Icons.person_outline),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const TextField(
+                      SizedBox(height: AppSpacing.sm),
+                      TextField(
                         enabled: false,
                         decoration: InputDecoration(
                           labelText: 'حقل معطّل',
@@ -189,8 +189,8 @@ class DesignGalleryScreen extends StatelessWidget {
                           prefixIcon: Icon(Icons.lock_outline),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const TextField(
+                      SizedBox(height: AppSpacing.sm),
+                      TextField(
                         decoration: InputDecoration(
                           labelText: 'بريد إلكتروني',
                           errorText: 'صيغة البريد غير صحيحة',
@@ -212,16 +212,16 @@ class DesignGalleryScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const _GradientPreview(
+                      _GradientPreview(
                         label: 'page',
                         gradient: AppGradients.page,
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      const _GradientPreview(
+                      SizedBox(height: AppSpacing.xs),
+                      _GradientPreview(
                         label: 'pageWarm',
                         gradient: AppGradients.pageWarm,
                       ),
-                      const SizedBox(height: AppSpacing.xs),
+                      SizedBox(height: AppSpacing.xs),
                       const _GradientPreview(
                         label: 'hero',
                         gradient: AppGradients.hero,
