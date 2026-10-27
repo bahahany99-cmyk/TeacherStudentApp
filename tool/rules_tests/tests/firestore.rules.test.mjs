@@ -1712,38 +1712,41 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
 
   const requestPath = joinPath;
 
-  it('المالك يحذف صف طالب ليس عضوًا (طلب انضمام)', async () => {
+  it('المالك يحذف طلبًا مفتوحًا (معلّقًا كان أو مقبولًا)', async () => {
     await seed([
       { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
       { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'accepted') },
+      { path: requestPath('g1', 'student-8'), data: requestDoc('g1', 'student-8', 'pending') },
     ]);
 
     await assertSucceeds(
       deleteDoc(doc(asTeacher(), requestPath('g1', 'student-9'))),
     );
-    assert.equal(
-      await readAsAdmin(requestPath('g1', 'student-9')),
-      null,
+    await assertSucceeds(
+      deleteDoc(doc(asTeacher(), requestPath('g1', 'student-8'))),
     );
+    assert.equal(await readAsAdmin(requestPath('g1', 'student-9')), null);
   });
 
-  it('لا يُحذف صف طالب عضو في المجموعة', async () => {
+  it('الصف المغلق تاريخ لا يُمحى — ولا حتى بالمالك', async () => {
     await seed([
-      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 1 }) },
-      {
-        path: 'studyGroups/g1/members/student-1',
-        data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
-      },
-      { path: requestPath('g1', 'student-1'), data: requestDoc('g1', 'student-1', 'accepted') },
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'rejected') },
+      { path: requestPath('g1', 'student-8'), data: requestDoc('g1', 'student-8', 'cancelled') },
     ]);
 
-    await assertFails(deleteDoc(doc(asTeacher(), requestPath('g1', 'student-1'))));
+    await assertFails(
+      deleteDoc(doc(asTeacher(), requestPath('g1', 'student-9'))),
+    );
+    await assertFails(
+      deleteDoc(doc(asTeacher(), requestPath('g1', 'student-8'))),
+    );
   });
 
   it('مدرس آخر والطالب لا يحذفان صفوف الطلبات', async () => {
     await seed([
       { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
-      { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'rejected') },
+      { path: requestPath('g1', 'student-9'), data: requestDoc('g1', 'student-9', 'pending') },
     ]);
 
     await assertFails(
@@ -1770,17 +1773,15 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
     );
   });
 
-  it('لا يُحذف صف انتظار طالب عضو في المجموعة', async () => {
+  it('صف الانتظار المغلق لا يُمحى، والمفتوح يُمحى للمالك', async () => {
     await seed([
       { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: 6 }) },
-      {
-        path: 'studyGroups/g1/members/student-1',
-        data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
-      },
-      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1', 'waiting') },
+      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1', 'left') },
+      { path: waitlistPath('g1', 'student-2'), data: waitlistDoc('g1', 'student-2', 'waiting') },
     ]);
 
     await assertFails(deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))));
+    await assertSucceeds(deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-2'))));
   });
 
   /**

@@ -12,7 +12,7 @@
 5. أن كل `match` لمجموعة معروفة موجود.
 6. أن إزالة العضو تحرّر مقعدًا واحدًا، وأن قائمة الانتظار للمكتملة فقط.
 7. أن سعة المجموعة محدودة بـ40، وأن العضو يحمل `groupId` مطابقًا لمساره.
-8. أن حذف صفوف الطلبات/الانتظار للمالك مشروط بألّا يكون الطالب عضوًا.
+8. أن حذف صفوف الطلبات/الانتظار للمالك مقيّد بالصفوف المفتوحة فقط.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -177,8 +177,10 @@ def main() -> int:
         problems.append('studyGroups: السعة قد تقل عن المنضمين')
     if "'movedAt', 'movedFromGroupTitle'" not in code:
         problems.append('members: حقول أثر النقل غير مسموح بها')
-    if code.count('!exists(/databases/$(database)/documents/studyGroups/$(resource.data.groupId)/members/$(resource.data.studentId))') != 2:
-        problems.append('الحذف النظيف لصفوف النقل غير مفروض على الطلبات والانتظار')
+    if "resource.data.status in ['pending', 'accepted']" not in code:
+        problems.append('حذف طلبات الانضمام غير مقيّد بالصفوف المفتوحة')
+    if "resource.data.status in ['waiting', 'promoted']" not in code:
+        problems.append('حذف صفوف الانتظار غير مقيّد بالصفوف المفتوحة')
 
     # 11) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
