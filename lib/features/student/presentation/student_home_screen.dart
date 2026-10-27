@@ -114,7 +114,7 @@ class StudentHomeScreen extends StatelessWidget {
                     ShellScope.read(context).goTo(AppTab.teachers),
               ),
               AsyncView<List<TeacherProfile>>(
-                future: AppServicesScope.of(context).teachers.listFeatured(),
+                load: () => AppServicesScope.of(context).teachers.listFeatured(),
                 builder: (BuildContext context, List<TeacherProfile> teachers) {
                   if (teachers.isEmpty) {
                     return const EmptyState(
@@ -134,7 +134,7 @@ class StudentHomeScreen extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               const SectionHeader(title: 'حجوزاتي القادمة'),
               AsyncView<List<BookingRequest>>(
-                future: AppServicesScope.of(context).bookings.listMine(),
+                load: () => AppServicesScope.of(context).bookings.listMine(),
                 builder: (BuildContext context, List<BookingRequest> bookings) {
                   final List<BookingRequest> pending = bookings
                       .where((BookingRequest b) => b.waitingForTeacher)

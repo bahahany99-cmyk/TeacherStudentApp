@@ -54,7 +54,7 @@ class TeachersScreen extends StatelessWidget {
                 subtitle: 'يُدار التمييز من الإدارة فقط',
               ),
               AsyncView<List<TeacherProfile>>(
-                future: AppServicesScope.of(context).teachers.listFeatured(),
+                load: () => AppServicesScope.of(context).teachers.listFeatured(),
                 builder: (BuildContext context, List<TeacherProfile> teachers) {
                   if (teachers.isEmpty) {
                     return const EmptyState(
@@ -75,7 +75,7 @@ class TeachersScreen extends StatelessWidget {
                 subtitle: 'الملفات المعتمدة فقط',
               ),
               AsyncView<List<TeacherProfile>>(
-                future: AppServicesScope.of(context).teachers.listApproved(),
+                load: () => AppServicesScope.of(context).teachers.listApproved(),
                 builder: (BuildContext context, List<TeacherProfile> teachers) {
                   if (teachers.isEmpty) {
                     return const EmptyState(

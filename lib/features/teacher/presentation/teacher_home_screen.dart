@@ -97,7 +97,7 @@ class TeacherHomeScreen extends StatelessWidget {
                     ShellScope.read(context).goTo(AppTab.bookings),
               ),
               AsyncView<List<BookingRequest>>(
-                future: AppServicesScope.of(context).bookings.listMine(),
+                load: () => AppServicesScope.of(context).bookings.listMine(),
                 builder: (BuildContext context, List<BookingRequest> bookings) {
                   final List<BookingRequest> pending = bookings
                       .where((BookingRequest b) => b.waitingForTeacher)
@@ -160,7 +160,7 @@ class TeacherHomeScreen extends StatelessWidget {
                     ShellScope.read(context).goTo(AppTab.groups),
               ),
               AsyncView<List<StudyGroup>>(
-                future: AppServicesScope.of(
+                load: () => AppServicesScope.of(
                   context,
                 ).groups.listForTeacher(DemoData.demoTeacherId),
                 builder: (BuildContext context, List<StudyGroup> groups) {

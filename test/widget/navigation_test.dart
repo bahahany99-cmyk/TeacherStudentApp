@@ -35,6 +35,16 @@ Future<void> _tapNav(WidgetTester tester, String label) async {
 /// نص ظاهر فعليًا (يستبعد الأقسام غير المعروضة داخل IndexedStack).
 Finder _visibleText(String text) => find.text(text).hitTestable();
 
+/// القسم الحالي يُقرأ من عنوان الشريط العلوي، لأنه ظاهر دائمًا؛ أما عناوين
+/// داخل الصفحات فقد تكون أسفل الشاشة (خارج منطقة العرض) ولا تصلح كدليل تنقّل.
+void _expectTab(String title) {
+  expect(
+    find.descendant(of: find.byType(AppBar), matching: find.text(title)),
+    findsOneWidget,
+    reason: 'الشريط العلوي لا يعرض عنوان القسم "$title"',
+  );
+}
+
 void main() {
   group('الهيكل والتنقل', () {
     testWidgets('الدخول لواجهة الطالب يفتح الهيكل بشريط تنقّل', (
@@ -78,13 +88,17 @@ void main() {
       await _enterStudentShell(tester);
 
       // من الرئيسية: اختصار «المجموعات الدراسية».
-      await tapVisible(tester, find.widgetWithText(ActionChip, 'المجموعات الدراسية'));
+      await tapVisible(
+        tester,
+        find.widgetWithText(ActionChip, 'المجموعات الدراسية'),
+      );
+      _expectTab('المجموعات');
       expect(_visibleText('مجموعات متاحة'), findsOneWidget);
 
       // العودة للرئيسية ثم اختصار «ابحث عن مدرس».
       await _tapNav(tester, 'الرئيسية');
       await tapVisible(tester, find.widgetWithText(ActionChip, 'ابحث عن مدرس'));
-      expect(_visibleText('كل المدرسين'), findsOneWidget);
+      _expectTab('المدرسون');
     });
 
     testWidgets('زر «عرض الكل» في قسم المميزين ينقل إلى المدرسين', (
@@ -94,7 +108,7 @@ void main() {
 
       await tapVisible(tester, find.widgetWithText(TextButton, 'عرض الكل'));
 
-      expect(_visibleText('كل المدرسين'), findsOneWidget);
+      _expectTab('المدرسون');
     });
 
     testWidgets('الرجوع من قسم غير الرئيسية يعيدك للرئيسية', (
@@ -103,12 +117,14 @@ void main() {
       await _enterStudentShell(tester);
 
       await _tapNav(tester, 'الحجوزات');
+      _expectTab('الحجوزات');
       expect(_visibleText('طلباتي'), findsOneWidget);
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
       // الرئيسية ظاهرة مرة أخرى، والتطبيق لم يُغلق.
+      _expectTab('الرئيسية');
       expect(_visibleText('أهلًا طالب تجريبي'), findsWidgets);
     });
 

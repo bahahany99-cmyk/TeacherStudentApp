@@ -49,7 +49,7 @@ class GroupsScreen extends StatelessWidget {
                     : 'السعة والموافقات تُفرض على الخادم',
               ),
               AsyncView<List<StudyGroup>>(
-                future: _isDiscover
+                load: () => _isDiscover
                     ? AppServicesScope.of(context).groups.listDiscoverable()
                     : AppServicesScope.of(
                         context,

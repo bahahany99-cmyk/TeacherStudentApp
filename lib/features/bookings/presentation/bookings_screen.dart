@@ -59,7 +59,7 @@ class BookingsScreen extends StatelessWidget {
                     : 'كل طلب يظل بانتظار موافقة المدرس (C-08)',
               ),
               AsyncView<List<BookingRequest>>(
-                future: AppServicesScope.of(context).bookings.listMine(),
+                load: () => AppServicesScope.of(context).bookings.listMine(),
                 builder: (BuildContext context, List<BookingRequest> bookings) {
                   if (bookings.isEmpty) {
                     return const EmptyState(

@@ -8,23 +8,37 @@ import 'package:teacher_student_app/core/widgets/loading_state.dart';
 /// حالة عنصر غير متزامن (تحميل / خطأ / فراغ / بيانات).
 ///
 /// كل الشاشات تستخدم هذا الغلاف بدل كتابة `FutureBuilder` يدويًا، حتى تكون
-/// الحالات الأربع بنفس الشكل والسلوك في كل الأقسام، ويوجد **دائمًا** زر
-/// «إعادة المحاولة» عند الخطأ.
+/// الحالات الأربع بنفس الشكل والسلوك في كل الأقسام.
 ///
-/// عند ربط Firestore يمكن استبدال المصدر بـ`Stream` عبر [AsyncView.stream]
-/// دون تغيير الشاشات.
+/// يستقبل **دالة جلب** لا نتيجة جاهزة، والسبب عملي: زر «إعادة المحاولة» يجب أن
+/// يعيد قراءة البيانات فعلًا. لو استقبلنا `Future` جاهزًا لكان الضغط على الزر
+/// يعيد عرض نفس الخطأ المحفوظ، أي زر بلا أثر.
+///
+/// مثال:
+/// ```dart
+/// AsyncView<List<TeacherProfile>>(
+///   load: () => AppServicesScope.of(context).teachers.listApproved(),
+///   builder: (BuildContext context, List<TeacherProfile> data) => ...,
+///   isEmpty: (List<TeacherProfile> data) => data.isEmpty,
+/// )
+/// ```
+///
+/// ملاحظات:
+/// - لا نُعيد الجلب عند كل إعادة بناء للأب (الدالة تُنشأ من جديد في كل بناء)،
+///   لذلك إن تغيّر معامل الجلب (مثل `teacherId`) يجب تمرير `key` مختلف.
+/// - عند ربط Firestore يمكن استبدال المصدر بـ`Stream` لاحقًا دون تغيير الشاشات.
 class AsyncView<T> extends StatefulWidget {
   const AsyncView({
     super.key,
-    required this.future,
+    required this.load,
     required this.builder,
     this.loadingLabel = AppStrings.loading,
     this.isEmpty,
     this.emptyBuilder,
-    this.onRetry,
   });
 
-  final Future<T> future;
+  /// يقرأ البيانات من المصدر. يُستدعى عند أول بناء وعند كل «إعادة المحاولة».
+  final Future<T> Function() load;
 
   /// يبني المحتوى عند وجود بيانات.
   final Widget Function(BuildContext context, T data) builder;
@@ -34,30 +48,39 @@ class AsyncView<T> extends StatefulWidget {
   /// هل النتيجة فارغة؟ (يُستخدم لإظهار [emptyBuilder] بدل قائمة فارغة).
   final bool Function(T data)? isEmpty;
 
-  /// الحالة البديلة عند الفراغ. إن لم تُحدَّد، تُعرض قائمة فارغة افتراضية.
+  /// الحالة البديلة عند الفراغ. إن لم تُحدَّد، تُعرض حالة فراغ افتراضية.
   final WidgetBuilder? emptyBuilder;
-
-  /// إن حُدِّد، يُستدعى لإعادة جلب البيانات (ويُعاد تشغيل [future] من الأب).
-  final VoidCallback? onRetry;
 
   @override
   State<AsyncView<T>> createState() => _AsyncViewState<T>();
 }
 
 class _AsyncViewState<T> extends State<AsyncView<T>> {
-  /// مفتاح إعادة البناء: يسمح بإعادة تشغيل الـfuture دون إعادة بناء الشاشة.
-  Key _futureKey = UniqueKey();
+  late Future<T> _future;
 
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.load();
+  }
+
+  /// يعيد تشغيل الطلب من المصدر — لا يعيد استخدام المستقبل القديم.
   void _retry() {
-    setState(() => _futureKey = UniqueKey());
-    widget.onRetry?.call();
+    setState(() => _future = widget.load());
+  }
+
+  Widget _empty(BuildContext context) {
+    return widget.emptyBuilder?.call(context) ??
+        const EmptyState(
+          icon: Icons.inbox_outlined,
+          title: 'لا توجد بيانات لعرضها',
+        );
   }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<T>(
-      key: _futureKey,
-      future: widget.future,
+      future: _future,
       builder: (BuildContext context, AsyncSnapshot<T> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return LoadingState(label: widget.loadingLabel);
@@ -70,18 +93,11 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
         final T? data = snapshot.data;
 
         if (data == null) {
-          return const EmptyState(
-            icon: Icons.inbox_outlined,
-            title: 'لا توجد بيانات لعرضها',
-          );
+          return _empty(context);
         }
 
         if (widget.isEmpty?.call(data) ?? false) {
-          return widget.emptyBuilder?.call(context) ??
-              const EmptyState(
-                icon: Icons.inbox_outlined,
-                title: 'لا توجد بيانات لعرضها',
-              );
+          return _empty(context);
         }
 
         return widget.builder(context, data);
