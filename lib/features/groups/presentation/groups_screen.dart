@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -69,7 +70,14 @@ class GroupsScreen extends StatelessWidget {
                         .map(
                           (StudyGroup g) => GroupCard(
                             group: g,
-                            onJoinTap: () => _showComingSoon(context),
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.groupDetails,
+                              arguments: g.id,
+                            ),
+                            // واجهة المدرس لا تطلب الانضمام لمجموعته.
+                            onJoinTap: _isDiscover
+                                ? () => _showComingSoon(context)
+                                : null,
                           ),
                         )
                         .toList(growable: false),

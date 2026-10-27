@@ -5,8 +5,14 @@ import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
+import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_members_screen.dart';
 import 'package:teacher_student_app/features/splash/presentation/splash_screen.dart';
+import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
+import 'package:teacher_student_app/features/teacher/presentation/my_teacher_profile_screen.dart';
+import 'package:teacher_student_app/features/teachers/presentation/teacher_profile_screen.dart';
 
 /// موجّه التنقل المركزي.
 ///
@@ -23,9 +29,49 @@ abstract final class AppRouter {
         return _page(const AppShell(), settings);
       case RoutePaths.designGallery:
         return _page(const DesignGalleryScreen(), settings);
+      case RoutePaths.teacherProfile:
+        final String? teacherId = _idFrom(settings);
+        if (teacherId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(TeacherProfileScreen(teacherId: teacherId), settings);
+      case RoutePaths.groupDetails:
+        final String? groupId = _idFrom(settings);
+        if (groupId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(GroupDetailsScreen(groupId: groupId), settings);
+      case RoutePaths.groupMembers:
+        final String? membersGroupId = _idFrom(settings);
+        if (membersGroupId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(GroupMembersScreen(groupId: membersGroupId), settings);
+      case RoutePaths.bookingDetails:
+        final String? bookingId = _idFrom(settings);
+        if (bookingId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(BookingDetailsScreen(bookingId: bookingId), settings);
+      case RoutePaths.myTeacherProfile:
+        return _page(const MyTeacherProfileScreen(), settings);
+      case RoutePaths.editTeacherProfile:
+        return _page(const EditTeacherProfileScreen(), settings);
       default:
         return _page(const UnknownRouteScreen(), settings);
     }
+  }
+
+  /// معرّف الكيان المطلوب من `arguments`.
+  ///
+  /// نرفض أي نوع آخر بهدوء ونعرض شاشة «المسار غير معروف»، بدل تمرير قيمة
+  /// خاطئة إلى شاشة التفاصيل تنهار أثناء البناء.
+  static String? _idFrom(RouteSettings settings) {
+    final Object? arguments = settings.arguments;
+    if (arguments is String && arguments.trim().isNotEmpty) {
+      return arguments.trim();
+    }
+    return null;
   }
 
   static MaterialPageRoute<dynamic> _page(Widget child, RouteSettings settings) {

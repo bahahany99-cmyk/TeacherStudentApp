@@ -8,12 +8,14 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 
 /// بطاقة عرض مجموعة دراسية.
 ///
-/// زر "طلب انضمام" غير مفعّل الآن: طلبات الانضمام والتحقق من السعة يُنفَّذان
-/// في المرحلة 8، والتحقق النهائي على الخادم.
+/// - `onTap`: يفتح تفاصيل المجموعة.
+/// - `onJoinTap`: زر طلب الانضمام. **لا يظهر** إذا لم يُمرَّر، لأن واجهة المدرس
+///   لا تطلب الانضمام لمجموعته. الزر نفسه غير منفّذ بعد (المرحلة 8).
 class GroupCard extends StatelessWidget {
-  const GroupCard({super.key, required this.group, this.onJoinTap});
+  const GroupCard({super.key, required this.group, this.onTap, this.onJoinTap});
 
   final StudyGroup group;
+  final VoidCallback? onTap;
   final VoidCallback? onJoinTap;
 
   @override
@@ -23,6 +25,7 @@ class GroupCard extends StatelessWidget {
     return Padding(
       padding: AppSpacing.listGap,
       child: AppCard(
+        onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -87,14 +90,16 @@ class GroupCard extends StatelessWidget {
                 ],
               ),
             ],
-            const SizedBox(height: AppSpacing.sm),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: onJoinTap,
-                child: const Text('طلب الانضمام'),
+            if (onJoinTap != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: onJoinTap,
+                  child: const Text('طلب الانضمام'),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

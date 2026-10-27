@@ -1,6 +1,7 @@
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -61,6 +62,17 @@ class DemoTeacherRepository implements TeacherRepository {
 
   @override
   Future<List<TeacherProfile>> listFeatured() => _featuredCache;
+
+  @override
+  Future<TeacherProfile?> findById(String id) {
+    for (final TeacherProfile teacher in _source) {
+      // نفس قاعدة الظهور: الملف غير المعتمد لا يُكشف للطلاب.
+      if (teacher.id == id && teacher.isVisibleToStudents) {
+        return Future<TeacherProfile?>.value(teacher);
+      }
+    }
+    return Future<TeacherProfile?>.value(null);
+  }
 }
 
 class DemoGroupRepository implements GroupRepository {
@@ -84,6 +96,21 @@ class DemoGroupRepository implements GroupRepository {
           .toList(growable: false),
     );
   }
+
+  @override
+  Future<StudyGroup?> findById(String id) {
+    for (final StudyGroup group in _source) {
+      if (group.id == id) {
+        return Future<StudyGroup?>.value(group);
+      }
+    }
+    return Future<StudyGroup?>.value(null);
+  }
+
+  @override
+  Future<List<GroupMember>> listMembers(String groupId) {
+    return Future<List<GroupMember>>.value(DemoData.membersFor(groupId));
+  }
 }
 
 class DemoBookingRepository implements BookingRepository {
@@ -99,4 +126,14 @@ class DemoBookingRepository implements BookingRepository {
 
   @override
   Future<List<BookingRequest>> listMine() => _cache;
+
+  @override
+  Future<BookingRequest?> findById(String id) {
+    for (final BookingRequest booking in _source) {
+      if (booking.id == id) {
+        return Future<BookingRequest?>.value(booking);
+      }
+    }
+    return Future<BookingRequest?>.value(null);
+  }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
@@ -125,7 +126,13 @@ class StudentHomeScreen extends StatelessWidget {
                   return Column(
                     children: teachers
                         .map(
-                          (TeacherProfile t) => TeacherCard(teacher: t),
+                          (TeacherProfile t) => TeacherCard(
+                            teacher: t,
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.teacherProfile,
+                              arguments: t.id,
+                            ),
+                          ),
                         )
                         .toList(growable: false),
                   );

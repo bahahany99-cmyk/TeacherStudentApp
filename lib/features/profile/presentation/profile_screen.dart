@@ -119,6 +119,16 @@ class ProfileScreen extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: <Widget>[
+                    if (user?.role == UserRole.teacher) ...<Widget>[
+                      _ProfileTile(
+                        icon: Icons.badge_outlined,
+                        label: 'ملفي التعريفي',
+                        onTap: () => Navigator.of(context).pushNamed(
+                          RoutePaths.myTeacherProfile,
+                        ),
+                      ),
+                      const Divider(height: 1),
+                    ],
                     _ProfileTile(
                       icon: Icons.person_outline,
                       label: 'بياناتي',

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
@@ -74,17 +76,10 @@ class BookingsScreen extends StatelessWidget {
                       for (final BookingRequest booking in bookings)
                         Padding(
                           padding: AppSpacing.listGap,
-                          child: Container(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surface,
-                              borderRadius: BorderRadius.circular(
-                                AppSpacing.radiusLg,
-                              ),
-                              border: Border.all(
-                                color: theme.colorScheme.outline,
-                                width: 0.7,
-                              ),
+                          child: AppCard(
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.bookingDetails,
+                              arguments: booking.id,
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,

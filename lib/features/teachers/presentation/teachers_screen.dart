@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
@@ -64,7 +65,15 @@ class TeachersScreen extends StatelessWidget {
                   }
                   return Column(
                     children: teachers
-                        .map((TeacherProfile t) => TeacherCard(teacher: t))
+                        .map(
+                          (TeacherProfile t) => TeacherCard(
+                            teacher: t,
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.teacherProfile,
+                              arguments: t.id,
+                            ),
+                          ),
+                        )
                         .toList(growable: false),
                   );
                 },

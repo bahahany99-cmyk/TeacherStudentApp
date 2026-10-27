@@ -7,4 +7,7 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 abstract interface class BookingRepository {
   /// طلبات المستخدم الحالي (طالبًا كان أو مدرسًا).
   Future<List<BookingRequest>> listMine();
+
+  /// طلب واحد بالمعرّف، أو `null` إن لم يوجد أو لم يكن للمستخدم الحالي.
+  Future<BookingRequest?> findById(String id);
 }

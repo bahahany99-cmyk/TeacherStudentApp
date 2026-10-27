@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 
@@ -172,4 +173,47 @@ abstract final class DemoData {
       note: 'الموعد غير مناسب حاليًا.',
     ),
   ];
+
+  /// أسماء وهمية لتوليد أعضاء المجموعات.
+  ///
+  /// نولّد العدد من `seatsTaken` حتى تكون شاشة الأعضاء متوافقة مع عدد المقاعد
+  /// المعروض في البطاقة، ولا تظهر بيانات متناقضة للمراجع.
+  static const List<String> _memberNamesPool = <String>[
+    'محمد سامي',
+    'مريم أشرف',
+    'عبد الرحمن فتحي',
+    'نور الهدى',
+    'يوسف عمرو',
+    'سلمى مجدي',
+    'كريم طارق',
+    'هبة الله',
+    'أحمد جمال',
+    'رنا شريف',
+  ];
+
+  /// أعضاء مجموعة تجريبية عددهم = المقاعد المشغولة.
+  ///
+  /// ⚠️ وهميون بالكامل، ولا يمثّلون طلابًا حقيقيين.
+  static List<GroupMember> membersFor(String groupId) {
+    StudyGroup? group;
+    for (final StudyGroup candidate in groups) {
+      if (candidate.id == groupId) {
+        group = candidate;
+        break;
+      }
+    }
+    if (group == null) {
+      return const <GroupMember>[];
+    }
+
+    return List<GroupMember>.unmodifiable(<GroupMember>[
+      for (int i = 0; i < group.seatsTaken; i++)
+        GroupMember(
+          id: '$groupId-member-${i + 1}',
+          name: _memberNamesPool[i % _memberNamesPool.length],
+          // تواريخ ثابتة حتى لا تتغير الواجهة بين تشغيلين.
+          joinedAt: DateTime(2026, 9, 1).add(Duration(days: i * 3)),
+        ),
+    ]);
+  }
 }

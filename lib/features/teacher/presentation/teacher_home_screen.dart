@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
@@ -53,7 +54,7 @@ class TeacherHomeScreen extends StatelessWidget {
                         ),
                         const Flexible(
                           child: StatusChip(
-                            label: 'قيد المراجعة',
+                            label: 'حساب تجريبي',
                             color: AppColors.statusPending,
                           ),
                         ),
@@ -61,8 +62,9 @@ class TeacherHomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      'أهلًا $name، ملفك بانتظار مراجعة الإدارة. لن يظهر للطلاب '
-                      'ولا يمكن استقبال حجوزات قبل الاعتماد (C-06).',
+                      'أهلًا $name، هذه معاينة محلية بلا Firebase. حالة اعتماد '
+                      'ملفك تأتي من الخادم، والملف لا يظهر للطلاب قبل الاعتماد '
+                      '(C-06).',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -72,8 +74,10 @@ class TeacherHomeScreen extends StatelessWidget {
                       children: <Widget>[
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () => _showComingSoon(context),
-                            child: const Text('تعديل الملف'),
+                            onPressed: () => Navigator.of(context).pushNamed(
+                              RoutePaths.myTeacherProfile,
+                            ),
+                            child: const Text('ملفي التعريفي'),
                           ),
                         ),
                         const SizedBox(width: AppSpacing.xs),
@@ -114,6 +118,10 @@ class TeacherHomeScreen extends StatelessWidget {
                           (BookingRequest b) => Padding(
                             padding: AppSpacing.listGap,
                             child: AppCard(
+                              onTap: () => Navigator.of(context).pushNamed(
+                                RoutePaths.bookingDetails,
+                                arguments: b.id,
+                              ),
                               child: Row(
                                 children: <Widget>[
                                   Expanded(
@@ -176,7 +184,10 @@ class TeacherHomeScreen extends StatelessWidget {
                         .map(
                           (StudyGroup g) => GroupCard(
                             group: g,
-                            onJoinTap: () => _showComingSoon(context),
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.groupDetails,
+                              arguments: g.id,
+                            ),
                           ),
                         )
                         .toList(growable: false),

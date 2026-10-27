@@ -1,16 +1,36 @@
 /// أسماء المسارات في التطبيق (مكان واحد).
 ///
-/// التنقل الحالي بسيط (اسمي). إذا احتجنا لاحقًا إلى روابط أعمق
-/// (مثل `/teachers/:id`) يمكن الانتقال إلى `go_router` دون تغيير أسماء
-/// المسارات هنا (انظر T-05 في `docs/ARCHITECTURE_DECISIONS.md`).
+/// التنقل الحالي بسيط (اسمي) مع تمرير المعرّف كـ`arguments`.
+/// إذا احتجنا لاحقًا إلى روابط أعمق (`/teachers/:id`) يمكن الانتقال إلى
+/// `go_router` دون تغيير أسماء المسارات هنا (انظر T-02 في
+/// `docs/ARCHITECTURE_DECISIONS.md`).
 abstract final class RoutePaths {
   static const String splash = '/';
   static const String login = '/login';
   static const String shell = '/app';
 
+  // ── شاشات التفاصيل (P3) ────────────────────────────────────────────────────
+  // نمرّر الخريطة/المعرّف عبر `arguments`، والشاشة تقرأ الباقي من الجلسة
+  // (الدور) ومن المستودعات (البيانات).
+
+  /// ملف مدرس (واجهة الطالب). `arguments` = معرّف المدرس.
+  static const String teacherProfile = '/teacher';
+
+  /// تفاصيل مجموعة. `arguments` = معرّف المجموعة.
+  static const String groupDetails = '/group';
+
+  /// أعضاء مجموعة (واجهة المدرس). `arguments` = معرّف المجموعة.
+  static const String groupMembers = '/group/members';
+
+  /// تفاصيل طلب حجز. `arguments` = معرّف الطلب.
+  static const String bookingDetails = '/booking';
+
+  /// ملف المدرس الخاص (واجهة المدرس).
+  static const String myTeacherProfile = '/me/teacher-profile';
+
+  /// تعديل معلومات الملف (واجهة المدرس — نموذج عرض لا يحفظ).
+  static const String editTeacherProfile = '/me/teacher-profile/edit';
+
   /// معرض المكونات — شاشة تطوير للمراجعة البصرية فقط (P1).
   static const String designGallery = '/dev/design-gallery';
-
-  // مسارات مستقبلية (غير مسجّلة بعد):
-  // '/teacher/:id', '/group/:id', '/booking/:id', '/chat/:id', '/admin'
 }
