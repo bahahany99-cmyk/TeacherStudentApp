@@ -14,8 +14,9 @@
 | العنصر | القيمة الحالية | مكان التعديل عند اعتماد الاسم |
 |---|---|---|
 | معرّف تقني (Dart package) | `teacher_student_app` | `pubspec.yaml` → `name` + استيرادات `package:teacher_student_app/…` |
-| الاسم الظاهر للمستخدم | «مدرسون وطلاب» (مؤقت) | `lib/core/config/app_identity.dart` → `displayName` |
-| الوصف المختصر | «منصة تجمع مدرسي مصر بطلابهم» | `lib/core/config/app_identity.dart` → `tagline` |
+| الاسم الظاهر للمستخدم | **«درسلي»** (مؤقت) | `lib/core/config/app_identity.dart` → `displayName` |
+| الوصف المختصر | «ابحث عن مدرسك واحجز درسك بسهولة» | `lib/core/config/app_identity.dart` → `tagline` |
+| الخط | **Cairo** 400/600/700 (SIL OFL) | `assets/fonts/` + `pubspec.yaml` + `app_typography.dart` |
 | عنوان النافذة/التطبيق في Flutter | من `AppIdentity.displayName` | — |
 | اسم التطبيق على Android | **غير موجود بعد** (لا مجلد `android/`) | `android/app/src/main/AndroidManifest.xml` → `android:label` |
 | `applicationId` على Google Play | **`com.darsly.app`** ✅ معتمد | `tool/scaffold_android.sh` (`--org com.darsly --project-name app`) |
