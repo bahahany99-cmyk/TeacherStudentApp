@@ -22,7 +22,7 @@ ORG="com.darsly"
 PROJECT_NAME="app"
 EXPECTED_APP_ID="${ORG}.${PROJECT_NAME}"
 # الاسم الظاهر المؤقت — يُحدَّث في P1/P17 عند اعتماد الهوية (G3).
-TEMP_APP_LABEL="مدرسون وطلاب"
+TEMP_APP_LABEL="درسلي"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"

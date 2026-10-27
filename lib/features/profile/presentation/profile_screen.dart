@@ -12,6 +12,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 
 /// صفحة الحساب والملف الشخصي.
 ///
@@ -35,9 +36,7 @@ class ProfileScreen extends StatelessWidget {
   }
 
   void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text(AppStrings.comingSoon)));
+    AppSnackBar.show(context, AppStrings.comingSoon);
   }
 
   @override
@@ -172,6 +171,13 @@ class ProfileScreen extends StatelessWidget {
                         onPressed: () =>
                             _switchRole(context, UserRole.teacher),
                         child: const Text('واجهة المدرس'),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(context).pushNamed(
+                          RoutePaths.designGallery,
+                        ),
+                        child: const Text('معرض المكونات (تطوير)'),
                       ),
                     ],
                   ),

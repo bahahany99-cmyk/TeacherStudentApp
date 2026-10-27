@@ -8,6 +8,9 @@ abstract final class RoutePaths {
   static const String login = '/login';
   static const String shell = '/app';
 
+  /// معرض المكونات — شاشة تطوير للمراجعة البصرية فقط (P1).
+  static const String designGallery = '/dev/design-gallery';
+
   // مسارات مستقبلية (غير مسجّلة بعد):
   // '/teacher/:id', '/group/:id', '/booking/:id', '/chat/:id', '/admin'
 }

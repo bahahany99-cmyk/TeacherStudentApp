@@ -5,6 +5,7 @@ import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
+import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
 import 'package:teacher_student_app/features/splash/presentation/splash_screen.dart';
 
 /// موجّه التنقل المركزي.
@@ -20,6 +21,8 @@ abstract final class AppRouter {
         return _page(const LoginScreen(), settings);
       case RoutePaths.shell:
         return _page(const AppShell(), settings);
+      case RoutePaths.designGallery:
+        return _page(const DesignGalleryScreen(), settings);
       default:
         return _page(const UnknownRouteScreen(), settings);
     }

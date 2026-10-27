@@ -11,11 +11,14 @@ abstract final class AppIdentity {
   /// لا علاقة له بـ `applicationId` على Google Play، وهو **لم يُحسم بعد** (Q-29).
   static const String technicalId = 'teacher_student_app';
 
-  /// الاسم الظاهر المؤقت. **ليس** الاسم التجاري المعتمد.
-  static const String displayName = 'مدرسون وطلاب';
+  /// الاسم الظاهر المؤقت المعتمد للعرض: «درسلي».
+  ///
+  /// اعتمده صاحب المشروع مؤقتًا في 2026-10-26. **ليس** علامة تجارية مسجّلة
+  /// ولا نهائية — يُحسم الاسم النهائي في بوابة G3.
+  static const String displayName = 'درسلي';
 
   /// وصف مختصر مؤقت يظهر في شاشة البداية والدخول.
-  static const String tagline = 'منصة تجمع مدرسي مصر بطلابهم';
+  static const String tagline = 'ابحث عن مدرسك واحجز درسك بسهولة';
 
   /// هل الهوية مؤقتة؟ يُستخدم لتذكير الفريق داخل الشاشات والوثائق.
   static const bool isProvisional = true;

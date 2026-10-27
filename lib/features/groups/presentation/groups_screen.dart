@@ -10,6 +10,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 
 /// صفحة المجموعات الدراسية — صفحة مستقلة (وليست قائمة داخل الرئيسية).
 ///
@@ -92,8 +93,6 @@ class GroupsScreen extends StatelessWidget {
   }
 
   void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text(AppStrings.comingSoon)));
+    AppSnackBar.show(context, AppStrings.comingSoon);
   }
 }

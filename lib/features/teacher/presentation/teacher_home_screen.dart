@@ -16,6 +16,7 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 
 /// الصفحة الرئيسية لواجهة المدرس.
 ///
@@ -204,10 +205,6 @@ class TeacherHomeScreen extends StatelessWidget {
   }
 
   void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text(AppStrings.comingSoon)),
-      );
+    AppSnackBar.show(context, AppStrings.comingSoon);
   }
 }

@@ -8,6 +8,7 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 
 /// شاشة تسجيل الدخول (بنية عرض فقط في المرحلة 2).
 ///
@@ -27,16 +28,12 @@ class LoginScreen extends StatelessWidget {
   }
 
   void _showNotConnectedNotice(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text(
-            'تسجيل الدخول عبر Google يحتاج أولًا إعداد مشروع Firebase '
-            'وتفعيل مزوّد Google (انظر docs/FIREBASE_SETUP.md).',
-          ),
-        ),
-      );
+    AppSnackBar.show(
+      context,
+      'تسجيل الدخول عبر Google يحتاج أولًا إعداد مشروع Firebase '
+      'وتفعيل مزوّد Google (انظر docs/FIREBASE_SETUP.md).',
+      type: AppMessageType.warning,
+    );
   }
 
   @override

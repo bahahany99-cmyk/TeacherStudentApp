@@ -32,6 +32,18 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # لا تُضاف أصول أو خطوط الآن.
-  # لإضافة خط عربي لاحقًا (مثال: Cairo أو IBM Plex Sans Arabic) ضع الملفات في
-  # assets/fonts/ وأضفها هنا، ثم فعّل العائلة في lib/core/theme/app_typography.dart.
+  # خط Cairo (رخصة SIL Open Font License 1.1) — مولَّد كأوزان ثابتة من الخط
+  # المتغيّر الرسمي: Regular 400 / SemiBold 600 / Bold 700.
+  # الترخيص محفوظ في assets/fonts/OFL.txt (إلزامي عند توزيع الخط).
+  fonts:
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
+          weight: 400
+          style: normal
+        - asset: assets/fonts/Cairo-SemiBold.ttf
+          weight: 600
+          style: normal
+        - asset: assets/fonts/Cairo-Bold.ttf
+          weight: 700
+          style: normal
