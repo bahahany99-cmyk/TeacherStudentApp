@@ -5,7 +5,7 @@
   "description": "اختبارات قواعد Firestore على المحاكي — ليست جزءًا من تطبيق Flutter.",
   "type": "module",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --project demo-darsly --config ../../firebase.json \"node --test --test-reporter=spec tests/\""
+    "test": "firebase emulators:exec --only firestore --project demo-darsly --config ../../firebase.json \"node --test --test-reporter=spec tests/*.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

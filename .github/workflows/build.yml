@@ -128,7 +128,7 @@ jobs:
             /tmp/analyze.txt
             /tmp/test.txt
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2
 
   # ── قواعد Firestore على المحاكي (P6) ─────────────────────────────────────────
   # يتطلب Java (المحاكي يعمل على JVM) وNode. يشغّل القواعد على محاكي حقيقي
@@ -186,7 +186,7 @@ jobs:
           name: rules-test-log
           path: /tmp/rules.txt
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 2
 
   # ── بناء APK: عند الطلب فقط، ونتيجة مؤقتة (لا Releases) ─────────────────────
   build_apk:
@@ -297,4 +297,4 @@ jobs:
           name: apk-${{ inputs.build_mode || 'release' }}
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
