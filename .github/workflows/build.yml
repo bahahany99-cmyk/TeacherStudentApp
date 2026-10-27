@@ -177,6 +177,10 @@ jobs:
             exit "$status"
           fi
 
+          # ملخص الأرقام كـannotation: ملف الـartifact خارج نطاق الوصول من
+          # بيئة التطوير، والملخص هو ما يمكن التحقق منه فعليًا.
+          summary=$(grep -E "^ℹ (tests|pass|fail) " /tmp/rules.txt | tr '\n' ' ')
+          echo "::notice title=rules tests::$summary"
           echo "✅ قواعد Firestore: كل حالات السماح/الرفض صحيحة على المحاكي."
 
       - name: Upload rules log
