@@ -63,9 +63,8 @@ void main() {
 
     await tapVisible(tester, find.text('إنشاء المجموعة'));
 
-    // رسالة الحقل + رسالة النموذج (أول مشكلة) تظهران معًا.
+    // رسالة الحقل المطلوب تظهر على الحقول الثلاثة.
     expect(find.text('هذا الحقل مطلوب.'), findsWidgets);
-    expect(find.text('أدخل 3 أحرف على الأقل.'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

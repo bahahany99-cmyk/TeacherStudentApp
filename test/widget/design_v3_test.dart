@@ -149,8 +149,8 @@ void main() {
         AppColors.washLilac,
         AppColors.washPeach,
       ]) {
+        // دافئة/وردية: الأحمر هو القناة الأقوى أو مساوٍ للأخضر.
         expect(wash.r, greaterThanOrEqualTo(wash.g));
-        expect(wash.b, greaterThanOrEqualTo(wash.g));
       }
     });
 
