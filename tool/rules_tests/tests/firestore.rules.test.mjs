@@ -911,7 +911,7 @@ describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
     );
   });
 
-  it('لا حذف لطلب من التطبيق', async () => {
+  it('الطالب لا يحذف طلبه، والمالك يحذف صف طالب ليس عضوًا (P9)', async () => {
     await seed([
       { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
       {
@@ -920,10 +920,12 @@ describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
       },
     ]);
 
+    // الطالب لا يمحو سجل طلبه، والإدارة فقط كانت تسمح سابقًا.
     await assertFails(
       deleteDoc(doc(asStudent(), joinPath('g1', 'student-1'))),
     );
-    await assertFails(
+    // المالك نعم — لكن **فقط** لأن student-1 ليس عضوًا في g1.
+    await assertSucceeds(
       deleteDoc(doc(asTeacher(), joinPath('g1', 'student-1'))),
     );
   });
@@ -1452,13 +1454,13 @@ describe('P9 — قبول المنتظر: مقعد واحد وعضوية واح�
     );
   });
 
-  it('لا حذف صف الانتظار من التطبيق', async () => {
+  it('لا حذف لصف الانتظار من الطالب، ويُسمح للمالك لطالب ليس عضوًا', async () => {
     await seedQueue(11);
 
     await assertFails(
       deleteDoc(doc(asStudent(), waitlistPath('g1', 'student-1'))),
     );
-    await assertFails(
+    await assertSucceeds(
       deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))),
     );
   });
@@ -1781,50 +1783,142 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
     await assertFails(deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))));
   });
 
-  it('المعاملة الكاملة: نقل + تنظيف في دفعة واحدة', async () => {
-    await seed([
+  /**
+   * نقل كما ينفّذه التطبيق، مع تحكّم في الكتابات الإضافية.
+   *
+   * نفصل الحالات عمدًا: المعاملة الواحدة تجمع 5–8 كتابات، وفشل واحد منها يرمي
+   * رسالة تجمع نتائج كل القواعد — فلا يُعرف أيّ كتابة رُفضت. الفصل يعطي إشارة
+   * دقيقة، والمعاملة الكاملة تبقى اختبارًا ختاميًا.
+   */
+  const seedMove = ({ fromTaken = 3, toTaken = 2 } = {}) =>
+    seed([
       {
         path: 'studyGroups/g1',
-        data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: 3 }),
+        data: groupDoc('teacher-1', { seatsTotal: 6, seatsTaken: fromTaken }),
       },
       {
         path: 'studyGroups/g2',
-        data: groupDoc('teacher-1', { title: 'الفيزياء', seatsTotal: 5, seatsTaken: 2 }),
+        data: groupDoc('teacher-1', { title: 'الفيزياء', seatsTotal: 5, seatsTaken: toTaken }),
       },
       {
         path: 'studyGroups/g1/members/student-1',
         data: { studentId: 'student-1', groupId: 'g1', name: 'طالب', joinedAt: now(), status: 'active' },
       },
-      // سجل قديم في المصدر + صفوف مفتوحة في الهدف.
-      { path: requestPath('g1', 'student-1'), data: requestDoc('g1', 'student-1', 'accepted') },
-      { path: requestPath('g2', 'student-1'), data: requestDoc('g2', 'student-1', 'pending') },
-      { path: waitlistPath('g2', 'student-1'), data: waitlistDoc('g2', 'student-1', 'waiting') },
     ]);
 
+  /** الكتابات الأساسية للنقل: مقعد في كل اتجاه + العضوية تنتقل. */
+  const coreWrites = (db, tx, from, to) => {
+    tx.update(doc(db, 'studyGroups/g1'), { seatsTaken: from.seatsTaken - 1 });
+    tx.update(doc(db, 'studyGroups/g2'), { seatsTaken: to.seatsTaken + 1 });
+    tx.delete(doc(db, 'studyGroups/g1/members/student-1'));
+    tx.set(doc(db, 'studyGroups/g2/members/student-1'), {
+      studentId: 'student-1',
+      groupId: 'g2',
+      name: 'طالب',
+      joinedAt: now(),
+      status: 'active',
+      movedAt: now(),
+      movedFromGroupTitle: 'الرياضيات',
+    });
+  };
+
+  const readBoth = async (db, tx) => {
+    const from = await tx.get(doc(db, 'studyGroups/g1'));
+    const to = await tx.get(doc(db, 'studyGroups/g2'));
+    return [from.data(), to.data()];
+  };
+
+  it('الأساس: مقعد ينقص ويزيد والعضوية تنتقل', async () => {
+    await seedMove();
     const db = asTeacher();
+
     await assertSucceeds(
       runTransaction(db, async (tx) => {
-        const fromSnap = await tx.get(doc(db, 'studyGroups/g1'));
-        const toSnap = await tx.get(doc(db, 'studyGroups/g2'));
-        const from = fromSnap.data();
-        const to = toSnap.data();
+        const [from, to] = await readBoth(db, tx);
+        coreWrites(db, tx, from, to);
+      }),
+    );
 
-        tx.update(doc(db, 'studyGroups/g1'), { seatsTaken: from.seatsTaken - 1 });
-        tx.update(doc(db, 'studyGroups/g2'), { seatsTaken: to.seatsTaken + 1 });
+    assert.equal((await readAsAdmin('studyGroups/g1')).seatsTaken, 2);
+    assert.equal((await readAsAdmin('studyGroups/g2')).seatsTaken, 3);
+  });
 
-        tx.delete(doc(db, 'studyGroups/g1/members/student-1'));
-        tx.set(doc(db, 'studyGroups/g2/members/student-1'), {
-          studentId: 'student-1',
-          groupId: 'g2',
-          name: 'طالب',
-          joinedAt: now(),
-          status: 'active',
-          movedAt: now(),
-          movedFromGroupTitle: 'الرياضيات',
+  it('حذف سجل المصدر داخل المعاملة يمر بعد خروج العضو', async () => {
+    await seedMove();
+    await seed([
+      { path: joinPath('g1', 'student-1'), data: joinRequestDoc('g1', 'student-1', { status: 'accepted', decidedAt: now(), decidedBy: 'teacher-1' }) },
+    ]);
+    const db = asTeacher();
+
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const [from, to] = await readBoth(db, tx);
+        coreWrites(db, tx, from, to);
+        tx.delete(doc(db, joinPath('g1', 'student-1')));
+      }),
+    );
+
+    assert.equal(await readAsAdmin(joinPath('g1', 'student-1')), null);
+  });
+
+  it('إغلاق طلب معلّق في الهدف داخل المعاملة', async () => {
+    await seedMove();
+    await seed([
+      { path: joinPath('g2', 'student-1'), data: joinRequestDoc('g2', 'student-1') },
+    ]);
+    const db = asTeacher();
+
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const [from, to] = await readBoth(db, tx);
+        coreWrites(db, tx, from, to);
+        tx.update(doc(db, joinPath('g2', 'student-1')), {
+          status: 'accepted',
+          decidedAt: now(),
+          decidedBy: 'teacher-1',
         });
+      }),
+    );
 
-        // الهدف: إغلاق الصفوف المفتوحة.
-        tx.update(doc(db, requestPath('g2', 'student-1')), {
+    assert.equal((await readAsAdmin(joinPath('g2', 'student-1'))).status, 'accepted');
+  });
+
+  it('إغلاق صف الانتظار في الهدف داخل المعاملة', async () => {
+    await seedMove();
+    await seed([
+      { path: waitlistPath('g2', 'student-1'), data: waitlistDoc('g2', 'student-1') },
+    ]);
+    const db = asTeacher();
+
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const [from, to] = await readBoth(db, tx);
+        coreWrites(db, tx, from, to);
+        tx.update(doc(db, waitlistPath('g2', 'student-1')), {
+          status: 'promoted',
+          decidedAt: now(),
+          decidedBy: 'teacher-1',
+        });
+      }),
+    );
+
+    assert.equal((await readAsAdmin(waitlistPath('g2', 'student-1'))).status, 'promoted');
+  });
+
+  it('المعاملة الكاملة: نقل + إغلاق في الهدف + حذف في المصدر', async () => {
+    await seedMove();
+    await seed([
+      { path: joinPath('g1', 'student-1'), data: joinRequestDoc('g1', 'student-1', { status: 'accepted', decidedAt: now(), decidedBy: 'teacher-1' }) },
+      { path: joinPath('g2', 'student-1'), data: joinRequestDoc('g2', 'student-1') },
+      { path: waitlistPath('g2', 'student-1'), data: waitlistDoc('g2', 'student-1') },
+    ]);
+    const db = asTeacher();
+
+    await assertSucceeds(
+      runTransaction(db, async (tx) => {
+        const [from, to] = await readBoth(db, tx);
+        coreWrites(db, tx, from, to);
+        tx.update(doc(db, joinPath('g2', 'student-1')), {
           status: 'accepted',
           decidedAt: now(),
           decidedBy: 'teacher-1',
@@ -1834,9 +1928,7 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
           decidedAt: now(),
           decidedBy: 'teacher-1',
         });
-
-        // المصدر: حذف السجل الذي صار بلا معنى.
-        tx.delete(doc(db, requestPath('g1', 'student-1')));
+        tx.delete(doc(db, joinPath('g1', 'student-1')));
       }),
     );
 
@@ -1844,9 +1936,8 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
     assert.equal(movedMember.groupId, 'g2');
     assert.equal(movedMember.movedFromGroupTitle, 'الرياضيات');
     assert.ok(movedMember.movedAt, 'أثر النقل مكتوب');
-
-    assert.equal(await readAsAdmin(requestPath('g1', 'student-1')), null, 'سجل المصدر محذوف');
-    assert.equal((await readAsAdmin(requestPath('g2', 'student-1'))).status, 'accepted');
+    assert.equal(await readAsAdmin(joinPath('g1', 'student-1')), null, 'سجل المصدر محذوف');
+    assert.equal((await readAsAdmin(joinPath('g2', 'student-1'))).status, 'accepted');
     assert.equal((await readAsAdmin(waitlistPath('g2', 'student-1'))).status, 'promoted');
     assert.equal((await readAsAdmin('studyGroups/g1')).seatsTaken, 2);
     assert.equal((await readAsAdmin('studyGroups/g2')).seatsTaken, 3);
