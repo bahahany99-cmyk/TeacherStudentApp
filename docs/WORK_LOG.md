@@ -266,3 +266,61 @@
 2. **`firebase_core` موجودة في `pubspec.yaml`** رغم استبعاد الوثيقة لربط Firebase
    في المرحلة الأولى → قرار مطلوب: إزالة حتى P4 أم إبقاء.
 3. **الوضع التجريبي للجلسة** يجب حذفه قبل P5 (مذكور في الخطة).
+
+---
+
+## P0 — البيئة والتحقق الفعلي ✅ (2026-10-26)
+
+**الهدف:** تحويل المشروع من «ملفات Dart» إلى مشروع Flutter **مبني ومختبر فعليًا**،
+وإنتاج أول APK. بيئة العمل لا تحتوي Flutter و`pub.dev` محجوب → التحقق جرى على
+GitHub Actions (بوابة G10، معتمدة).
+
+**قرارات مُغلقة مع هذا العمل:** G1 (`com.darsly.app`)، G2 (`me-central1`)،
+G10 (GitHub Actions). التفاصيل في `ARCHITECTURE_DECISIONS.md` → A-21..A-24.
+
+### الملفات
+
+| الملف | النوع |
+|---|---|
+| `.github/workflows/build.yml` | جديد — checkout، JDK 17، Flutter stable، توليد `android/`، `pub get`، `analyze`، `test`، `build apk --debug`، رفع Artifacts |
+| `tool/scaffold_android.sh` | جديد — توليد `android/` بشكل حتمي (`--org com.darsly --project-name app`) وتحقق آلي من `applicationId` |
+| `tool/ci/annotate_log.py` | جديد — تحويل سجلات CI إلى annotations قابلة للقراءة عبر API (سجلات Actions على blob storage محجوب) |
+| `test/helpers/test_app.dart` | معدّل — `usePhoneSurface()` (360×720) و`tapVisible()` |
+| `test/widget/*.dart` | معدّل — تأكيدات أقوى + تمرير قبل اللمس |
+| `lib/core/widgets/app_card.dart` | **إصلاح عيب حقيقي** — `Material` داخلي لبطاقات تحتوي `ListTile` |
+| `lib/core/widgets/status_chip.dart` | **إصلاح عيب حقيقي** — ellipsis على النص |
+| `lib/features/groups/.../group_card.dart` | **إصلاح عيب** — صف المقاعد → `Wrap` + `_IconLabel` |
+| `lib/features/teachers/.../teacher_card.dart` | **إصلاح عيب** — نص التقييم داخل `Flexible` |
+| `lib/features/bookings/presentation/bookings_screen.dart` | **إصلاح عيب** — التاريخ داخل `Flexible` |
+| `lib/features/profile/presentation/profile_screen.dart` | **إصلاح عيب** — شرائح الأدوار → `Wrap` |
+| `lib/features/teacher/presentation/teacher_home_screen.dart` | **إصلاح عيب** — شرائح الحالة داخل `Flexible` |
+
+### نتائج التحقق الفعلية (Run #40464737252 — `completed / success`)
+
+| الخطوة | النتيجة |
+|---|---|
+| Scaffold Android (`com.darsly.app`) | ✅ نجح، والتحقق الآلي من `applicationId` مرّ |
+| `flutter pub get` | ✅ نجح |
+| `dart analyze` | ✅ **صفر أخطاء وصفر تحذيرات** |
+| `flutter test` | ✅ **كل الاختبارات ناجحة** (9 اختبارات: 5 unit + 4 widget) |
+| `flutter build apk --debug` | ✅ نجح |
+| Artifact: `app-debug-apk` | ✅ **72,679,480 بايت (~69 م.ب)** — APK قابل للتنزيل |
+| Artifact: `generated-android-platform` | ✅ 64,492 بايت — مجلد `android/` المولَّد |
+| Artifact: `analyze-log` / `test-log` | ✅ محفوظان |
+
+### الأخطاء التي كشفها CI وأُصلحت (لم تكن معروفة قبلًا)
+
+1. **3 اختبارات تنقّل فاشلة** — أزرار شاشة الدخول أسفل حدّ العرض في مقاس 800×600.
+2. **Assertion في `ListTile`** داخل `AppCard` («ink splashes may be invisible») — عيب حقيقي في المكوّن المشترك.
+3. **تجاوز أفقي 2.9px و0.4px** على عرض 360dp في بطاقات المجموعة/المدرس/الحجز/الملف الشخصي.
+
+### ما لم يُنفَّذ / لم يُتحقق منه
+
+- ❌ **لم يُشغَّل APK على جهاز أو محاكي** — لا جهاز ولا محاكي في بيئة العمل. البناء ناجح، لكن التشغيل البصري وRTL الفعلي لم يُراجَع بعد.
+- ❌ **مجلد `android/` غير مُودَع في Git** — يُولَّد في كل تشغيل CI (متاح كـ artifact). يمكن إضافته للمستودع بعد تنزيل الـ artifact.
+- ❌ لم يُختبر أي شيء يخص Firebase (معطّل حتى P4).
+
+### الخطوة التالية المقترحة
+
+**P1 — استكمال نظام التصميم:** خط عربي، تدقيق RTL بصريًا، شاشة معرض مكونات.
+يتطلب أولًا: تنزيل APK من الـ artifact وتجربته على هاتفك، وقرار G3 (الهوية/الخط).
