@@ -350,11 +350,23 @@ class FirestoreGroupRepository implements GroupRepository {
   }
 
   @override
-  Future<List<GroupJoinRequest>> listRequestsForGroup(String groupId) {
+  Future<List<GroupJoinRequest>> listRequestsForGroup(
+    String groupId, {
+    String? teacherId,
+  }) {
     return _guard(() async {
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _joinRequests
-          .where('groupId', isEqualTo: groupId)
-          .get();
+      // القيد على `teacherId` **إلزامي**: قواعد القراءة تقرأ
+      // `resource.data.teacherId`، واستعلام لا يقيّد هذا الحقل يُرفض بالكامل.
+      // (فلتران متساويان لا يحتاجان فهرسًا مركّبًا في Firestore.)
+      Query<Map<String, dynamic>> query = _joinRequests.where(
+        'groupId',
+        isEqualTo: groupId,
+      );
+      if (teacherId != null) {
+        query = query.where('teacherId', isEqualTo: teacherId);
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
       return sortJoinRequests(
         mapDocuments(snapshot.docs.map(_entry), joinRequestFromMap),
       );

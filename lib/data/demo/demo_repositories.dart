@@ -334,9 +334,13 @@ class DemoGroupRepository implements GroupRepository {
   }) async => _findRequest(groupId, studentId);
 
   @override
-  Future<List<GroupJoinRequest>> listRequestsForGroup(String groupId) async {
+  Future<List<GroupJoinRequest>> listRequestsForGroup(
+    String groupId, {
+    String? teacherId,
+  }) async {
     final List<GroupJoinRequest> mine = _joinRequests
         .where((GroupJoinRequest r) => r.groupId == groupId)
+        .where((GroupJoinRequest r) => teacherId == null || r.teacherId == teacherId)
         .toList(growable: false);
     return List<GroupJoinRequest>.unmodifiable(_sortRequests(mine));
   }

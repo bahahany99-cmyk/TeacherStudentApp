@@ -176,7 +176,10 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                         context,
                       ).groups;
                       return isTeacher
-                          ? groups.listRequestsForGroup(widget.groupId)
+                          ? groups.listRequestsForGroup(
+                              widget.groupId,
+                              teacherId: CurrentTeacher.idOf(session),
+                            )
                           : groups.listMyRequests(CurrentStudent.idOf(session));
                     },
                     isEmpty: (List<GroupJoinRequest> items) => items.isEmpty,

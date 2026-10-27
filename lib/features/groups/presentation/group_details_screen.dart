@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/current_student.dart';
+import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
@@ -389,8 +390,9 @@ class _PendingBadgeState extends State<_PendingBadge> {
     super.didChangeDependencies();
     // القراءة من المستودع تحتاج `context` جاهزًا؛ `didChangeDependencies` هو
     // أول موضع آمن لذلك (بخلاف `initState`).
+    final String teacherId = CurrentTeacher.idOf(SessionScope.of(context));
     _future ??= AppServicesScope.of(context).groups
-        .listRequestsForGroup(widget.groupId)
+        .listRequestsForGroup(widget.groupId, teacherId: teacherId)
         .then(
           (List<GroupJoinRequest> requests) => requests
               .where((GroupJoinRequest request) => request.isPending)

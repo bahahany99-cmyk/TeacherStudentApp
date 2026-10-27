@@ -69,8 +69,16 @@ abstract interface class GroupRepository {
 
   /// كل طلبات مجموعة — للمدرس صاحبها فقط (القواعد تفرض ذلك).
   ///
+  /// [teacherId] ليس ترشيحًا في الواجهة: قواعد Firestore تقرأ
+  /// `resource.data.teacherId`، وأي استعلام (list) لا يقيّد هذا الحقل **يُرفض
+  /// كاملًا** لا يُرشَّح فقط. لذلك تمرير معرّف المالك ضروري ليصبح الاستعلام
+  /// قابلًا للتحقق على الخادم.
+  ///
   /// الترتيب: المعلّقة أولًا، ثم الأحدث قرارًا.
-  Future<List<GroupJoinRequest>> listRequestsForGroup(String groupId);
+  Future<List<GroupJoinRequest>> listRequestsForGroup(
+    String groupId, {
+    String? teacherId,
+  });
 
   /// طلبات الطالب الحالي في كل المجموعات.
   Future<List<GroupJoinRequest>> listMyRequests(String studentId);

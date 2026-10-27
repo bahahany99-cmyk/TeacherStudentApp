@@ -641,11 +641,25 @@ describe('P8 — طلبات الانضمام: من ينشئها ومن يقرأ�
     await assertSucceeds(getDoc(doc(asStudent(), path)));
     await assertFails(getDoc(doc(asOther(), path)));
 
-    // قائمة طلبات مجموعة: للمدرس فقط.
-    const listFor = (db, groupId) =>
-      getDocs(query(collection(db, 'groupJoinRequests'), where('groupId', '==', groupId)));
-    await assertSucceeds(listFor(asTeacher(), 'g1'));
-    await assertFails(listFor(asStudent(), 'g1'));
+    // قائمة طلبات مجموعة: للمدرس فقط، ويجب أن يقيّدها الاستعلام بالمالك —
+    // قواعد Firestore ترفض أي list لا يثبت انطباق شرط `resource.data` عليه.
+    const listFor = (db, groupId, teacherId) =>
+      getDocs(
+        query(
+          collection(db, 'groupJoinRequests'),
+          where('groupId', '==', groupId),
+          where('teacherId', '==', teacherId),
+        ),
+      );
+    await assertSucceeds(listFor(asTeacher(), 'g1', 'teacher-1'));
+    await assertFails(listFor(asStudent(), 'g1', 'teacher-1'));
+
+    // وبدون تقييد المالك يُرفض الاستعلام كاملًا حتى للمدرس نفسه.
+    await assertFails(
+      getDocs(
+        query(collection(asTeacher(), 'groupJoinRequests'), where('groupId', '==', 'g1')),
+      ),
+    );
   });
 });
 
