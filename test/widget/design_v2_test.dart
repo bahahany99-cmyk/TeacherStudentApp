@@ -60,8 +60,9 @@ void main() {
     });
 
     test('التدرّجات معرّفة في مكان واحد واتجاهاتها منطقية', () {
-      // نسخة 3: أربع محطات (نعناعي ← أبيض ← أبيض ← لافندر) لتفتيح أوسع.
-      expect(AppGradients.page.colors.length, 4);
+      // نسخة 4.2: ثلاث محطات (بلاش ← بلاش فاتح ← أبيض صريح) داخل شريط علوي
+      // محدود، لا تدرّج على ارتفاع الشاشة.
+      expect(AppGradients.page.colors.length, 3);
       expect(AppGradients.page.begin, Alignment.topCenter);
       expect(AppGradients.page.stops?.first, 0.0);
       expect(AppGradients.page.stops?.last, 1.0);
@@ -242,7 +243,7 @@ void main() {
       expect(find.text('عرض الكل'), findsOneWidget);
     });
 
-    testWidgets('AppBackground يرسم تدرّجًا ويحتوي المحتوى', (
+    testWidgets('AppBackground يرسم شريط التدرّج العلوي ويحتوي المحتوى', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -257,13 +258,14 @@ void main() {
 
       expect(find.text('المحتوى'), findsOneWidget);
 
+      // الطبقة السفلية بيضاء صريحة، والتدرّج محصور في شريط أعلى الشاشة.
+      final ColoredBox base = tester.widget<ColoredBox>(
+        find.byKey(AppBackground.baseKey),
+      );
+      expect(base.color, Colors.white);
+
       final DecoratedBox box = tester.widget<DecoratedBox>(
-        find
-            .descendant(
-              of: find.byType(AppBackground),
-              matching: find.byType(DecoratedBox),
-            )
-            .first,
+        find.byKey(AppBackground.blushBandKey),
       );
       expect((box.decoration as BoxDecoration).gradient, AppGradients.page);
     });

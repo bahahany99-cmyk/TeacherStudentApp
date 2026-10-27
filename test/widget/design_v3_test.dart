@@ -9,6 +9,7 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
+import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
@@ -260,21 +261,77 @@ void main() {
     });
   });
 
-  group('لوحة v4.1 — النقطة الحلوة (بلاش علوي ثم أبيض)', () {
-    test('الخلفية بيضاء في معظمها: التلاشي ينتهي قبل ثلث الشاشة', () {
+  group('لوحة v4.2 — صفحة بيضاء وشريط بلاش علوي فقط', () {
+    test('التدرّج ينتهي بأبيض صريح معتم (لا تسرّب تحته)', () {
       final LinearGradient page = AppGradients.page;
 
       expect(page.begin, Alignment.topCenter);
       expect(page.colors.first, AppColors.blushTop);
-      expect(page.colors.last, Colors.white, reason: 'لا غسيل لوني في الأسفل');
       expect(
-        page.colors.where((Color c) => c == Colors.white).length,
-        2,
-        reason: 'أكثر من نصف التدرّج أبيض صريح',
+        page.colors.last,
+        Colors.white,
+        reason: 'حافة الشريط السفلية يجب أن تكون بيضاء معتمة',
       );
-      // الأبيض يبدأ عند 30% أو قبلها: أول بطاقة تقع على أبيض لا على وردي.
-      expect(page.stops![2], lessThanOrEqualTo(0.32));
-      expect(page.stops![3], 1.0);
+      expect(page.colors.last.a, 1.0, reason: 'الأبيض معتم لا شفاف');
+      expect(page.stops!.last, 1.0);
+      // لا لافندر ولا أي غسيل أسفل الشريط.
+      expect(page.colors.contains(AppColors.washLilac), isFalse);
+    });
+
+    test('شريط البلاش ≤ 20% من الشاشة وسقفه 200 نقطة', () {
+      expect(AppBackground.blushHeightFactor, lessThanOrEqualTo(0.2));
+
+      // على هاتف 720dp: 144dp شريط، و576dp (80%) أبيض صريح.
+      final double phone = AppBackground.blushHeightFor(720);
+      expect(phone, closeTo(144, 0.01));
+      expect(phone / 720, lessThanOrEqualTo(0.2));
+
+      // على شاشة طويلة لا يتضخّم الشريط بلا حد.
+      expect(
+        AppBackground.blushHeightFor(2000),
+        lessThanOrEqualTo(AppBackground.blushMaxHeight),
+      );
+    });
+
+    testWidgets('الخلفية: أبيض صريح + شريط أعلى الشاشة فقط', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: const AppBackground(
+            child: Scaffold(body: Center(child: Text('محتوى'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1) الطبقة السفلية بيضاء صريحة.
+      final ColoredBox base = tester.widget<ColoredBox>(
+        find.byKey(AppBackground.baseKey),
+      );
+      expect(base.color, Colors.white);
+
+      // 2) الشريط محصور في الأعلى بارتفاع محسوب، ولا يغطّي منتصف الشاشة.
+      final Finder band = find.byKey(AppBackground.blushBandKey);
+      expect(band, findsOneWidget);
+
+      final Size bandSize = tester.getSize(band);
+      final double screenHeight = tester.view.physicalSize.height /
+          tester.view.devicePixelRatio;
+      expect(
+        bandSize.height / screenHeight,
+        lessThanOrEqualTo(0.205),
+        reason: 'الشريط يجب ألا يتجاوز 20% من الشاشة',
+      );
+      expect(tester.getTopLeft(band).dy, 0);
+      // المنتصف (حيث البطاقات) خارج الشريط ⇒ أبيض.
+      expect(
+        tester.getBottomLeft(band).dy,
+        lessThan(screenHeight * 0.5),
+      );
     });
 
     test('البلاش داخل «النقطة الحلوة»: لا باهت ولا صارخ', () {

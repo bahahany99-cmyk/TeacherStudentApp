@@ -33,15 +33,28 @@ abstract final class AppTheme {
 
   /// لوحة النظام في الوضع الفاتح.
   ///
-  /// `ColorScheme.fromSeed` يشتق نصًا بنفسجيًا مسائيًا (`onSurface` مائل
-  /// للبنفسجي) وخلفيات مصبوغة قليلًا؛ نستبدلها صراحة:
-  /// - `onSurface` شبه أسود (تباين 17:1 على الأبيض) ⇒ «حِدّة» الطباعة.
-  /// - `onSurfaceVariant` رمادي دافئ متوسط (6.4:1) للنص الثانوي.
-  /// - `surface` أبيض صريح: البطاقات والحقول بيضاء لا «بيضاء مائلة».
+  /// `ColorScheme.fromSeed` يشتق من البذرة الوردية **درجات سطوح مصبوغة**:
+  /// `surfaceContainerLow/High…` مائلة إلى الوردي، ويستخدمها Material تلقائيًا
+  /// في الحوارات واللوائح السفلية والبطاقات الافتراضية. النتيجة على الجهاز:
+  /// إحساس بأن «الشاشة كلها مصبوغة» حتى لو كانت خلفيتنا بيضاء.
+  ///
+  /// لذلك نثبّت كل درجات السطح صراحةً:
+  /// - `surface` و`surfaceBright` و`surfaceContainerLowest` أبيض صريح.
+  /// - بقية درجات الحاويات رمادية محايدة (بلا وردي) بفوارق طفيفة جدًا.
+  /// - `surfaceTint` شفاف: يمنع Material 3 من «تلوين» الأسطح المرتفعة بالبذرة.
+  /// - `onSurface` شبه أسود (تباين 17:1) و`onSurfaceVariant` رمادي متوسط.
   static ColorScheme _lightScheme() {
     final ColorScheme seeded = ColorScheme.fromSeed(seedColor: AppColors.seed);
     return seeded.copyWith(
       surface: Colors.white,
+      surfaceBright: Colors.white,
+      surfaceDim: const Color(0xFFF6F4F5),
+      surfaceTint: Colors.transparent,
+      surfaceContainerLowest: Colors.white,
+      surfaceContainerLow: const Color(0xFFFBFAFB),
+      surfaceContainer: const Color(0xFFF7F5F6),
+      surfaceContainerHigh: const Color(0xFFF4F2F3),
+      surfaceContainerHighest: const Color(0xFFF1EFF0),
       onSurface: AppColors.textPrimary,
       onSurfaceVariant: AppColors.textSecondary,
       outlineVariant: const Color(0xFFEADFE4),
@@ -84,6 +97,7 @@ abstract final class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        // أبيض صريح: أي لون آخر (ولو باهتًا) يُقرأ كصبغة أسفل الشاشة.
         backgroundColor: isLight ? Colors.white : scheme.surface,
         surfaceTintColor: Colors.transparent,
         // مؤشّر باستيلي ناعم بدل دائرة بلون الهوية الكامل.
