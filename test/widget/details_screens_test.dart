@@ -124,7 +124,7 @@ void main() {
       await tapVisible(tester, find.text('مجموعة الرياضيات — التفاضل'));
 
       _expectTitle('تفاصيل المجموعة');
-      expect(find.text('أعضاء المجموعة (9)'), findsOneWidget);
+      expect(find.text('الأعضاء وقائمة الانتظار (9)'), findsOneWidget);
       // المدرس لا يرى زر طلب الانضمام لمجموعته.
       expect(find.text('طلب الانضمام'), findsNothing);
     });
@@ -135,11 +135,10 @@ void main() {
       await _enterTeacherShell(tester);
       await _tapNav(tester, 'مجموعاتي');
       await tapVisible(tester, find.text('مجموعة الرياضيات — التفاضل'));
-      await tapVisible(tester, find.text('أعضاء المجموعة (9)'));
+      await tapVisible(tester, find.text('الأعضاء وقائمة الانتظار (9)'));
 
       _expectTitle('أعضاء المجموعة');
-      expect(find.text('قائمة الأعضاء'), findsOneWidget);
-      expect(find.text('9 عضوًا — تُقرأ من بيانات تجريبية'), findsOneWidget);
+      expect(find.text('9 عضوًا يشغلون مقاعدهم'), findsOneWidget);
       expect(find.text('محمد سامي'), findsOneWidget);
     });
 

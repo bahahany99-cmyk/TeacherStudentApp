@@ -6,10 +6,12 @@ import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -19,10 +21,12 @@ import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
+import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// تنفيذات تجريبية محلية (بدون Firebase) لعقود طبقة الخدمات.
@@ -129,6 +133,16 @@ class DemoGroupRepository implements GroupRepository {
   final Map<String, List<GroupMember>> _acceptedMembers =
       <String, List<GroupMember>>{};
 
+  /// أعضاء أُزيلوا من العرض التجريبي. لا نحذف من `DemoData` (ثابتة) بل نتخطاهم
+  /// عند التوليد، فتبقى الأسماء الأخرى كما هي.
+  final Map<String, Set<String>> _removedMemberIds = <String, Set<String>>{};
+
+  /// قائمة الانتظار المحلية (P9) — تُفقد عند إغلاق التطبيق مثل بقية الوضع
+  /// التجريبي.
+  final List<GroupWaitlistEntry> _waitlist = <GroupWaitlistEntry>[
+    ...DemoData.waitlist,
+  ];
+
   /// «قفل» يحاكي ذرّية المعاملة: كل عملية تُغيّر السعة تُنفَّذ بعد انتهاء ما
   /// قبلها بالترتيب. بدون هذا، قراءتان متزامنتان ترى كلتاهما مقعدًا متاحًا
   /// فتُقبلان معًا — وهي المشكلة نفسها التي تحلّها المعاملة في Firestore.
@@ -154,6 +168,14 @@ class DemoGroupRepository implements GroupRepository {
   }
 
   @override
+  Future<GroupSearchResult> searchDiscoverable(GroupFilter filter) async {
+    final List<StudyGroup> active = _groups
+        .where((StudyGroup g) => g.isActive)
+        .toList(growable: false);
+    return DiscoveryRules.search(active, filter);
+  }
+
+  @override
   Future<List<StudyGroup>> listForTeacher(String teacherId) async {
     return List<StudyGroup>.unmodifiable(
       _groups.where((StudyGroup g) => g.teacherId == teacherId),
@@ -172,8 +194,11 @@ class DemoGroupRepository implements GroupRepository {
 
   @override
   Future<List<GroupMember>> listMembers(String groupId) async {
-    final List<GroupMember> accepted =
-        _acceptedMembers[groupId] ?? const <GroupMember>[];
+    final Set<String> removed = _removedMemberIds[groupId] ?? const <String>{};
+    final List<GroupMember> accepted = (_acceptedMembers[groupId] ??
+            const <GroupMember>[])
+        .where((GroupMember m) => !removed.contains(m.id))
+        .toList(growable: false);
     final StudyGroup? group = _findGroup(groupId);
     // الأعضاء الوهميون يملؤون ما تبقّى من المقاعد، فلا يتجاوز العدد
     // `seatsTaken` بعد قبول عضو حقيقي في وضع المعاينة.
@@ -181,7 +206,9 @@ class DemoGroupRepository implements GroupRepository {
         ? 0
         : group.seatsTaken - accepted.length;
     final int generated = remaining < 0 ? 0 : remaining;
-    final List<GroupMember> base = DemoData.membersFor(groupId);
+    final List<GroupMember> base = DemoData.membersFor(groupId)
+        .where((GroupMember m) => !removed.contains(m.id))
+        .toList(growable: false);
     return List<GroupMember>.unmodifiable(<GroupMember>[
       ...accepted,
       if (base.isNotEmpty) ...base.take(generated),
@@ -474,6 +501,259 @@ class DemoGroupRepository implements GroupRepository {
 
       return accepted;
     });
+  }
+
+  // ── P9: إدارة الأعضاء وقائمة الانتظار ───────────────────────────────────
+
+  /// حذف عضو + إنقاص المقعد في خطوة واحدة — تحاكي معاملة Firestore.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _serialized(() async {
+      final int index = _groups.indexWhere((StudyGroup g) => g.id == groupId);
+      if (index == -1) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+      final StudyGroup group = _groups[index];
+      if (group.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      final Set<String> removed = _removedMemberIds.putIfAbsent(
+        groupId,
+        () => <String>{},
+      );
+      final List<GroupMember> accepted =
+          _acceptedMembers[groupId] ?? <GroupMember>[];
+      final bool wasAccepted = accepted.any(
+        (GroupMember m) => m.id == memberId,
+      );
+      final bool wasGenerated = !wasAccepted &&
+          DemoData.membersFor(groupId).any(
+            (GroupMember m) => m.id == memberId && !removed.contains(m.id),
+          );
+      if (!wasAccepted && !wasGenerated) {
+        throw const AppException.notFound(debugMessage: 'member missing');
+      }
+
+      if (wasAccepted) {
+        accepted.removeWhere((GroupMember m) => m.id == memberId);
+        _acceptedMembers[groupId] = accepted;
+      } else {
+        removed.add(memberId);
+      }
+
+      // المقعد لا يصبح سالبًا مهما تكررت الإزالة.
+      final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+      final StudyGroup updated = _copyWithSeats(group, seatsTaken);
+      _groups[index] = updated;
+      return updated;
+    });
+  }
+
+  @override
+  Future<GroupWaitlistEntry> joinWaitlist({
+    required StudyGroup group,
+    required String studentId,
+    required String studentName,
+  }) {
+    return _serialized(() async {
+      final StudyGroup? current = _findGroup(group.id);
+      if (current == null) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+      final GroupWaitlistEntry? existing = _findWaitlistEntry(
+        current.id,
+        studentId,
+      );
+      final String? reason = WaitlistRules.joinBlockReason(
+        group: current,
+        viewerId: studentId,
+        existingStatus: existing?.status,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'waitlist blocked',
+        );
+      }
+
+      final GroupWaitlistEntry entry = buildWaitlistEntry(
+        group: current,
+        studentId: studentId,
+        studentName: studentName,
+      );
+      final ValidationResult valid = WaitlistRules.validateEntry(
+        groupId: entry.groupId,
+        groupTitle: entry.groupTitle,
+        studentId: entry.studentId,
+        studentName: entry.studentName,
+      );
+      if (!valid.isValid) {
+        throw AppException.invalidInput(debugMessage: valid.firstMessage);
+      }
+
+      // المغادرة السابقة تُستبدل بصف جديد من تاريخ اليوم.
+      _waitlist.removeWhere((GroupWaitlistEntry e) => e.id == entry.id);
+      _waitlist.add(entry);
+      return entry;
+    });
+  }
+
+  @override
+  Future<GroupWaitlistEntry?> findMyWaitlistEntry({
+    required String groupId,
+    required String studentId,
+  }) async => _findWaitlistEntry(groupId, studentId);
+
+  @override
+  Future<List<GroupWaitlistEntry>> listWaitlist(
+    String groupId, {
+    String? teacherId,
+  }) async {
+    final List<GroupWaitlistEntry> mine = _waitlist
+        .where((GroupWaitlistEntry e) => e.groupId == groupId)
+        .where(
+          (GroupWaitlistEntry e) =>
+              teacherId == null || e.teacherId == teacherId,
+        )
+        .toList(growable: false);
+    return WaitlistRules.ordered(mine);
+  }
+
+  @override
+  Future<GroupWaitlistEntry> promoteFromWaitlist({
+    required GroupWaitlistEntry entry,
+    required String teacherId,
+  }) {
+    // المعاملة: قراءة المجموعة + الصف، ثم قبول مقعد واحد — كله داخل القفل.
+    return _serialized(() async {
+      final int groupIndex = _groups.indexWhere(
+        (StudyGroup g) => g.id == entry.groupId,
+      );
+      if (groupIndex == -1) {
+        throw const AppException.notFound(debugMessage: 'demo group missing');
+      }
+      final StudyGroup group = _groups[groupIndex];
+      if (group.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      final int index = _waitlist.indexWhere(
+        (GroupWaitlistEntry e) => e.id == entry.id,
+      );
+      if (index == -1) {
+        throw const AppException.notFound(debugMessage: 'waitlist row missing');
+      }
+      final GroupWaitlistEntry current = _waitlist[index];
+
+      final String? reason = WaitlistRules.promoteBlockReason(
+        group: group,
+        entry: current,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'promote blocked',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      _groups[groupIndex] = _copyWithSeats(
+        group,
+        JoinRules.seatsAfterAccept(group.seatsTaken),
+      );
+
+      final GroupWaitlistEntry promoted = current.copyWith(
+        status: WaitlistStatus.promoted,
+        decidedAt: now,
+        decidedBy: teacherId,
+      );
+      _waitlist[index] = promoted;
+
+      final List<GroupMember> members =
+          _acceptedMembers[group.id] ?? <GroupMember>[];
+      if (!members.any((GroupMember m) => m.id == current.studentId)) {
+        members.add(
+          GroupMember(
+            id: current.studentId,
+            name: current.studentName,
+            joinedAt: now,
+          ),
+        );
+      }
+      _acceptedMembers[group.id] = members;
+
+      return promoted;
+    });
+  }
+
+  @override
+  Future<GroupWaitlistEntry> leaveWaitlist({
+    required GroupWaitlistEntry entry,
+    required String studentId,
+  }) {
+    return _serialized(() async {
+      final int index = _waitlist.indexWhere(
+        (GroupWaitlistEntry e) => e.id == entry.id,
+      );
+      if (index == -1) {
+        throw const AppException.notFound(debugMessage: 'waitlist row missing');
+      }
+      final GroupWaitlistEntry current = _waitlist[index];
+      if (current.studentId != studentId) {
+        throw const AppException.permission(debugMessage: 'not entry owner');
+      }
+      if (!current.isWaiting) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: 'هذا الصف لم يعد في قائمة الانتظار.',
+        );
+      }
+
+      final GroupWaitlistEntry left = current.copyWith(
+        status: WaitlistStatus.left,
+        decidedAt: DateTime.now(),
+        decidedBy: studentId,
+      );
+      _waitlist[index] = left;
+      return left;
+    });
+  }
+
+  GroupWaitlistEntry? _findWaitlistEntry(String groupId, String studentId) {
+    final String id = GroupWaitlistEntry.idFor(
+      groupId: groupId,
+      studentId: studentId,
+    );
+    for (final GroupWaitlistEntry entry in _waitlist) {
+      if (entry.id == id) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  /// نسخة من المجموعة بمقاعد مشغولة مختلفة — تُستخدم في الإزالة والقبول.
+  StudyGroup _copyWithSeats(StudyGroup group, int seatsTaken) {
+    return StudyGroup(
+      id: group.id,
+      teacherId: group.teacherId,
+      teacherName: group.teacherName,
+      title: group.title,
+      subject: group.subject,
+      stage: group.stage,
+      seatsTotal: group.seatsTotal,
+      seatsTaken: seatsTaken,
+      meetingMode: group.meetingMode,
+      scheduleNote: group.scheduleNote,
+      isActive: group.isActive,
+    );
   }
 
   @override

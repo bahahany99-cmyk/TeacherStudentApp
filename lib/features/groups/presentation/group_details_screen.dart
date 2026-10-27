@@ -20,11 +20,13 @@ import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
+import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
+import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 
 /// تفاصيل مجموعة دراسية — الشاشة الداخلية الأهم في P8.
 ///
@@ -333,7 +335,7 @@ class _GroupDetailsBody extends StatelessWidget {
             margin: AppSpacing.listGap,
             child: _ManagementTile(
               icon: Icons.groups_2_outlined,
-              title: 'أعضاء المجموعة ($seatsTaken)',
+              title: 'الأعضاء وقائمة الانتظار ($seatsTaken)',
             ),
           ),
           AppCard(
@@ -458,7 +460,7 @@ class _JoinPanel extends StatefulWidget {
 }
 
 class _JoinPanelState extends State<_JoinPanel> {
-  Future<GroupJoinRequest?>? _future;
+  Future<_JoinState>? _future;
   bool _busy = false;
 
   @override
@@ -467,12 +469,19 @@ class _JoinPanelState extends State<_JoinPanel> {
     _future ??= _load();
   }
 
-  Future<GroupJoinRequest?> _load() {
+  Future<_JoinState> _load() async {
     final SessionController session = SessionScope.of(context);
     final GroupRepository groups = AppServicesScope.of(context).groups;
-    return groups.findMyRequest(
-      groupId: widget.group.id,
-      studentId: CurrentStudent.idOf(session),
+    final String studentId = CurrentStudent.idOf(session);
+    return _JoinState(
+      request: await groups.findMyRequest(
+        groupId: widget.group.id,
+        studentId: studentId,
+      ),
+      waitlist: await groups.findMyWaitlistEntry(
+        groupId: widget.group.id,
+        studentId: studentId,
+      ),
     );
   }
 
@@ -480,6 +489,79 @@ class _JoinPanelState extends State<_JoinPanel> {
     setState(() {
       _future = _load();
     });
+  }
+
+  /// الانضمام لقائمة الانتظار (P9) — للمجموعة المكتملة فقط.
+  ///
+  /// لا نعرض رقم موضع للطالب: القواعد تسمح له بقراءة صفّه هو فقط، ورقم موضع
+  /// محسوب من بيانات ناقصة كذبة. الرقم يظهر للمدرس الذي يقرأ كل الصفوف.
+  Future<void> _joinWaitlist() async {
+    final SessionController session = SessionScope.read(context);
+    final GroupRepository groups = AppServicesScope.of(context).groups;
+    setState(() => _busy = true);
+    try {
+      await groups.joinWaitlist(
+        group: widget.group,
+        studentId: CurrentStudent.idOf(session),
+        studentName: CurrentStudent.nameOf(session),
+      );
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        'أُضفت إلى قائمة الانتظار. سيقبلك المدرس عند تحرر مقعد.',
+        type: AppMessageType.success,
+      );
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        _busy = false;
+        _reload();
+      }
+    }
+  }
+
+  Future<void> _leaveWaitlist(GroupWaitlistEntry entry) async {
+    final SessionController session = SessionScope.read(context);
+    final GroupRepository groups = AppServicesScope.of(context).groups;
+    setState(() => _busy = true);
+    try {
+      await groups.leaveWaitlist(
+        entry: entry,
+        studentId: CurrentStudent.idOf(session),
+      );
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        'غادرت قائمة الانتظار.',
+        type: AppMessageType.info,
+      );
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        _busy = false;
+        _reload();
+      }
+    }
   }
 
   Future<void> _sendRequest() async {
@@ -545,10 +627,9 @@ class _JoinPanelState extends State<_JoinPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<GroupJoinRequest?>(
+    return FutureBuilder<_JoinState>(
       future: _future,
-      builder:
-          (BuildContext context, AsyncSnapshot<GroupJoinRequest?> snapshot) {
+      builder: (BuildContext context, AsyncSnapshot<_JoinState> snapshot) {
             return AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -580,13 +661,55 @@ class _JoinPanelState extends State<_JoinPanel> {
     );
   }
 
-  Widget _joinAction(BuildContext context, GroupJoinRequest? request) {
+  Widget _joinAction(BuildContext context, _JoinState? state) {
+    final GroupJoinRequest? request = state?.request;
+    final GroupWaitlistEntry? waitlist = state?.waitlist;
+
     // سبب إضافي غير مرتبط بالطلب نفسه (مجموعة موقوفة/مكتملة/أنت المدرس).
     final String? blocked = JoinRules.requestBlockReason(
       group: widget.group,
       viewerId: null,
       existingStatus: request?.status,
     );
+
+    // تم قبول المنتظر ⇒ صار عضوًا.
+    if (waitlist != null && waitlist.status == WaitlistStatus.promoted) {
+      return const Row(
+        children: <Widget>[
+          Icon(Icons.verified_outlined, color: AppColors.statusAccepted),
+          SizedBox(width: AppSpacing.xs),
+          Expanded(child: Text('قُبلت من قائمة الانتظار؛ أنت عضو الآن.')),
+        ],
+      );
+    }
+
+    // منتظر حاليًا.
+    if (waitlist != null && waitlist.isWaiting) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.hourglass_empty, color: AppColors.statusPending),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  widget.group.isFull
+                      ? 'أنت في قائمة الانتظار، والمجموعة مكتملة الآن.'
+                      : 'أنت في قائمة الانتظار، وبها مقعد متاح — يبقى القبول '
+                            'بيد المدرس.',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          OutlinedButton(
+            onPressed: _busy ? null : () => _leaveWaitlist(waitlist),
+            child: const Text('مغادرة قائمة الانتظار'),
+          ),
+        ],
+      );
+    }
 
     if (request != null && request.isPending) {
       return Row(
@@ -617,6 +740,36 @@ class _JoinPanelState extends State<_JoinPanel> {
         ? 'إعادة إرسال الطلب'
         : 'طلب الانضمام';
 
+    // مجموعة مكتملة: البديل هو الطابور، لا زر معطّل بلا تفسير.
+    if (widget.group.isFull && widget.group.isActive) {
+      final String? waitlistBlocked = WaitlistRules.joinBlockReason(
+        group: widget.group,
+        viewerId: null,
+        existingStatus: waitlist?.status,
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            'المجموعة مكتملة (${widget.group.seatsTotal} من '
+            '${widget.group.seatsTotal}). يمكنك الانتظار حتى يتحرر مقعد.',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: (_busy || waitlistBlocked != null)
+                  ? null
+                  : _joinWaitlist,
+              icon: const Icon(Icons.hourglass_empty, size: 18),
+              label: const Text('انضم لقائمة الانتظار'),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -645,4 +798,12 @@ class _JoinPanelState extends State<_JoinPanel> {
       ],
     );
   }
+}
+
+/// حالة الانضمام للطالب: طلب انضمام + صف قائمة انتظار (P9).
+class _JoinState {
+  const _JoinState({required this.request, required this.waitlist});
+
+  final GroupJoinRequest? request;
+  final GroupWaitlistEntry? waitlist;
 }

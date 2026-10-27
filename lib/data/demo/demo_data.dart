@@ -2,6 +2,7 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -150,6 +151,20 @@ abstract final class DemoData {
       meetingMode: GroupMeetingMode.online,
       scheduleNote: 'الاثنين — 6 مساءً',
     ),
+    // مجموعة مكتملة **لصاحب الجلسة التجريبية** حتى يجرّب المستخدم مسار
+    // قائمة الانتظار من الجهتين: طالبًا ينتظر، ومدرسًا يقبل منتظرًا.
+    StudyGroup(
+      id: 'demo-group-5',
+      teacherId: demoTeacherId,
+      teacherName: 'أ. سارة الخطيب',
+      title: 'التفاضل — المستوى الثاني',
+      subject: 'الرياضيات',
+      stage: 'الثانوية العامة',
+      seatsTotal: 6,
+      seatsTaken: 6,
+      meetingMode: GroupMeetingMode.online,
+      scheduleNote: 'الخميس — 8 مساءً',
+    ),
   ];
 
   static final List<BookingRequest> bookings = <BookingRequest>[
@@ -245,6 +260,39 @@ abstract final class DemoData {
       senderRole: UserRole.teacher,
       text: 'ممتاز يا شباب، هنبدأ الوحدة الثانية السبت. راجعوا القوانين قبل الحصة.',
       sentAt: DateTime(2026, 9, 1, 18, 5),
+    ),
+  ];
+
+  // ── P9: قائمة انتظار لمجموعة العرض المكتملة ──────────────────────────────
+  //
+  // الصفان يخصّان مجموعة مكتملة (6 من 6) حتى تكون البيانات متسقة مع القاعدة:
+  // لا طابور لمجموعة فيها مقعد.
+  static final List<GroupWaitlistEntry> waitlist = <GroupWaitlistEntry>[
+    GroupWaitlistEntry(
+      id: GroupWaitlistEntry.idFor(
+        groupId: 'demo-group-5',
+        studentId: 'demo-waitlist-1',
+      ),
+      groupId: 'demo-group-5',
+      groupTitle: 'التفاضل — المستوى الثاني',
+      teacherId: demoTeacherId,
+      studentId: 'demo-waitlist-1',
+      studentName: 'سلمى مجدي',
+      status: WaitlistStatus.waiting,
+      addedAt: DateTime(2026, 10, 20, 19, 30),
+    ),
+    GroupWaitlistEntry(
+      id: GroupWaitlistEntry.idFor(
+        groupId: 'demo-group-5',
+        studentId: 'demo-waitlist-2',
+      ),
+      groupId: 'demo-group-5',
+      groupTitle: 'التفاضل — المستوى الثاني',
+      teacherId: demoTeacherId,
+      studentId: 'demo-waitlist-2',
+      studentName: 'كريم طارق',
+      status: WaitlistStatus.waiting,
+      addedAt: DateTime(2026, 10, 22, 21, 10),
     ),
   ];
 

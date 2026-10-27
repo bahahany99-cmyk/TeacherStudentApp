@@ -14,6 +14,9 @@ rules_version = '2';
 //   5. الجدول والمحادثة (P9): يقرأهما صاحب المجموعة والأعضاء المقبولون فقط
 //      (`exists()` على مستند العضو)، ويكتب الجدول المالك وحده، ولا رسالة
 //      تُعدَّل أو تُحذف بعد إرسالها.
+//   6. قائمة الانتظار (P9): للمجموعة **المكتملة** فقط، والمنتظر لا يشغل مقعدًا
+//      ولا يرى الجدول/المحادثة. إزالة عضو تنقص المقعد، وقبول منتظر يزيده —
+//      كلاهما بمعاملة، والقواعد تحدّ الفرق بمقعد واحد في الاتجاهين.
 //
 // المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
 // مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
@@ -190,6 +193,15 @@ service cloud.firestore {
         && request.resource.data.seatsTaken == resource.data.seatsTaken + 1
         && request.resource.data.seatsTaken <= resource.data.seatsTotal;
 
+      // (ج) تحرير مقعد عند إزالة عضو (P9):
+      //   - المالك فقط (يعمل مع المجموعة الموقوفة أيضًا: الإدارة لا تتوقف).
+      //   - **لا يتغيّر أي حقل آخر** غير seatsTaken، والنقص واحد بالضبط.
+      //   - لا يصبح العدد سالبًا.
+      allow update: if isGroupOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seatsTaken'])
+        && request.resource.data.seatsTaken == resource.data.seatsTaken - 1
+        && request.resource.data.seatsTaken >= 0;
+
       allow delete: if isAdmin();
 // (نص scheduleNote الفارغ مقبول: يعني «بلا موعد محدد».)
 
@@ -220,8 +232,13 @@ service cloud.firestore {
           && request.resource.data.name.size() <= 80
         );
 
-        // لا تعديل ولا إزالة من التطبيق (إزالة عضو إجراء إداري لاحقًا).
-        allow update, delete: if isAdmin();
+        // التعديل إداري فقط (لا حالة عضو تُكتب من التطبيق).
+        allow update: if isAdmin();
+
+        // الإزالة (P9): صاحب المجموعة أو الإدارة. الحذف وحده لا يكفي — التطبيق
+        // ينقص seatsTaken في المعاملة نفسها، وقاعدة studyGroups (ج) تسمح بمقعد
+        // واحد فقط، فلا يمكن «حذف عضو» دون تحرير مقعده ولا العكس.
+        allow delete: if isAdmin() || (signedIn() && request.auth.uid == parentTeacherId());
       }
 
       // ── P9: الجدول الأسبوعي ──────────────────────────────────────────────
@@ -404,6 +421,91 @@ service cloud.firestore {
         && groupIsJoinable(resource.data.groupId);
 
       // لا حذف من التطبيق: سجل الطلب يبقى للسجل التاريخي.
+      allow delete: if isAdmin();
+    }
+
+    // ── 4-ب) groupWaitlist/{entryId} — قائمة انتظار المجموعة المكتملة (P9) ──
+    // المعرّف حتمي: `groupId_studentId`، فصف واحد لكل طالب في كل مجموعة.
+    // **المنتظر ليس عضوًا**: لا مستند في members، فلا يقرأ الجدول ولا المحادثة.
+    match /groupWaitlist/{entryId} {
+      function waitlistKeys() {
+        return ['groupId', 'groupTitle', 'teacherId', 'studentId',
+                'studentName', 'status', 'addedAt', 'decidedAt', 'decidedBy'];
+      }
+
+      function groupIsActive(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.isActive == true;
+      }
+
+      function groupIsFull(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken >= get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+      }
+
+      function groupOwnerId(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+      }
+
+      function validNewEntry() {
+        return request.resource.data.groupId is string
+          && request.resource.data.groupTitle is string
+          && request.resource.data.groupTitle.size() >= 3
+          && request.resource.data.groupTitle.size() <= 80
+          && request.resource.data.teacherId is string
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && request.resource.data.addedAt is timestamp
+          && request.resource.data.status == 'waiting'
+          && request.resource.data.keys().hasOnly(waitlistKeys());
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.studentId == request.auth.uid
+             || resource.data.teacherId == request.auth.uid
+           ));
+
+      // الطالب يضيف نفسه فقط، لمجموعة **مكتملة** ومنشورة، وبمعرّف مشتق.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && entryId == request.resource.data.groupId + '_' + request.auth.uid
+        && validNewEntry()
+        && groupIsActive(request.resource.data.groupId)
+        && groupIsFull(request.resource.data.groupId)
+        && request.resource.data.teacherId == groupOwnerId(request.resource.data.groupId)
+        && request.resource.data.teacherId != request.auth.uid;
+
+      // (أ) المدرس يقبل منتظرًا: waiting ← promoted، وبلا لمس أي حقل آخر.
+      // زيادة المقعد تحدث بتعديل منفصل على المجموعة تقبله القاعدة (ب).
+      allow update: if signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'promoted'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+
+      // (ب) الطالب يغادر الطابور — الحالة فقط، وبلا قرار مدرس.
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'left'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+
+      // (ج) العودة بعد المغادرة: الصف نفسه يعود waiting، بشرط أن تكون المجموعة
+      // ما زالت مكتملة ومنشورة (تُفحص من جديد، لا اعتمادًا على الحالة القديمة).
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'left'
+        && validNewEntry()
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.teacherId == resource.data.teacherId
+        && resource.data.teacherId == groupOwnerId(resource.data.groupId)
+        && groupIsActive(resource.data.groupId)
+        && groupIsFull(resource.data.groupId);
+
+      // لا حذف من التطبيق: سجل الانتظار يبقى.
       allow delete: if isAdmin();
     }
 

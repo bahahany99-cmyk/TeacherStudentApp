@@ -3,6 +3,7 @@ import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 
@@ -185,6 +186,39 @@ GroupMember? groupMemberFromMap(String id, Map<String, Object?> data) {
     status: readString(data['status']) == 'waitlist'
         ? GroupMemberStatus.waitlist
         : GroupMemberStatus.active,
+  );
+}
+
+/// `groupWaitlist/{groupId_studentId}` → [GroupWaitlistEntry] (P9).
+///
+/// يعيد `null` إن كان الصف بلا طالب أو بلا مالك: صف بلا مالك لا يمكن للمدرس
+/// رؤيته أصلًا، وصف بلا طالب لا معنى له.
+GroupWaitlistEntry? groupWaitlistEntryFromMap(
+  String id,
+  Map<String, Object?> data,
+) {
+  final String? groupId = readString(data['groupId']);
+  final String? teacherId = readString(data['teacherId']);
+  final String? studentId = readString(data['studentId']);
+  final String? studentName = readString(data['studentName']);
+  if (groupId == null ||
+      teacherId == null ||
+      studentId == null ||
+      studentName == null) {
+    return null;
+  }
+
+  return GroupWaitlistEntry(
+    id: id,
+    groupId: groupId,
+    groupTitle: readString(data['groupTitle']) ?? '',
+    teacherId: teacherId,
+    studentId: studentId,
+    studentName: studentName,
+    status: WaitlistStatus.parse(data['status']),
+    addedAt: readDate(data['addedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    decidedAt: readDate(data['decidedAt']),
+    decidedBy: readString(data['decidedBy']),
   );
 }
 

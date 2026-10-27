@@ -10,6 +10,7 @@
 3. عدم وجود `allow read, write: if true` (فتح كامل).
 4. أن `users` يقيّد الدور و`teacherProfiles` يثبّت `status`.
 5. أن كل `match` لمجموعة معروفة موجود.
+6. أن إزالة العضو تحرّر مقعدًا واحدًا، وأن قائمة الانتظار للمكتملة فقط.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -29,6 +30,7 @@ REQUIRED_MATCHES = (
     'match /studyGroups/{groupId}',
     'match /groupJoinRequests/{requestId}',
     'match /sessions/{sessionId}',
+    'match /groupWaitlist/{entryId}',
     'match /messages/{messageId}',
     'match /bookingRequests/{bookingId}',
 )
@@ -142,7 +144,25 @@ def main() -> int:
     if 'allow update, delete: if isAdmin();' not in code:
         problems.append('messages: الرسائل قابلة للتعديل/الحذف من التطبيق')
 
-    # 9) منع الحقول الإدارية في ملف المدرس
+    # 9) P9: إدارة الأعضاء وقائمة الانتظار
+    if "request.resource.data.seatsTaken == resource.data.seatsTaken - 1" not in code:
+        problems.append('studyGroups: إزالة العضو لا تنقص المقعد')
+    if 'request.resource.data.seatsTaken >= 0' not in code:
+        problems.append('studyGroups: المقعد يمكن أن يصبح سالبًا')
+    if 'allow delete: if isAdmin() || (signedIn() && request.auth.uid == parentTeacherId());' not in code:
+        problems.append('members: المالك لا يستطيع إزالة عضو')
+    if 'groupIsFull(' not in code:
+        problems.append('groupWaitlist: القائمة غير مقيّدة بالمجموعة المكتملة')
+    if "entryId == request.resource.data.groupId + '_' + request.auth.uid" not in code:
+        problems.append('groupWaitlist: المعرّف المشتق غير مفروض')
+    if "request.resource.data.status == 'promoted'" not in code:
+        problems.append('groupWaitlist: لا قاعدة لقبول منتظر')
+    if "request.resource.data.status == 'left'" not in code:
+        problems.append('groupWaitlist: لا قاعدة لمغادرة القائمة')
+    if "resource.data.status == 'left'" not in code:
+        problems.append('groupWaitlist: لا قاعدة للعودة بعد المغادرة')
+
+    # 10) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:

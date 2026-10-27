@@ -5,11 +5,13 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
+import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -18,10 +20,12 @@ import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
 import 'package:teacher_student_app/data/validation/session_rules.dart';
+import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// أسماء المجموعات في Firestore — مكان واحد، مطابقة لـ`firestore.rules`.
@@ -33,6 +37,7 @@ abstract final class FirestoreCollections {
   static const String groupJoinRequests = 'groupJoinRequests';
   static const String groupSessions = 'sessions';
   static const String groupMessages = 'messages';
+  static const String groupWaitlist = 'groupWaitlist';
   static const String bookingRequests = 'bookingRequests';
 }
 
@@ -105,6 +110,74 @@ class FirestoreTeacherRepository implements TeacherRepository {
     });
   }
 
+  /// إزالة عضو (P9): حذف العضوية وإنقاص المقعد **في معاملة واحدة**.
+  ///
+  /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
+  /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(memberRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+        if (!memberSnapshot.exists) {
+          throw const AppException.notFound(debugMessage: 'member missing');
+        }
+
+        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+        transaction.delete(memberRef);
+        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
+
+        return StudyGroup(
+          id: group.id,
+          teacherId: group.teacherId,
+          teacherName: group.teacherName,
+          title: group.title,
+          subject: group.subject,
+          stage: group.stage,
+          seatsTotal: group.seatsTotal,
+          seatsTaken: seatsTaken,
+          meetingMode: group.meetingMode,
+          scheduleNote: group.scheduleNote,
+          isActive: group.isActive,
+        );
+      });
+    });
+  }
+
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
@@ -127,6 +200,41 @@ class FirestoreGroupRepository implements GroupRepository {
           .where('isActive', isEqualTo: true)
           .get();
       return mapDocuments(snapshot.docs.map(_entry), studyGroupFromMap);
+    });
+  }
+
+  /// استكشاف مفلتر (P9).
+  ///
+  /// **ما يُدفع للخادم:** `isActive == true` (تشترطه القواعد للقراءة) ومساواة
+  /// المادة/المرحلة/طريقة الحضور — مساواة على حقل واحد، فلا فهرس مركّب.
+  /// **ما يُطبَّق في العميل:** البحث النصي وشرط «بها مقعد» والترتيب، لأن أياها
+  /// لا يُعبَّر عنه في استعلام Firestore بلا حقل منسوخ (A-66). النتيجة تحمل
+  /// إجمالي ما ورد من الخادم حتى تعرض الشاشة «3 من 12» بصدق.
+  @override
+  Future<GroupSearchResult> searchDiscoverable(GroupFilter filter) {
+    return _guard(() async {
+      Query<Map<String, dynamic>> query = _groups.where(
+        'isActive',
+        isEqualTo: true,
+      );
+      if (filter.subject != null) {
+        query = query.where('subject', isEqualTo: filter.subject);
+      }
+      if (filter.stage != null) {
+        query = query.where('stage', isEqualTo: filter.stage);
+      }
+      if (filter.meetingMode != null) {
+        query = query.where(
+          'meetingMode',
+          isEqualTo: filter.meetingMode!.name,
+        );
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      return DiscoveryRules.search(
+        mapDocuments(snapshot.docs.map(_entry), studyGroupFromMap),
+        filter,
+      );
     });
   }
 
@@ -262,6 +370,74 @@ class FirestoreGroupRepository implements GroupRepository {
           .collection(FirestoreCollections.groupMembers)
           .get();
       return mapDocuments(snapshot.docs.map(_entry), groupMemberFromMap);
+    });
+  }
+
+  /// إزالة عضو (P9): حذف العضوية وإنقاص المقعد **في معاملة واحدة**.
+  ///
+  /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
+  /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(memberRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+        if (!memberSnapshot.exists) {
+          throw const AppException.notFound(debugMessage: 'member missing');
+        }
+
+        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+        transaction.delete(memberRef);
+        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
+
+        return StudyGroup(
+          id: group.id,
+          teacherId: group.teacherId,
+          teacherName: group.teacherName,
+          title: group.title,
+          subject: group.subject,
+          stage: group.stage,
+          seatsTotal: group.seatsTotal,
+          seatsTaken: seatsTaken,
+          meetingMode: group.meetingMode,
+          scheduleNote: group.scheduleNote,
+          isActive: group.isActive,
+        );
+      });
     });
   }
 
@@ -576,6 +752,273 @@ class FirestoreGroupRepository implements GroupRepository {
       });
     });
   }
+
+  // ── P9: قائمة الانتظار ───────────────────────────────────────────────────
+
+  CollectionReference<Map<String, dynamic>> get _waitlist =>
+      _firestore.collection(FirestoreCollections.groupWaitlist);
+
+  /// الانضمام للطابور: نقرأ المجموعة **طازجة**، لأن شرط «مكتملة» قد يتغيّر بين
+  /// عرض الشاشة والكتابة.
+  @override
+  Future<GroupWaitlistEntry> joinWaitlist({
+    required StudyGroup group,
+    required String studentId,
+    required String studentName,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        group.id,
+      );
+      final DocumentReference<Map<String, dynamic>> entryRef = _waitlist.doc(
+        GroupWaitlistEntry.idFor(groupId: group.id, studentId: studentId),
+      );
+
+      return _firestore.runTransaction<GroupWaitlistEntry>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> entrySnapshot =
+            await transaction.get(entryRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? current = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+
+        final WaitlistStatus? existing = entrySnapshot.exists
+            ? WaitlistStatus.parse(entrySnapshot.data()?['status'])
+            : null;
+
+        final String? reason = WaitlistRules.joinBlockReason(
+          group: current,
+          viewerId: studentId,
+          existingStatus: existing,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'waitlist blocked',
+          );
+        }
+
+        final GroupWaitlistEntry entry = buildWaitlistEntry(
+          group: current,
+          studentId: studentId,
+          studentName: studentName,
+        );
+        final ValidationResult valid = WaitlistRules.validateEntry(
+          groupId: entry.groupId,
+          groupTitle: entry.groupTitle,
+          studentId: entry.studentId,
+          studentName: entry.studentName,
+        );
+        if (!valid.isValid) {
+          throw AppException.invalidInput(debugMessage: valid.firstMessage);
+        }
+
+        // `set` متعمّد: العودة بعد المغادرة تستبدل الصف نفسه.
+        transaction.set(entryRef, entry.toCreateMap());
+        return entry;
+      });
+    });
+  }
+
+  @override
+  Future<GroupWaitlistEntry?> findMyWaitlistEntry({
+    required String groupId,
+    required String studentId,
+  }) {
+    return _guard(() async {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _waitlist
+          .doc(GroupWaitlistEntry.idFor(groupId: groupId, studentId: studentId))
+          .get();
+      final Map<String, Object?>? data = doc.data();
+      if (!doc.exists || data == null) {
+        return null;
+      }
+      return groupWaitlistEntryFromMap(doc.id, data);
+    });
+  }
+
+  @override
+  Future<List<GroupWaitlistEntry>> listWaitlist(
+    String groupId, {
+    String? teacherId,
+  }) {
+    return _guard(() async {
+      // القيد على `teacherId` إلزامي: القواعد تقرأ `resource.data.teacherId`،
+      // والاستعلام الذي لا يقيّده يُرفض كاملًا (نفس درس P8).
+      Query<Map<String, dynamic>> query = _waitlist.where(
+        'groupId',
+        isEqualTo: groupId,
+      );
+      if (teacherId != null) {
+        query = query.where('teacherId', isEqualTo: teacherId);
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      return WaitlistRules.ordered(
+        mapDocuments(snapshot.docs.map(_entry), groupWaitlistEntryFromMap),
+      );
+    });
+  }
+
+  /// قبول منتظر: مقعد واحد + عضوية + حالة الصف في معاملة واحدة.
+  @override
+  Future<GroupWaitlistEntry> promoteFromWaitlist({
+    required GroupWaitlistEntry entry,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        entry.groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> entryRef = _waitlist.doc(
+        entry.id,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(entry.studentId);
+
+      return _firestore.runTransaction<GroupWaitlistEntry>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> entrySnapshot =
+            await transaction.get(entryRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        final Map<String, Object?>? entryData = entrySnapshot.data();
+        if (!groupSnapshot.exists ||
+            groupData == null ||
+            !entrySnapshot.exists ||
+            entryData == null) {
+          throw const AppException.notFound(
+            debugMessage: 'group or waitlist row missing',
+          );
+        }
+
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        final GroupWaitlistEntry? current = groupWaitlistEntryFromMap(
+          entrySnapshot.id,
+          entryData,
+        );
+        if (group == null || current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group or waitlist row unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+
+        final String? reason = WaitlistRules.promoteBlockReason(
+          group: group,
+          entry: current,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'promote blocked',
+          );
+        }
+
+        final DateTime now = DateTime.now();
+        transaction.update(groupRef, <String, Object?>{
+          'seatsTaken': JoinRules.seatsAfterAccept(group.seatsTaken),
+        });
+        transaction.update(entryRef, <String, Object?>{
+          'status': WaitlistStatus.promoted.name,
+          'decidedAt': now,
+          'decidedBy': teacherId,
+        });
+        transaction.set(memberRef, <String, Object?>{
+          'studentId': current.studentId,
+          'name': current.studentName,
+          'joinedAt': now,
+          'status': 'active',
+        });
+
+        return current.copyWith(
+          status: WaitlistStatus.promoted,
+          decidedAt: now,
+          decidedBy: teacherId,
+        );
+      });
+    });
+  }
+
+  @override
+  Future<GroupWaitlistEntry> leaveWaitlist({
+    required GroupWaitlistEntry entry,
+    required String studentId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> entryRef = _waitlist.doc(
+        entry.id,
+      );
+
+      return _firestore.runTransaction<GroupWaitlistEntry>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot =
+            await transaction.get(entryRef);
+        final Map<String, Object?>? data = snapshot.data();
+        if (!snapshot.exists || data == null) {
+          throw const AppException.notFound(debugMessage: 'waitlist row missing');
+        }
+        final GroupWaitlistEntry? current = groupWaitlistEntryFromMap(
+          snapshot.id,
+          data,
+        );
+        if (current == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'waitlist row unreadable',
+          );
+        }
+        if (current.studentId != studentId) {
+          throw const AppException.permission(debugMessage: 'not entry owner');
+        }
+        if (!current.isWaiting) {
+          throw const AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: 'هذا الصف لم يعد في قائمة الانتظار.',
+          );
+        }
+
+        final DateTime now = DateTime.now();
+        // الحالة فقط: القواعد تقبل تغييرًا لا يمسّ بقية الحقول.
+        transaction.update(entryRef, <String, Object?>{
+          'status': WaitlistStatus.left.name,
+        });
+        return current.copyWith(
+          status: WaitlistStatus.left,
+          decidedAt: now,
+          decidedBy: studentId,
+        );
+      });
+    });
+  }
 }
 
 /// الجدول الأسبوعي — مجموعة فرعية `studyGroups/{id}/sessions`.
@@ -709,6 +1152,74 @@ class FirestoreScheduleRepository implements ScheduleRepository {
     }
   }
 
+  /// إزالة عضو (P9): حذف العضوية وإنقاص المقعد **في معاملة واحدة**.
+  ///
+  /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
+  /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(memberRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+        if (!memberSnapshot.exists) {
+          throw const AppException.notFound(debugMessage: 'member missing');
+        }
+
+        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+        transaction.delete(memberRef);
+        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
+
+        return StudyGroup(
+          id: group.id,
+          teacherId: group.teacherId,
+          teacherName: group.teacherName,
+          title: group.title,
+          subject: group.subject,
+          stage: group.stage,
+          seatsTotal: group.seatsTotal,
+          seatsTaken: seatsTaken,
+          meetingMode: group.meetingMode,
+          scheduleNote: group.scheduleNote,
+          isActive: group.isActive,
+        );
+      });
+    });
+  }
+
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
@@ -797,6 +1308,74 @@ class FirestoreMessageRepository implements MessageRepository {
         text: message.text,
         sentAt: message.sentAt,
       );
+    });
+  }
+
+  /// إزالة عضو (P9): حذف العضوية وإنقاص المقعد **في معاملة واحدة**.
+  ///
+  /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
+  /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(memberRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+        if (!memberSnapshot.exists) {
+          throw const AppException.notFound(debugMessage: 'member missing');
+        }
+
+        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+        transaction.delete(memberRef);
+        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
+
+        return StudyGroup(
+          id: group.id,
+          teacherId: group.teacherId,
+          teacherName: group.teacherName,
+          title: group.title,
+          subject: group.subject,
+          stage: group.stage,
+          seatsTotal: group.seatsTotal,
+          seatsTaken: seatsTaken,
+          meetingMode: group.meetingMode,
+          scheduleNote: group.scheduleNote,
+          isActive: group.isActive,
+        );
+      });
     });
   }
 
@@ -891,6 +1470,74 @@ class FirestoreBookingRepository implements BookingRepository {
         return null;
       }
       return bookingFromMap(doc.id, data);
+    });
+  }
+
+  /// إزالة عضو (P9): حذف العضوية وإنقاص المقعد **في معاملة واحدة**.
+  ///
+  /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
+  /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+  @override
+  Future<StudyGroup> removeMember({
+    required String groupId,
+    required String memberId,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> groupRef = _groups.doc(
+        groupId,
+      );
+      final DocumentReference<Map<String, dynamic>> memberRef = groupRef
+          .collection(FirestoreCollections.groupMembers)
+          .doc(memberId);
+
+      return _firestore.runTransaction<StudyGroup>((
+        Transaction transaction,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
+            await transaction.get(groupRef);
+        final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
+            await transaction.get(memberRef);
+
+        final Map<String, Object?>? groupData = groupSnapshot.data();
+        if (!groupSnapshot.exists || groupData == null) {
+          throw const AppException.notFound(debugMessage: 'group missing');
+        }
+        final StudyGroup? group = studyGroupFromMap(
+          groupSnapshot.id,
+          groupData,
+        );
+        if (group == null) {
+          throw const AppException(
+            AppErrorKind.unknown,
+            debugMessage: 'group document is unreadable',
+          );
+        }
+        if (group.teacherId != teacherId) {
+          throw const AppException.permission(debugMessage: 'not group owner');
+        }
+        if (!memberSnapshot.exists) {
+          throw const AppException.notFound(debugMessage: 'member missing');
+        }
+
+        final int seatsTaken = group.seatsTaken > 0 ? group.seatsTaken - 1 : 0;
+        transaction.delete(memberRef);
+        transaction.update(groupRef, <String, Object?>{'seatsTaken': seatsTaken});
+
+        return StudyGroup(
+          id: group.id,
+          teacherId: group.teacherId,
+          teacherName: group.teacherName,
+          title: group.title,
+          subject: group.subject,
+          stage: group.stage,
+          seatsTotal: group.seatsTotal,
+          seatsTaken: seatsTaken,
+          meetingMode: group.meetingMode,
+          scheduleNote: group.scheduleNote,
+          isActive: group.isActive,
+        );
+      });
     });
   }
 

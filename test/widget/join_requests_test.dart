@@ -141,7 +141,9 @@ void main() {
       expect(request!.status, JoinRequestStatus.pending);
     });
 
-    testWidgets('مجموعة مكتملة تُعطّل زر الطلب', (WidgetTester tester) async {
+    testWidgets('المجموعة المكتملة تعرض قائمة الانتظار بدل زر طلب معطّل', (
+      WidgetTester tester,
+    ) async {
       usePhoneSurface(tester);
       final DemoGroupRepository groups = DemoGroupRepository();
 
@@ -155,10 +157,46 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final FilledButton button = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'طلب الانضمام'),
+      // P9: مجموعة مكتملة ⇒ باب الانتظار، لا زر معطّل بلا تفسير.
+      expect(find.text('انضم لقائمة الانتظار'), findsOneWidget);
+      expect(find.text('طلب الانضمام'), findsNothing);
+      expect(find.textContaining('المجموعة مكتملة'), findsOneWidget);
+    });
+
+    testWidgets('الانضمام لقائمة الانتظار يظهر حالة الانتظار', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+      final DemoGroupRepository groups = DemoGroupRepository();
+
+      await tester.pumpWidget(
+        _host(
+          services: _services(groups),
+          role: UserRole.student,
+          screen: const GroupDetailsScreen(groupId: 'demo-group-5'),
+        ),
       );
-      expect(button.onPressed, isNull);
+      await tester.pumpAndSettle();
+
+      await tapVisible(tester, find.text('انضم لقائمة الانتظار'));
+
+      expect(
+        find.textContaining('أنت في قائمة الانتظار'),
+        findsOneWidget,
+        reason: 'حالة الانتظار تُعرض بعد الانضمام',
+      );
+      expect(
+        await groups.findMyWaitlistEntry(
+          groupId: 'demo-group-5',
+          studentId: 'demo-student',
+        ),
+        isNotNull,
+      );
+      // المقعد لم يُحجز: المنتظر ليس عضوًا.
+      expect(
+        (await groups.findById('demo-group-5'))!.seatsTaken,
+        6,
+      );
     });
   });
 }

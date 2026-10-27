@@ -120,6 +120,20 @@ const messageDoc = (groupId, senderId, overrides = {}) => ({
   ...overrides,
 });
 
+/** صف قائمة انتظار (P9) — للمجموعة المكتملة فقط، والمعرّف مشتق. */
+const waitlistDoc = (groupId, studentId, overrides = {}) => ({
+  groupId,
+  groupTitle: 'التفاضل',
+  teacherId: 'teacher-1',
+  studentId,
+  studentName: 'طالب',
+  status: 'waiting',
+  addedAt: now(),
+  ...overrides,
+});
+
+const waitlistPath = (groupId, studentId) => `groupWaitlist/${groupId}_${studentId}`;
+
 const bookingDoc = (studentId, teacherId, overrides = {}) => ({
   studentId,
   teacherId,
@@ -1186,6 +1200,241 @@ describe('الرفض الافتراضي', () => {
       setDoc(doc(asGuest(), 'users/guest-1'), userDoc('guest-1')),
     );
     await assertFails(getDocs(collection(asGuest(), 'studyGroups')));
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P9 — إزالة العضو تحرّر مقعدًا واحدًا فقط', () => {
+  const seedMember = (seatsTaken = 9) =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+    ]);
+
+  it('المالك يحذف العضو وينقص المقعد في نفس العملية', async () => {
+    await seedMember(9);
+    const db = asTeacher();
+
+    await assertSucceeds(deleteDoc(doc(db, 'studyGroups/g1/members/student-1')));
+    await assertSucceeds(
+      updateDoc(doc(db, 'studyGroups/g1'), { seatsTaken: 8 }),
+    );
+
+    const group = await getDoc(doc(db, 'studyGroups/g1'));
+    assert.equal(group.data().seatsTaken, 8);
+  });
+
+  it('الطالب لا يحذف عضوًا ولا ينقص المقعد', async () => {
+    await seedMember(9);
+    const db = asStudent();
+
+    await assertFails(deleteDoc(doc(db, 'studyGroups/g1/members/student-1')));
+    await assertFails(updateDoc(doc(db, 'studyGroups/g1'), { seatsTaken: 8 }));
+  });
+
+  it('لا نقص بأكثر من مقعد، ولا نقص مع تغيير حقل آخر', async () => {
+    await seedMember(9);
+    const db = asTeacher();
+
+    await assertFails(updateDoc(doc(db, 'studyGroups/g1'), { seatsTaken: 7 }));
+    await assertFails(
+      updateDoc(doc(db, 'studyGroups/g1'), { seatsTaken: 8, title: 'عنوان آخر' }),
+    );
+  });
+
+  it('لا مقعد سالب', async () => {
+    await seedMember(0);
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: -1 }),
+    );
+  });
+});
+
+describe('P9 — قائمة الانتظار: للمجموعة المكتملة فقط', () => {
+  const seedFull = (overrides = {}) =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 12, ...overrides }) },
+    ]);
+
+  it('الطالب ينضم لقائمة انتظار مجموعة مكتملة', async () => {
+    await seedFull();
+
+    await assertSucceeds(
+      setDoc(doc(asStudent(), waitlistPath('g1', 'student-1')), waitlistDoc('g1', 'student-1')),
+    );
+  });
+
+  it('المجموعة التي بها مقعد لا تقبل انتظارًا', async () => {
+    await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 9 }) }]);
+
+    await assertFails(
+      setDoc(doc(asStudent(), waitlistPath('g1', 'student-1')), waitlistDoc('g1', 'student-1')),
+    );
+  });
+
+  it('المجموعة الموقوفة لا تقبل انتظارًا', async () => {
+    await seedFull({ isActive: false });
+
+    await assertFails(
+      setDoc(doc(asStudent(), waitlistPath('g1', 'student-1')), waitlistDoc('g1', 'student-1')),
+    );
+  });
+
+  it('لا يضيف المنتظر صفًا باسم طالب آخر ولا بمعرّف غير مشتق', async () => {
+    await seedFull();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), waitlistPath('g1', 'student-2')),
+        waitlistDoc('g1', 'student-2'),
+      ),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), 'groupWaitlist/anything'), waitlistDoc('g1', 'student-1')),
+    );
+  });
+
+  it('لا يُكتب الصف بحالة غير waiting ولا بحقول إضافية', async () => {
+    await seedFull();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), waitlistPath('g1', 'student-1')),
+        waitlistDoc('g1', 'student-1', { status: 'promoted' }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), waitlistPath('g1', 'student-1')),
+        waitlistDoc('g1', 'student-1', { position: 1 }),
+      ),
+    );
+  });
+
+  it('الطالب يقرأ صفّه، والمدرس يقرأ صفوف مجموعته، وغيرهما لا', async () => {
+    await seedFull();
+    await seed([
+      {
+        path: waitlistPath('g1', 'student-1'),
+        data: waitlistDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertSucceeds(
+      getDoc(doc(asStudent(), waitlistPath('g1', 'student-1'))),
+    );
+    await assertSucceeds(getDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))));
+    await assertFails(getDoc(doc(asOther(), waitlistPath('g1', 'student-1'))));
+
+    // قائمة المدرس مقيّدة بالمالك (القاعدة تقرأ teacherId).
+    const listFor = (db, teacherId) =>
+      getDocs(query(collection(db, 'groupWaitlist'), where('groupId', '==', 'g1'), where('teacherId', '==', teacherId)));
+
+    await assertSucceeds(listFor(asTeacher(), 'teacher-1'));
+    await assertFails(listFor(asStudent(), 'teacher-1'));
+  });
+});
+
+describe('P9 — قبول المنتظر: مقعد واحد وعضوية واحدة', () => {
+  const seedQueue = (seatsTaken = 11) =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken }) },
+      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1') },
+    ]);
+
+  it('المدرس يقبل منتظرًا: الصف promoted والمقعد يزيد واحدًا والعضوية تُنشأ', async () => {
+    await seedQueue(11);
+    const db = asTeacher();
+
+    await assertSucceeds(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'promoted',
+        decidedAt: now(),
+        decidedBy: 'teacher-1',
+      }),
+    );
+    await assertSucceeds(updateDoc(doc(db, 'studyGroups/g1'), { seatsTaken: 12 }));
+    await assertSucceeds(
+      setDoc(doc(db, 'studyGroups/g1/members/student-1'), {
+        studentId: 'student-1',
+        name: 'طالب',
+        joinedAt: now(),
+        status: 'active',
+      }),
+    );
+  });
+
+  it('لا قبول من غير المالك ولا من الطالب نفسه', async () => {
+    await seedQueue(11);
+    const change = (db) =>
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'promoted',
+        decidedAt: now(),
+        decidedBy: 'teacher-1',
+      });
+
+    await assertFails(change(asStudent()));
+    await assertFails(change(asOther()));
+  });
+
+  it('لا قبول بلا حقل قرار، ولا بحالة أخرى، ولا بحقل إضافي', async () => {
+    await seedQueue(11);
+    const db = asTeacher();
+
+    await assertFails(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), { status: 'promoted' }),
+    );
+    await assertFails(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'left',
+        decidedAt: now(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), {
+        status: 'promoted',
+        decidedAt: now(),
+        decidedBy: 'teacher-1',
+        position: 1,
+      }),
+    );
+  });
+
+  it('الطالب يغادر القائمة، ولا يعود إلا لمجموعة ما زالت مكتملة', async () => {
+    await seedQueue(11);
+    const db = asStudent();
+
+    await assertSucceeds(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), { status: 'left' }),
+    );
+
+    // عودة سليمة ما دامت مكتملة.
+    await assertSucceeds(
+      setDoc(doc(db, waitlistPath('g1', 'student-1')), waitlistDoc('g1', 'student-1')),
+    );
+
+    // بعد تحرر مقعد: لا عودة للطابور.
+    await seed([
+      { path: waitlistPath('g1', 'student-1'), data: waitlistDoc('g1', 'student-1', { status: 'left' }) },
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 9 }) },
+    ]);
+    await assertFails(
+      updateDoc(doc(db, waitlistPath('g1', 'student-1')), { status: 'waiting' }),
+    );
+  });
+
+  it('لا حذف صف الانتظار من التطبيق', async () => {
+    await seedQueue(11);
+
+    await assertFails(
+      deleteDoc(doc(asStudent(), waitlistPath('g1', 'student-1'))),
+    );
+    await assertFails(
+      deleteDoc(doc(asTeacher(), waitlistPath('g1', 'student-1'))),
+    );
   });
 });
 
