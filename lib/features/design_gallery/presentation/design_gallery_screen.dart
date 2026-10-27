@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/config/app_identity.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_typography.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 
 /// معرض المكونات (للمراجعة البصرية فقط — لا يُستخدم في مسار المستخدم).
@@ -26,8 +29,10 @@ class DesignGalleryScreen extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('معرض المكونات (P1)')),
-      body: ListView(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title: const Text('معرض المكونات (v2)')),
+      body: AppBackground(
+        child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           ResponsiveContent(
@@ -199,6 +204,135 @@ class DesignGalleryScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
+                // ---------- نظام v2: التدرّجات والظلال ----------
+                const SectionHeader(
+                  title: 'v2 — التدرّجات والظلال',
+                  subtitle: 'خلفيات ناعمة وسطوح عائمة بدل الألوان المسطّحة',
+                  icon: Icons.gradient_outlined,
+                ),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const _GradientPreview(
+                        label: 'page',
+                        gradient: AppGradients.page,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      const _GradientPreview(
+                        label: 'pageWarm',
+                        gradient: AppGradients.pageWarm,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      const _GradientPreview(
+                        label: 'hero',
+                        gradient: AppGradients.hero,
+                        onDark: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: AppCard(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Column(
+                          children: <Widget>[
+                            Text('ظل عادي', style: theme.textTheme.labelMedium),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              'AppShadows.card',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: AppCard(
+                        lifted: true,
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        child: Column(
+                          children: <Widget>[
+                            Text('ظل مرفوع', style: theme.textTheme.labelMedium),
+                            const SizedBox(height: AppSpacing.xxs),
+                            Text(
+                              'cardLifted',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // ---------- نظام v2: الشرائح (Pills) ----------
+                const SectionHeader(
+                  title: 'v2 — الشرائح والفلاتر',
+                  subtitle: 'حبة دواء: فلتر / وسم / عداد',
+                  icon: Icons.tune,
+                ),
+                SizedBox(
+                  height: 44,
+                  child: PillRow(
+                    children: <Widget>[
+                      PillChip(
+                        label: 'الكل',
+                        selected: true,
+                        onTap: () {},
+                      ),
+                      PillChip(label: 'الرياضيات', onTap: () {}),
+                      PillChip(label: 'الفيزياء', onTap: () {}),
+                      PillChip(
+                        label: 'المعادي',
+                        icon: Icons.place_outlined,
+                        onTap: () {},
+                      ),
+                      PillChip(
+                        label: 'مميز',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppCard(
+                  child: Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: const <Widget>[
+                      PillChip(label: 'وسم ثابت', dense: true),
+                      PillBadge(label: 'مدرس مميز', icon: Icons.workspace_premium),
+                      PillBadge(
+                        label: 'متاح',
+                        icon: Icons.check_circle_outline,
+                        color: AppColors.statusAccepted,
+                      ),
+                      PillBadge(
+                        label: 'مكتمل',
+                        color: AppColors.statusRejected,
+                      ),
+                      PillChip(
+                        label: '7 مقاعد',
+                        dense: true,
+                        icon: Icons.groups_outlined,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+
                 // ---------- البطاقات والشرائح ----------
                 const SectionHeader(title: 'البطاقات والشرائح'),
                 AppCard(
@@ -352,7 +486,7 @@ class DesignGalleryScreen extends StatelessWidget {
                   child: Text(
                     'الخط: ${AppTypography.fontFamily} · '
                     'أقل ارتفاع سطر: ${AppTypography.minLineHeight} · '
-                    'نصف قطر البطاقة: ${AppSpacing.radiusLg}',
+                    'نصف قطر البطاقة: ${AppSpacing.radiusXl}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -363,6 +497,7 @@ class DesignGalleryScreen extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -504,6 +639,44 @@ class _SpaceBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// معاينة تدرّج: مستطيل بحواف كبيرة + تسمية.
+class _GradientPreview extends StatelessWidget {
+  const _GradientPreview({
+    required this.label,
+    required this.gradient,
+    this.onDark = false,
+  });
+
+  final String label;
+  final Gradient gradient;
+
+  /// التدرّجات المشبعة تحتاج نصًا أبيض.
+  final bool onDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      height: 60,
+      alignment: AlignmentDirectional.centerStart,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: onDark ? Colors.white : theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

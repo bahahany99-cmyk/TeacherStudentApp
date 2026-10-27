@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 
@@ -39,8 +40,11 @@ class GroupCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                StatusChip(
+                PillBadge(
                   label: group.isFull ? 'مكتملة' : 'متاحة',
+                  icon: group.isFull
+                      ? Icons.lock_outline
+                      : Icons.check_circle_outline,
                   color: group.isFull
                       ? AppColors.statusRejected
                       : AppColors.statusAccepted,
@@ -56,16 +60,26 @@ class GroupCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Wrap(
-              spacing: AppSpacing.md,
-              runSpacing: AppSpacing.xxs,
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
               children: <Widget>[
-                _IconLabel(
+                PillChip(
+                  dense: true,
                   icon: Icons.groups_outlined,
                   label: '${group.seatsTaken} / ${group.seatsTotal} مقعد',
+                  color: group.isFull
+                      ? AppColors.statusRejected
+                      : AppColors.statusAccepted,
                 ),
-                _IconLabel(
+                PillChip(
+                  dense: true,
                   icon: Icons.videocam_outlined,
                   label: group.meetingMode.label,
+                ),
+                PillChip(
+                  dense: true,
+                  icon: Icons.school_outlined,
+                  label: group.stage,
                 ),
               ],
             ),

@@ -7,14 +7,16 @@ import 'package:teacher_student_app/core/config/app_config.dart';
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
-import 'package:teacher_student_app/core/widgets/info_note.dart';
-import 'package:teacher_student_app/features/auth/presentation/auth_flow.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
+import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
-import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
+import 'package:teacher_student_app/features/auth/presentation/auth_flow.dart';
 
 /// شاشة تسجيل الدخول.
 ///
@@ -63,95 +65,110 @@ class LoginScreen extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: ResponsiveContent(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const SizedBox(height: AppSpacing.xl),
-                Center(
-                  child: Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+      backgroundColor: Colors.transparent,
+      body: AppBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: ResponsiveContent(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const SizedBox(height: AppSpacing.xl),
+                  Center(
+                    child: Container(
+                      width: 88,
+                      height: 88,
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.hero,
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+                        boxShadow: AppShadows.hero,
+                      ),
+                      child: const Icon(
+                        Icons.school_rounded,
+                        size: 44,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.school_rounded,
-                      size: 44,
-                      color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    AppStrings.appName,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    AppStrings.appTagline,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  AppStrings.appName,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall,
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  AppStrings.appTagline,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(height: AppSpacing.lg),
+                  AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Text('تسجيل الدخول', style: theme.textTheme.titleLarge),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          'سجّل الدخول بحساب Google أو ببريد إلكتروني. '
+                          'نوع الحساب يُختار مرة واحدة بعد أول دخول ثم يُقرأ '
+                          'من الخادم.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        FilledButton.icon(
+                          onPressed: () => _signInWithGoogle(context),
+                          icon: const _GoogleGlyph(),
+                          label: const Text('المتابعة باستخدام Google'),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        OutlinedButton.icon(
+                          onPressed: () => Navigator.of(context).pushNamed(
+                            RoutePaths.emailAuth,
+                          ),
+                          icon: const Icon(Icons.alternate_email, size: 20),
+                          label: const Text('الدخول بالبريد الإلكتروني'),
+                        ),
+                        if (FirebaseBootstrap.status !=
+                            FirebaseStatus.ready) ...<Widget>[
+                          const SizedBox(height: AppSpacing.sm),
+                          const InfoNote(
+                            icon: Icons.cloud_off_outlined,
+                            text:
+                                'المصادقة الحقيقية غير مُهيَّأة في هذه النسخة '
+                                '(لا يوجد مشروع Firebase متصل)، لذلك سترى رسالة '
+                                '«غير متاحة» عند المحاولة. راجع '
+                                'docs/FIREBASE_SETUP.md.',
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'بالدخول أنت توافق على شروط الاستخدام وسياسة '
+                          'الخصوصية (ستُنشر قبل الإطلاق).',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                Text('تسجيل الدخول', style: theme.textTheme.titleLarge),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  'سجّل الدخول بحساب Google أو ببريد إلكتروني. '
-                  'نوع الحساب يُختار مرة واحدة بعد أول دخول ثم يُقرأ من الخادم.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                OutlinedButton.icon(
-                  onPressed: () => _signInWithGoogle(context),
-                  icon: const _GoogleGlyph(),
-                  label: const Text('المتابعة باستخدام Google'),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed(
-                    RoutePaths.emailAuth,
-                  ),
-                  icon: const Icon(Icons.alternate_email, size: 20),
-                  label: const Text('الدخول بالبريد الإلكتروني'),
-                ),
-                if (FirebaseBootstrap.status != FirebaseStatus.ready) ...<Widget>[
-                  const SizedBox(height: AppSpacing.xs),
-                  const InfoNote(
-                    icon: Icons.cloud_off_outlined,
-                    text:
-                        'المصادقة الحقيقية غير مُهيَّأة في هذه النسخة (لا يوجد '
-                        'مشروع Firebase متصل)، لذلك سترى رسالة «غير متاحة» عند '
-                        'المحاولة. راجع docs/FIREBASE_SETUP.md.',
-                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  if (AppConfig.isDemoMode)
+                    _DemoAccessCard(
+                      onStudentTap: () =>
+                          _openDemoShell(context, UserRole.student),
+                      onTeacherTap: () =>
+                          _openDemoShell(context, UserRole.teacher),
+                    ),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'بالدخول أنت توافق على شروط الاستخدام وسياسة الخصوصية '
-                  '(ستُنشر قبل الإطلاق).',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                if (AppConfig.isDemoMode)
-                  _DemoAccessCard(
-                    onStudentTap: () =>
-                        _openDemoShell(context, UserRole.student),
-                    onTeacherTap: () =>
-                        _openDemoShell(context, UserRole.teacher),
-                  ),
-                const SizedBox(height: AppSpacing.lg),
-              ],
+              ),
             ),
           ),
         ),

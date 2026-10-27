@@ -5,6 +5,7 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -37,15 +38,25 @@ class StudentHomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const DemoBanner(),
+              // بطاقة ترحيب بتدرّج الهوية (v2): السطح المشبع الوحيد في الصفحة.
               AppCard(
+                gradient: AppGradients.hero,
+                borderColor: Colors.white24,
+                padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Row(
                   children: <Widget>[
-                    CircleAvatar(
-                      radius: AppSpacing.avatarSm / 2,
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Icon(
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
+                        ),
+                      ),
+                      child: const Icon(
                         Icons.school_outlined,
-                        color: theme.colorScheme.onPrimaryContainer,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
@@ -53,12 +64,19 @@ class StudentHomeScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text('أهلًا $name', style: theme.textTheme.titleMedium),
-                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            'أهلًا $name',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
                           Text(
                             'ابحث عن مدرس مناسب أو تابع مجموعاتك وحجوزاتك.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withAlpha(215),
+                              height: 1.6,
                             ),
                           ),
                         ],

@@ -9,6 +9,7 @@ import 'package:teacher_student_app/app/shell/shell_controller.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
@@ -116,6 +117,9 @@ class _AppShellState extends State<AppShell> {
               SystemNavigator.pop();
             },
             child: Scaffold(
+              // الخلفية المتدرّجة تُرسم خلف كل الأقسام؛ الشاشات نفسها بلا
+              // خلفية حتى لا تُغطّي التدرّج.
+              backgroundColor: Colors.transparent,
               appBar: AppBar(
                 title: Text(currentSpec.label),
                 actions: <Widget>[
@@ -139,13 +143,18 @@ class _AppShellState extends State<AppShell> {
                     ),
                 ],
               ),
-              body: SafeArea(
-                child: IndexedStack(
-                  index: index < 0 ? 0 : index,
-                  children: <Widget>[
-                    for (final AppTabSpec spec in specs)
-                      _pageFor(spec.tab, role),
-                  ],
+              body: AppBackground(
+                tone: role == UserRole.teacher
+                    ? AppBackgroundTone.warm
+                    : AppBackgroundTone.cool,
+                child: SafeArea(
+                  child: IndexedStack(
+                    index: index < 0 ? 0 : index,
+                    children: <Widget>[
+                      for (final AppTabSpec spec in specs)
+                        _pageFor(spec.tab, role),
+                    ],
+                  ),
                 ),
               ),
               bottomNavigationBar: NavigationBar(

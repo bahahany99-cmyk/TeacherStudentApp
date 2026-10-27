@@ -6,6 +6,7 @@ import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -41,6 +42,9 @@ class TeacherHomeScreen extends StatelessWidget {
             children: <Widget>[
               const DemoBanner(),
               AppCard(
+                gradient: AppGradients.hero,
+                borderColor: Colors.white24,
+                padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -49,7 +53,10 @@ class TeacherHomeScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             'ملفك التعريفي',
-                            style: theme.textTheme.titleMedium,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         const Flexible(
@@ -65,17 +72,22 @@ class TeacherHomeScreen extends StatelessWidget {
                       'أهلًا $name، هذه معاينة محلية بلا Firebase. حالة اعتماد '
                       'ملفك تأتي من الخادم، والملف لا يظهر للطلاب قبل الاعتماد '
                       '(C-06).',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withAlpha(215),
+                        height: 1.6,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Row(
                       children: <Widget>[
                         Expanded(
-                          child: OutlinedButton(
+                          child: FilledButton(
                             onPressed: () => Navigator.of(context).pushNamed(
                               RoutePaths.myTeacherProfile,
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: theme.colorScheme.primary,
                             ),
                             child: const Text('ملفي التعريفي'),
                           ),
@@ -84,6 +96,11 @@ class TeacherHomeScreen extends StatelessWidget {
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () => _showComingSoon(context),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white54),
+                              backgroundColor: Colors.white12,
+                            ),
                             child: const Text('إضافة مجموعة'),
                           ),
                         ),

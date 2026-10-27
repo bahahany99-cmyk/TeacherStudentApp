@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 
 /// سطح/بطاقة موحّدة تُستخدم في كل الشاشات.
 ///
-/// نستخدم `Container` مع تزيين صريح بدلًا من `Card` لتقليل الارتباط بتغيّرات
-/// `CardTheme` بين إصدارات Flutter.
+/// نسخة 2 (2026-10-27) — الطابع «العائم»:
+/// - حواف 24 نقطة (بدل 18) وحدّ شعري فاتح بدل حد رمادي واضح.
+/// - ظل مزدوج رقيق: قريب يحدّ الحافة، وبعيد يعطي إحساس الطفو.
+/// - لا يُستخدم `Card` لتقليل الارتباط بتغيّرات `CardTheme` بين إصدارات Flutter.
 ///
 /// `Material` داخلي ضروري: العناصر التي ترسم حبرها على أقرب `Material`
 /// (مثل `ListTile` و`InkWell`) تفقد التأثيرات وتُطلق Assertion في وضع التصحيح
@@ -18,6 +20,10 @@ class AppCard extends StatelessWidget {
     this.padding,
     this.onTap,
     this.margin,
+    this.gradient,
+    this.lifted = false,
+    this.borderColor,
+    this.borderRadius,
   });
 
   final Widget child;
@@ -25,10 +31,20 @@ class AppCard extends StatelessWidget {
   final EdgeInsetsGeometry? margin;
   final VoidCallback? onTap;
 
+  /// تدرّج السطح. إن مُرّر، يُستخدم بدل اللون الأبيض (مثل بطاقة Hero).
+  final Gradient? gradient;
+
+  /// ظل أقوى/ملوّن — للبطاقات المهمة أو المختارة.
+  final bool lifted;
+
+  final Color? borderColor;
+  final double? borderRadius;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final BorderRadius radius = BorderRadius.circular(AppSpacing.radiusLg);
+    final double radius = borderRadius ?? AppSpacing.radiusXl;
+    final BorderRadius borderRadiusValue = BorderRadius.circular(radius);
 
     final Widget padded = Padding(
       padding: padding ?? AppSpacing.cardPadding,
@@ -38,23 +54,25 @@ class AppCard extends StatelessWidget {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: radius,
-        border: Border.all(color: theme.colorScheme.outline, width: 0.7),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: AppColors.shadow,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+        color: gradient == null
+            ? (theme.brightness == Brightness.light
+                  ? Colors.white
+                  : theme.colorScheme.surfaceContainerHigh)
+            : null,
+        gradient: gradient,
+        borderRadius: borderRadiusValue,
+        border: Border.all(
+          color: borderColor ?? Colors.white.withAlpha(gradient == null ? 200 : 40),
+          width: 1,
+        ),
+        boxShadow: lifted ? AppShadows.cardLifted : AppShadows.card,
       ),
       child: Material(
         type: MaterialType.transparency,
         child: onTap == null
             ? padded
             : InkWell(
-                borderRadius: radius,
+                borderRadius: borderRadiusValue,
                 onTap: onTap,
                 child: padded,
               ),
