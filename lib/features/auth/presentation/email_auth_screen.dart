@@ -151,6 +151,8 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
+        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+        backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(_registerMode ? 'إنشاء حساب' : 'تسجيل الدخول'),
       ),

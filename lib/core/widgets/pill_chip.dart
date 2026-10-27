@@ -39,17 +39,20 @@ class PillChip extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Color accent = color ?? theme.colorScheme.primary;
 
+    // نسخة 3: تعبئة محايدة فاتحة جدًا (شبه بيضاء) وحدّ رقيق — لا ألوان قوية
+    // ولا ظل ثقيل. المختارة تأخذ باستيل من لون الهوية فقط.
+    final bool isLight = theme.brightness == Brightness.light;
     final Color background = selected
-        ? accent.withAlpha(30)
-        : Colors.white.withAlpha(theme.brightness == Brightness.light ? 210 : 30);
+        ? accent.withAlpha(22)
+        : (isLight ? Colors.white : theme.colorScheme.surfaceContainerHigh);
     final Color foreground = selected
         ? accent
-        : theme.colorScheme.onSurfaceVariant;
+        : (isLight ? const Color(0xFF4B5563) : theme.colorScheme.onSurfaceVariant);
 
     final Widget content = Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: dense ? AppSpacing.sm : AppSpacing.md,
-        vertical: dense ? AppSpacing.xxs + 2 : AppSpacing.xs,
+        horizontal: dense ? AppSpacing.sm : AppSpacing.md + 2,
+        vertical: dense ? 5 : AppSpacing.xs + 1,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -77,19 +80,13 @@ class PillChip extends StatelessWidget {
       color: background,
       borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       border: Border.all(
-        color: selected ? accent.withAlpha(110) : theme.colorScheme.outlineVariant.withAlpha(120),
+        color: selected
+            ? accent.withAlpha(90)
+            : theme.colorScheme.outlineVariant.withAlpha(90),
         width: 1,
       ),
-      boxShadow: selected
-          ? <BoxShadow>[
-              BoxShadow(
-                color: accent.withAlpha(28),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-                spreadRadius: -4,
-              ),
-            ]
-          : null,
+      // ظل شعري خفيف جدًا: يرفع الشريحة عن الخلفية بلا أن تصبح «زرًّا ثقيلًا».
+      boxShadow: AppShadows.pill,
     );
 
     final Widget surface = Container(decoration: decoration, child: content);

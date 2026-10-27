@@ -35,6 +35,8 @@ class GroupDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+        backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('تفاصيل المجموعة')),
       body: SafeArea(
         child: ListView(

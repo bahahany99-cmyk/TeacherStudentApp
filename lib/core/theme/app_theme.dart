@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
@@ -35,29 +36,44 @@ abstract final class AppTheme {
     final bool isLight = brightness == Brightness.light;
 
     return base.copyWith(
-      // الخلفية مسطّحة هنا فقط كاحتياط: الشاشات ترسم تدرّجًا فوقها عبر
-      // `AppBackground`، والمسطّح يظهر إن نسيت إضافته بدل وميض أسود/أبيض.
-      scaffoldBackgroundColor: isLight
-          ? AppColors.lightBackground
-          : AppColors.darkBackground,
+      // شفافة عمدًا: `AppBackground` في `MaterialApp.builder` يرسم التدرّج
+      // العالمي خلف كل المسارات. لو عادت الخلفية معتمة لاختفى التدرّج.
+      // (الاختبارات التي تبني شاشة منفردة لا تعتمد على هذا اللون.)
+      scaffoldBackgroundColor: Colors.transparent,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
-        // شفاف حتى يظهر تدرّج الخلفية خلف الشريط.
+        // شفاف حتى يظهر تدرّج الخلفية خلف الشريط (Edge-to-Edge).
         backgroundColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: textTheme.titleLarge?.copyWith(color: scheme.onSurface),
+        titleSpacing: AppSpacing.pageGutter,
+        toolbarHeight: 60,
+        titleTextStyle: textTheme.titleLarge?.copyWith(
+          color: scheme.onSurface,
+          fontWeight: FontWeight.w700,
+        ),
+        // أيقونات شريط الحالة داكنة فوق خلفيتنا الفاتحة — في كل شاشة، بلا
+        // تكرار الإعداد داخل الشاشات.
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: isLight ? Colors.white : scheme.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: scheme.primary.withAlpha(28),
+        // مؤشّر باستيلي ناعم بدل دائرة بلون الهوية الكامل.
+        indicatorColor: scheme.primary.withAlpha(20),
+        indicatorShape: const StadiumBorder(),
         elevation: 0,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        height: 72,
+        height: 68,
         labelTextStyle: WidgetStateProperty.resolveWith<TextStyle?>(
           (Set<WidgetState> states) => textTheme.labelSmall?.copyWith(
             color: states.contains(WidgetState.selected)

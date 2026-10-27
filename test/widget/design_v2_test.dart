@@ -60,23 +60,45 @@ void main() {
     });
 
     test('التدرّجات معرّفة في مكان واحد واتجاهاتها منطقية', () {
-      expect(AppGradients.page.colors.length, 3);
+      // نسخة 3: أربع محطات (نعناعي ← أبيض ← أبيض ← لافندر) لتفتيح أوسع.
+      expect(AppGradients.page.colors.length, 4);
       expect(AppGradients.page.begin, Alignment.topCenter);
+      expect(AppGradients.page.stops?.first, 0.0);
+      expect(AppGradients.page.stops?.last, 1.0);
       expect(AppGradients.hero.colors.first, AppColors.heroFrom);
-      // تدرّج واحد مشبع فقط (hero) — الباقي باهت للخلفيات.
+      // تدرّج واحد مشبع فقط (hero) للشعار؛ الباقي باهت للخلفيات.
       expect(AppGradients.pageWarm.colors.contains(AppColors.heroFrom), isFalse);
+      expect(AppGradients.glow.colors.contains(AppColors.heroFrom), isFalse);
     });
 
-    test('الظل المزدوج رقيق (شفافية أقل من 15%)', () {
-      for (final BoxShadow shadow in AppShadows.card) {
-        expect(shadow.color.a, lessThan(0.2));
-      }
+    test('الظل المزدوج مطابق للمواصفة حرفيًا', () {
+      // مواصفة صاحب المشروع: قريب 4%/blur 8/(0,2) وبعيد 6%/blur 24/(0,12).
       expect(AppShadows.card.length, 2);
+
+      final BoxShadow near = AppShadows.card.first;
+      final BoxShadow far = AppShadows.card.last;
+
+      expect(near.blurRadius, 8);
+      expect(near.offset, const Offset(0, 2));
+      expect(near.color.a, closeTo(0.04, 0.005));
+
+      expect(far.blurRadius, 24);
+      expect(far.offset, const Offset(0, 12));
+      expect(far.color.a, closeTo(0.06, 0.005));
+    });
+
+    test('الحدود الشعرية بيضاء 80% بعرض 1.2', () {
+      expect(AppBorders.hairlineWidth, 1.2);
+      expect(AppBorders.onWhite.a, closeTo(0.8, 0.01));
+    });
+
+    test('الخلفية الأساسية شفافة ليظهر تدرّج النافذة (Edge-to-Edge)', () {
+      expect(AppTheme.light.scaffoldBackgroundColor, Colors.transparent);
     });
   });
 
   group('نظام التصميم v2 — المكونات', () {
-    testWidgets('AppCard بحواف 24 وظل، ويرسم التدرّج عند تمريره', (
+    testWidgets('AppCard: أبيض · حواف 24 · ظل مزدوج، ويرسم التدرّج عند تمريره', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -100,8 +122,14 @@ void main() {
         decoration.borderRadius,
         BorderRadius.circular(AppSpacing.radiusXl),
       );
-      expect(decoration.boxShadow, isNotEmpty);
+      expect(decoration.boxShadow, AppShadows.card);
       expect(decoration.gradient, isNull);
+      // أبيض صريح في الوضع الفاتح + حدّ أبيض شعري.
+      expect(decoration.color, Colors.white);
+      expect(
+        (decoration.border! as Border).top.width,
+        AppBorders.hairlineWidth,
+      );
 
       // مع تدرّج: لا لون مسطّح.
       await tester.pumpWidget(

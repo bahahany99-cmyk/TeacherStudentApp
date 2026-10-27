@@ -77,6 +77,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     if (!session.needsRoleSelection) {
       // حالة غير متوقعة: فُتحت الشاشة بلا حساب ينتظر اختيار الدور.
       return Scaffold(
+          // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+          backgroundColor: Colors.transparent,
         appBar: AppBar(title: const Text('اختيار نوع الحساب')),
         body: Center(
           child: Padding(

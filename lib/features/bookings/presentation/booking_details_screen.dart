@@ -51,6 +51,8 @@ class BookingDetailsScreen extends StatelessWidget {
     final bool isTeacherView = session.role == UserRole.teacher;
 
     return Scaffold(
+        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+        backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('تفاصيل الطلب')),
       body: SafeArea(
         child: ListView(

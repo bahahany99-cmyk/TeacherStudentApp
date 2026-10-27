@@ -41,9 +41,12 @@ class TeacherHomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const DemoBanner(),
+              // بطاقة تمهيدية «لمعة» بدل الكتلة الخضراء المشبعة (نسخة 3).
+              // نص داكن على سطح فاتح: تباين أعلى وأهدأ بصريًا من الأبيض على
+              // الأخضر، وأقرب إلى المرجع المعتمد.
               AppCard(
-                gradient: AppGradients.hero,
-                borderColor: Colors.white24,
+                gradient: AppGradients.glow,
+                borderColor: AppBorders.onTint,
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,16 +57,13 @@ class TeacherHomeScreen extends StatelessWidget {
                           child: Text(
                             'ملفك التعريفي',
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                        const Flexible(
-                          child: StatusChip(
-                            label: 'حساب تجريبي',
-                            color: AppColors.statusPending,
-                          ),
+                        const StatusChip(
+                          label: 'حساب تجريبي',
+                          color: AppColors.demoForeground,
                         ),
                       ],
                     ),
@@ -73,11 +73,14 @@ class TeacherHomeScreen extends StatelessWidget {
                       'ملفك تأتي من الخادم، والملف لا يظهر للطلاب قبل الاعتماد '
                       '(C-06).',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withAlpha(215),
-                        height: 1.6,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.75,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
+                    const SizedBox(height: AppSpacing.md),
+                    // زرّان بشكل «حبة دواء» في صف واحد: حشوة أفقية صغيرة +
+                    // سطر واحد إجباري، فلا يلتف النص على سطرين كما كان يحدث
+                    // على الشاشات الضيقة.
                     Row(
                       children: <Widget>[
                         Expanded(
@@ -86,10 +89,17 @@ class TeacherHomeScreen extends StatelessWidget {
                               RoutePaths.myTeacherProfile,
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: theme.colorScheme.primary,
+                              minimumSize: const Size.fromHeight(46),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.xs,
+                              ),
+                              textStyle: theme.textTheme.labelMedium,
                             ),
-                            child: const Text('ملفي التعريفي'),
+                            child: const Text(
+                              'ملفي التعريفي',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                         const SizedBox(width: AppSpacing.xs),
@@ -97,11 +107,17 @@ class TeacherHomeScreen extends StatelessWidget {
                           child: OutlinedButton(
                             onPressed: () => _showComingSoon(context),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: Colors.white54),
-                              backgroundColor: Colors.white12,
+                              minimumSize: const Size.fromHeight(46),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.xs,
+                              ),
+                              textStyle: theme.textTheme.labelMedium,
                             ),
-                            child: const Text('إضافة مجموعة'),
+                            child: const Text(
+                              'إضافة مجموعة',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ],
@@ -109,7 +125,7 @@ class TeacherHomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sectionGap),
               SectionHeader(
                 title: 'طلبات بانتظار موافقتك',
                 subtitle: 'الموافقة والرفض سيُنفَّذان على الخادم في مرحلة لاحقة',
@@ -177,7 +193,7 @@ class TeacherHomeScreen extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sectionGap),
               SectionHeader(
                 title: 'مجموعاتي',
                 actionLabel: 'إدارة المجموعات',

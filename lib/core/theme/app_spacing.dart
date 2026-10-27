@@ -33,11 +33,23 @@ abstract final class AppSpacing {
   static const double tabletBreakpoint = 640;
   static const double maxContentWidth = 760;
 
-  // حشوات جاهزة
-  static const EdgeInsets pagePadding = EdgeInsets.symmetric(horizontal: md);
-  static const EdgeInsets cardPadding = EdgeInsets.all(18);
-  static const EdgeInsets listGap = EdgeInsets.only(bottom: sm);
+  // ── النسخة 3: مساحات أوسع («whitespace سخي») ──────────────────────────────
+  /// حافة أفقية للصفحات. رُفعت من 16 إلى 20 لتبتعد عن الإحساس «المضغوط».
+  static const double pageGutter = 20;
 
-  /// حشوة أوسع للبطاقات البطلة (Hero) والشاشات التمهيدية.
+  /// نصف قطر البطاقة المعتمد في المواصفة (24).
+  static const double radiusCard = radiusXl;
+
+  /// المسافة بين الأقسام الرئيسية في الصفحة.
+  static const double sectionGap = 28;
+
+  // حشوات جاهزة
+  static const EdgeInsets pagePadding = EdgeInsets.symmetric(
+    horizontal: pageGutter,
+  );
+  static const EdgeInsets cardPadding = EdgeInsets.all(20);
+
+  /// حشوة أوسع للبطاقة التمهيدية داخل الصفحة.
   static const EdgeInsets heroPadding = EdgeInsets.all(lg);
+  static const EdgeInsets listGap = EdgeInsets.only(bottom: sm);
 }

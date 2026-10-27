@@ -111,5 +111,52 @@ else
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Edge-to-Edge: transparent system bars (v3, 2026-10-27).
+# The black band at the top of the screen came from the platform painting the
+# status bar with the default dark colour behind our light UI. Overriding the
+# theme removes it even before the Dart-side SystemChrome call runs (i.e. also
+# on the launch screen and in the Recent Apps preview).
+# ---------------------------------------------------------------------------
+for STYLES_FILE in \
+  android/app/src/main/res/values/styles.xml \
+  android/app/src/main/res/values-night/styles.xml; do
+[[ -f "$STYLES_FILE" ]] || continue
+python3 - "$STYLES_FILE" <<'STYLES_PATCH'
+import re
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+
+items = [
+    '<item name="android:statusBarColor">@android:color/transparent</item>',
+    '<item name="android:navigationBarColor">@android:color/transparent</item>',
+    '<item name="android:windowDrawsSystemBarBackgrounds">true</item>',
+    '<item name="android:windowLightStatusBar">true</item>',
+    '<item name="android:windowLightNavigationBar">true</item>',
+    '<item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>',
+]
+
+inserted = []
+
+
+def patch_style(match):
+    block = match.group(0)
+    missing = [item for item in items if item not in block]
+    if not missing:
+        return block
+    indent = '        '
+    body = '\n'.join(indent + item for item in missing)
+    inserted.extend(missing)
+    return block.replace('</style>', body + '\n    </style>', 1)
+
+
+src = re.sub(r'<style\b.*?</style>', patch_style, src, flags=re.S)
+open(path, 'w', encoding='utf-8').write(src)
+print('%s: %d item(s) added' % (path, len(inserted)))
+STYLES_PATCH
+done
+
 echo "✓ تم توليد android/ — الاسم الظاهر: $TEMP_APP_LABEL (مؤقت)"
 echo "  ملاحظة: android/local.properties يُنشأ تلقائيًا وقت البناء وهو مستثنى من Git."

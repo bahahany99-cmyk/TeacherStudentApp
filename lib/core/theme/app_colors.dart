@@ -23,14 +23,22 @@ abstract final class AppColors {
   static const Color surfaceRaised = Color(0xFFFFFFFF);
 
   // ── طبقة التدرّجات (نسخة 2) ────────────────────────────────────────────────
+  // غسيل باستيلي (نسخة 3): أفتح من النسخة 2 بدرجة، وبلا أي إشباع.
+  // هذه الألوان **للخلفيات فقط**؛ تباينها منخفض جدًا فلا تُستخدم كنص.
+
   /// أعلى الصفحة: لمسة نعناعية باهتة.
-  static const Color mistMint = Color(0xFFE8F4EF);
+  static const Color washMint = Color(0xFFEBF5F0);
 
-  /// وسط الصفحة: لمسة لافندر باردة (تعطي الإحساس «الفاخر» في المرجع).
-  static const Color mistLavender = Color(0xFFEFEDFB);
+  /// أسفل الصفحة: لمسة لافندر باردة تمنح الإحساس الفاخر في المرجع.
+  static const Color washLavender = Color(0xFFF2EFFC);
 
-  /// أسفل الصفحة: لمسة وردية دافئة خفيفة جدًا.
-  static const Color mistBlush = Color(0xFFFBEFF3);
+  /// لمسة وردية دافئة خفيفة جدًا (صفحات الحساب).
+  static const Color washBlush = Color(0xFFFCF1F5);
+
+  /// مرادفات النسخة 2 — محفوظة حتى لا تتعطّل أي مراجع قائمة.
+  static const Color mistMint = washMint;
+  static const Color mistLavender = washLavender;
+  static const Color mistBlush = washBlush;
 
   /// بداية/نهاية تدرّج البطاقة المميّزة (hero).
   static const Color heroFrom = Color(0xFF128C73);
@@ -39,10 +47,11 @@ abstract final class AppColors {
   // ظلال
   static const Color shadow = Color(0x1A0E1F1B);
 
-  // شريط وضع الزائر
-  static const Color demoBackground = Color(0xFFFFF4DB);
-  static const Color demoBorder = Color(0xFFE8A33D);
-  static const Color demoForeground = Color(0xFF7A4E00);
+  // وضع الزائر (نسخة 3): شريحة دقيقة لا صندوق تحذيري.
+  // الحدّ لون دافئ خفيف جدًا، والنص بنّي متوسط يُقرأ بلا صراخ.
+  static const Color demoBackground = Color(0xFFFFFBF2);
+  static const Color demoBorder = Color(0xFFF0DCB4);
+  static const Color demoForeground = Color(0xFF8A6A33);
 
   // حالات الطلبات
   static const Color statusPending = Color(0xFFB26A00);

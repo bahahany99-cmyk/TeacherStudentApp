@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:teacher_student_app/app/app.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
@@ -13,6 +14,32 @@ import 'package:teacher_student_app/data/services/app_services.dart';
 /// 5) التشغيل.
 Future<void> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Edge-to-Edge حقيقي (نسخة 3) ────────────────────────────────────────────
+  // المشكلة المرصودة على الجهاز: شريط أسود أعلى الشاشة في «التطبيقات الحديثة»
+  // وفي أعلى الصفحة. سببه أن شريط الحالة يُرسم بلون النظام الافتراضي (أسود)
+  // خلف واجهتنا الفاتحة.
+  //
+  // الحل: وضع `edgeToEdge` (المحتوى يمتد خلف شريطي الحالة والتنقّل) + خلفيتان
+  // شفافتان + أيقونات داكنة (لأن خلفيتنا فاتحة). الحشو الآمن يبقى مسؤولية
+  // `SafeArea` داخل الشاشات، فتظل النصوص بعيدة عن النوتش.
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+    overlays: SystemUiOverlay.values,
+  );
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark, // أندرويد
+      statusBarBrightness: Brightness.light, // iOS
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      // يمنع النظام من إضافة طبقة تعتيم على شريط التنقّل فوق تدرّجنا.
+      systemNavigationBarContrastEnforced: false,
+      systemStatusBarContrastEnforced: false,
+    ),
+  );
 
   await FirebaseBootstrap.initialize();
 

@@ -51,6 +51,8 @@ class _SplashScreenState extends State<SplashScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
+        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+        backgroundColor: Colors.transparent,
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(

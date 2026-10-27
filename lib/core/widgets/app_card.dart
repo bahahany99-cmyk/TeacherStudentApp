@@ -5,14 +5,15 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 
 /// سطح/بطاقة موحّدة تُستخدم في كل الشاشات.
 ///
-/// نسخة 2 (2026-10-27) — الطابع «العائم»:
-/// - حواف 24 نقطة (بدل 18) وحدّ شعري فاتح بدل حد رمادي واضح.
-/// - ظل مزدوج رقيق: قريب يحدّ الحافة، وبعيد يعطي إحساس الطفو.
-/// - لا يُستخدم `Card` لتقليل الارتباط بتغيّرات `CardTheme` بين إصدارات Flutter.
+/// المواصفة المعتمدة (نسخة 3 — 2026-10-27، مطابقة للمرجع البصري):
+/// - سطح **أبيض صريح** (`Colors.white`) في الوضع الفاتح.
+/// - نصف قطر **24**.
+/// - حدّ شعري **أبيض 80% بعرض 1.2** (هو ما يعطي الإحساس الزجاجي).
+/// - **ظلان** بالضبط: قريب (أسود 4% · blur 8 · 0,2) وبعيد (أسود 6% · blur 24 · 0,12).
 ///
 /// `Material` داخلي ضروري: العناصر التي ترسم حبرها على أقرب `Material`
-/// (مثل `ListTile` و`InkWell`) تفقد التأثيرات وتُطلق Assertion في وضع التصحيح
-/// إذا وُضعت داخل `DecoratedBox` ملوّن مباشرة.
+/// (`ListTile`، `InkWell`) تفقد التأثيرات أو تُطلق Assertion في وضع التصحيح إذا
+/// وُضعت داخل `DecoratedBox` ملوّن مباشرة.
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
@@ -24,6 +25,7 @@ class AppCard extends StatelessWidget {
     this.lifted = false,
     this.borderColor,
     this.borderRadius,
+    this.shadows,
   });
 
   final Widget child;
@@ -31,19 +33,24 @@ class AppCard extends StatelessWidget {
   final EdgeInsetsGeometry? margin;
   final VoidCallback? onTap;
 
-  /// تدرّج السطح. إن مُرّر، يُستخدم بدل اللون الأبيض (مثل بطاقة Hero).
+  /// سطح متدرّج ناعم (مثل `AppGradients.glow`) بدل الأبيض المسطّح.
+  /// يُستخدم للبطاقات التمهيدية، ودائمًا مع نص داكن.
   final Gradient? gradient;
 
-  /// ظل أقوى/ملوّن — للبطاقات المهمة أو المختارة.
+  /// ظل أقوى قليلًا — للبطاقة المهمة/المختارة فقط.
   final bool lifted;
 
   final Color? borderColor;
   final double? borderRadius;
 
+  /// تجاوز الظل (نادرًا: البطاقة داخل حاوية لها ظلها).
+  final List<BoxShadow>? shadows;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final double radius = borderRadius ?? AppSpacing.radiusXl;
+    final bool isLight = theme.brightness == Brightness.light;
+    final double radius = borderRadius ?? AppSpacing.radiusCard;
     final BorderRadius borderRadiusValue = BorderRadius.circular(radius);
 
     final Widget padded = Padding(
@@ -54,18 +61,19 @@ class AppCard extends StatelessWidget {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        color: gradient == null
-            ? (theme.brightness == Brightness.light
-                  ? Colors.white
-                  : theme.colorScheme.surfaceContainerHigh)
-            : null,
+        // أبيض صريح في الوضع الفاتح — لا لون خلفية مزرق أو رمادي.
+        color: gradient != null
+            ? null
+            : (isLight ? Colors.white : theme.colorScheme.surfaceContainerHigh),
         gradient: gradient,
         borderRadius: borderRadiusValue,
-        border: Border.all(
-          color: borderColor ?? Colors.white.withAlpha(gradient == null ? 200 : 40),
-          width: 1,
+        border: AppBorders.side(
+          borderColor ??
+              (gradient == null ? AppBorders.onWhite : AppBorders.onTint),
         ),
-        boxShadow: lifted ? AppShadows.cardLifted : AppShadows.card,
+        boxShadow:
+            shadows ??
+            (lifted ? AppShadows.cardLifted : AppShadows.card),
       ),
       child: Material(
         type: MaterialType.transparency,

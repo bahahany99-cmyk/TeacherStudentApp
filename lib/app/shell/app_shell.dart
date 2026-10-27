@@ -9,7 +9,6 @@ import 'package:teacher_student_app/app/shell/shell_controller.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
-import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
@@ -116,9 +115,9 @@ class _AppShellState extends State<AppShell> {
 
               SystemNavigator.pop();
             },
+            // الخلفية المتدرّجة عالمية الآن (MaterialApp.builder)، فالـScaffold
+            // هنا شفاف ويعرضها. لا نكرّر التدرّج محليًا.
             child: Scaffold(
-              // الخلفية المتدرّجة تُرسم خلف كل الأقسام؛ الشاشات نفسها بلا
-              // خلفية حتى لا تُغطّي التدرّج.
               backgroundColor: Colors.transparent,
               appBar: AppBar(
                 title: Text(currentSpec.label),
@@ -143,33 +142,47 @@ class _AppShellState extends State<AppShell> {
                     ),
                 ],
               ),
-              body: AppBackground(
-                tone: role == UserRole.teacher
-                    ? AppBackgroundTone.warm
-                    : AppBackgroundTone.cool,
+              body: SafeArea(
+                bottom: false,
+                child: IndexedStack(
+                  index: index < 0 ? 0 : index,
+                  children: <Widget>[
+                    for (final AppTabSpec spec in specs)
+                      _pageFor(spec.tab, role),
+                  ],
+                ),
+              ),
+              // شريط التنقّل: خلفية بيضاء تمتد تحت شريط النظام (SafeArea سفلية
+              // داخلية) حتى لا تظهر فجوة سوداء أسفل الشاشة.
+              bottomNavigationBar: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).navigationBarTheme.backgroundColor,
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outlineVariant.withAlpha(120),
+                      width: 0.8,
+                    ),
+                  ),
+                ),
                 child: SafeArea(
-                  child: IndexedStack(
-                    index: index < 0 ? 0 : index,
-                    children: <Widget>[
+                  top: false,
+                  child: NavigationBar(
+                    selectedIndex: index < 0 ? 0 : index,
+                    onDestinationSelected: (int selected) =>
+                        _shell.goTo(specs[selected].tab),
+                    destinations: <Widget>[
                       for (final AppTabSpec spec in specs)
-                        _pageFor(spec.tab, role),
+                        NavigationDestination(
+                          icon: Icon(spec.icon),
+                          selectedIcon: Icon(spec.selectedIcon),
+                          label: spec.label,
+                          tooltip: spec.label,
+                        ),
                     ],
                   ),
                 ),
-              ),
-              bottomNavigationBar: NavigationBar(
-                selectedIndex: index < 0 ? 0 : index,
-                onDestinationSelected: (int selected) =>
-                    _shell.goTo(specs[selected].tab),
-                destinations: <Widget>[
-                  for (final AppTabSpec spec in specs)
-                    NavigationDestination(
-                      icon: Icon(spec.icon),
-                      selectedIcon: Icon(spec.selectedIcon),
-                      label: spec.label,
-                      tooltip: spec.label,
-                    ),
-                ],
               ),
             ),
           );

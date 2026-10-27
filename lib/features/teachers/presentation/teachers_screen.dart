@@ -5,6 +5,7 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -39,17 +40,17 @@ class TeachersScreen extends StatelessWidget {
                   prefixIcon: Icon(Icons.search),
                 ),
               ),
-              const SizedBox(height: AppSpacing.xs),
-              Wrap(
-                spacing: AppSpacing.xs,
-                runSpacing: AppSpacing.xs,
+              const SizedBox(height: AppSpacing.sm),
+              // صف فلاتر أفقي (نسخة 3): شرائح «حبة دواء» تُمرَّر أفقيًا ولا
+              // تلتف إلى صفوف — مطابق للمرجع. الفلاتر نفسها غير مفعّلة بعد.
+              PillRow(
                 children: const <Widget>[
-                  _FilterPlaceholder('المادة'),
-                  _FilterPlaceholder('المرحلة الدراسية'),
-                  _FilterPlaceholder('المنطقة'),
+                  PillChip(label: 'المادة', icon: Icons.expand_more),
+                  PillChip(label: 'المرحلة الدراسية', icon: Icons.expand_more),
+                  PillChip(label: 'المنطقة', icon: Icons.expand_more),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sectionGap),
               const SectionHeader(
                 title: 'مدرسون مميزون',
                 subtitle: 'يُدار التمييز من الإدارة فقط',
@@ -78,7 +79,7 @@ class TeachersScreen extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sectionGap),
               const SectionHeader(
                 title: 'كل المدرسين',
                 subtitle: 'الملفات المعتمدة فقط',
@@ -114,22 +115,6 @@ class TeachersScreen extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// فلتر غير مفعّل (يوضّح مكان الفلاتر في التصميم).
-class _FilterPlaceholder extends StatelessWidget {
-  const _FilterPlaceholder(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label),
-      avatar: const Icon(Icons.expand_more, size: 16),
-      labelStyle: Theme.of(context).textTheme.labelSmall,
     );
   }
 }

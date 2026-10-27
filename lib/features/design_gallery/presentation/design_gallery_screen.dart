@@ -6,7 +6,6 @@ import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_typography.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
@@ -30,9 +29,8 @@ class DesignGalleryScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('معرض المكونات (v2)')),
-      body: AppBackground(
-        child: ListView(
+      appBar: AppBar(title: const Text('معرض المكونات (v3)')),
+      body: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           ResponsiveContent(
@@ -498,8 +496,7 @@ class DesignGalleryScreen extends StatelessWidget {
           ),
         ],
         ),
-      ),
-    );
+      );
   }
 }
 

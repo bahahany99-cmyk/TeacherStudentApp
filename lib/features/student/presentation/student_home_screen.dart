@@ -38,10 +38,10 @@ class StudentHomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const DemoBanner(),
-              // بطاقة ترحيب بتدرّج الهوية (v2): السطح المشبع الوحيد في الصفحة.
+              // بطاقة ترحيب «لمعة» ناعمة (نسخة 3) — لا لون مشبع.
               AppCard(
-                gradient: AppGradients.hero,
-                borderColor: Colors.white24,
+                gradient: AppGradients.glow,
+                borderColor: AppBorders.onTint,
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Row(
                   children: <Widget>[
@@ -49,14 +49,12 @@ class StudentHomeScreen extends StatelessWidget {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(
-                          AppSpacing.radiusMd,
-                        ),
+                        color: theme.colorScheme.primary.withAlpha(24),
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.school_outlined,
-                        color: Colors.white,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
@@ -67,7 +65,6 @@ class StudentHomeScreen extends StatelessWidget {
                           Text(
                             'أهلًا $name',
                             style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -75,8 +72,8 @@ class StudentHomeScreen extends StatelessWidget {
                           Text(
                             'ابحث عن مدرس مناسب أو تابع مجموعاتك وحجوزاتك.',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withAlpha(215),
-                              height: 1.6,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              height: 1.7,
                             ),
                           ),
                         ],

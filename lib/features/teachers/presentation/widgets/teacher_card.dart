@@ -42,7 +42,8 @@ class TeacherCard extends StatelessWidget {
       padding: AppSpacing.listGap,
       child: AppCard(
         onTap: onTap,
-        padding: const EdgeInsets.all(AppSpacing.md),
+        // حشوة أوسع (20) لمساحة تنفّس أكبر داخل البطاقة.
+        padding: AppSpacing.cardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -68,12 +69,12 @@ class TeacherCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.md),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 CircleAvatar(
-                  radius: AppSpacing.avatarSm / 2 + 4,
+                  radius: AppSpacing.avatarMd / 2,
                   backgroundColor: theme.colorScheme.primary.withAlpha(26),
                   child: Text(
                     teacher.initials,

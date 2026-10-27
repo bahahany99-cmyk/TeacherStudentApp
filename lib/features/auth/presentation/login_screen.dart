@@ -10,7 +10,6 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
-import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
@@ -66,8 +65,8 @@ class LoginScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppBackground(
-        child: SafeArea(
+      body: SafeArea(
+          bottom: false,
           child: SingleChildScrollView(
             child: ResponsiveContent(
               child: Column(
@@ -172,8 +171,7 @@ class LoginScreen extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -241,24 +239,47 @@ class _DemoAccessCard extends StatelessWidget {
             'تصفّح كل الشاشات ببيانات تجريبية محلية دون تسجيل دخول ودون '
             'اتصال بخادم. اختيار الدور هنا للعرض فقط: لا يُنشئ حسابًا ولا يمنح '
             'أي صلاحية، وفي الإنتاج يُقرأ الدور من الخادم.',
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+              height: 1.75,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: <Widget>[
               Expanded(
-                child: OutlinedButton(
+                child: FilledButton(
                   onPressed: onStudentTap,
-                  child: const Text('واجهة الطالب'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                    ),
+                    textStyle: theme.textTheme.labelMedium,
+                  ),
+                  child: const Text(
+                    'واجهة الطالب',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: OutlinedButton(
                   onPressed: onTeacherTap,
-                  child: const Text('واجهة المدرس'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                    ),
+                    textStyle: theme.textTheme.labelMedium,
+                  ),
+                  child: const Text(
+                    'واجهة المدرس',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ],

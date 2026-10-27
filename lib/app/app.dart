@@ -7,6 +7,7 @@ import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/config/app_identity.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
+import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
@@ -40,10 +41,15 @@ class TeacherStudentApp extends StatelessWidget {
           onGenerateRoute: AppRouter.onGenerateRoute,
           initialRoute: RoutePaths.splash,
           builder: (BuildContext context, Widget? child) {
-            // تأكيد الاتجاه حتى لو تغيّر مصدر اللغة مستقبلًا.
+            // 1) خلفية التدرّج **العالمية** (نسخة 3): تُرسم مرة واحدة خلف كل
+            //    المسارات، والـScaffolds شفافة — فلا تحتاج كل شاشة إلى نسخ
+            //    الخلفية، ولا يظهر شريط أسود أعلى أي شاشة (Edge-to-Edge).
+            // 2) تأكيد الاتجاه حتى لو تغيّر مصدر اللغة مستقبلًا.
             return Directionality(
               textDirection: TextDirection.rtl,
-              child: child ?? const SizedBox.shrink(),
+              child: AppBackground(
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
         ),
