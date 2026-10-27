@@ -248,9 +248,9 @@ class _DemoAccessCard extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: FilledButton(
+                child: OutlinedButton(
                   onPressed: onStudentTap,
-                  style: FilledButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(46),
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xs,
