@@ -119,14 +119,18 @@ class BookingsScreen extends StatelessWidget {
                                       color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                     const SizedBox(width: AppSpacing.xxs),
-                                    Text(
-                                      _formatDateTime(booking.requestedAt),
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: theme
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
+                                    Flexible(
+                                      child: Text(
+                                        _formatDateTime(booking.requestedAt),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),

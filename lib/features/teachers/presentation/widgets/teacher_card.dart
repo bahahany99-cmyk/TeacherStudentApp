@@ -94,12 +94,16 @@ class TeacherCard extends StatelessWidget {
                         color: Color(0xFFE8A33D),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        teacher.reviewsCount == 0
-                            ? 'لا توجد تقييمات بعد'
-                            : '${teacher.rating.toStringAsFixed(1)} '
-                                  '(${teacher.reviewsCount} تقييم)',
-                        style: theme.textTheme.labelSmall,
+                      Flexible(
+                        child: Text(
+                          teacher.reviewsCount == 0
+                              ? 'لا توجد تقييمات بعد'
+                              : '${teacher.rating.toStringAsFixed(1)} '
+                                    '(${teacher.reviewsCount} تقييم)',
+                          style: theme.textTheme.labelSmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const Spacer(),
                       if (teacher.priceHint != null)
