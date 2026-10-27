@@ -126,11 +126,18 @@ jobs:
         run: bash tool/scaffold_android.sh
 
       # بناء تحقّق فقط: يثبت أن Gradle + Firebase Android يعملان، بلا رفع.
+      #
+      # نقسّم حسب المعمارية ونبني ARM فقط: حزم Firebase تضيف مكتبات أصلية لكل
+      # معمارية، فـAPK «عام» يقترب من 150 م.ب، بينما ملف arm64 وحده يقارب نصفه
+      # وأسرع في التنزيل على الهاتف.
       - name: Build debug APK (verification)
         run: |
           set -o pipefail
           status=0
-          flutter build apk --debug > /tmp/build.txt 2>&1 || status=$?
+          flutter build apk --debug \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm \
+            > /tmp/build.txt 2>&1 || status=$?
           tail -60 /tmp/build.txt
 
           if [ "$status" -ne 0 ]; then
@@ -139,7 +146,7 @@ jobs:
             exit "$status"
           fi
 
-          ls -l build/app/outputs/flutter-apk/app-debug.apk
+          ls -l build/app/outputs/flutter-apk/*.apk
           echo "✅ APK جُرِّب بناؤه بنجاح (بدون رفع في وضع الدفع)."
 
       # تسليم APK بلا الحاجة إلى workflow_dispatch (الذي لا يملكه وكيل التطوير):
@@ -156,7 +163,7 @@ jobs:
           short="${GITHUB_SHA:0:7}"
           tag="apk-${short}"
           gh release create "$tag" \
-            build/app/outputs/flutter-apk/app-debug.apk \
+            build/app/outputs/flutter-apk/*.apk \
             --title "APK تجريبي ${short} — وضع الزائر" \
             --notes "بناء تلقائي لوضع الزائر (بيانات تجريبية، بلا Firebase). الفرع: ${GITHUB_REF_NAME}. الإصدار: ${short}." \
             --repo "${GITHUB_REPOSITORY}"
@@ -166,6 +173,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
           retention-days: 7
