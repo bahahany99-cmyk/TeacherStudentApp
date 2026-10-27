@@ -7,6 +7,10 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 ///
 /// نستخدم `Container` مع تزيين صريح بدلًا من `Card` لتقليل الارتباط بتغيّرات
 /// `CardTheme` بين إصدارات Flutter.
+///
+/// `Material` داخلي ضروري: العناصر التي ترسم حبرها على أقرب `Material`
+/// (مثل `ListTile` و`InkWell`) تفقد التأثيرات وتُطلق Assertion في وضع التصحيح
+/// إذا وُضعت داخل `DecoratedBox` ملوّن مباشرة.
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
@@ -26,9 +30,13 @@ class AppCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final BorderRadius radius = BorderRadius.circular(AppSpacing.radiusLg);
 
-    final Widget content = Container(
-      margin: margin,
+    final Widget padded = Padding(
       padding: padding ?? AppSpacing.cardPadding,
+      child: child,
+    );
+
+    return Container(
+      margin: margin,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: radius,
@@ -41,17 +49,16 @@ class AppCard extends StatelessWidget {
           ),
         ],
       ),
-      child: child,
-    );
-
-    if (onTap == null) {
-      return content;
-    }
-
-    return InkWell(
-      borderRadius: radius,
-      onTap: onTap,
-      child: content,
+      child: Material(
+        type: MaterialType.transparency,
+        child: onTap == null
+            ? padded
+            : InkWell(
+                borderRadius: radius,
+                onTap: onTap,
+                child: padded,
+              ),
+      ),
     );
   }
 }
