@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -51,8 +51,57 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # التحليل يُنشر أيضًا كتعليق على الكوميت، لأن سجلات Actions محجوبة عن
+      # بيئة العمل الحالية (الوصول لـ blob storage غير متاح) — هكذا تبقى
+      # نتائج التحليل قابلة للقراءة والمراجعة.
       - name: Analyze
-        run: flutter analyze
+        id: analyze
+        run: |
+          set -o pipefail
+          status=0
+          dart analyze --format=machine > /tmp/analyze.txt 2>&1 || status=$?
+
+          if [ "$status" -eq 0 ]; then
+            echo "✅ flutter/dart analyze: لا أخطاء ولا تحذيرات."
+            exit 0
+          fi
+
+          echo "❌ analyze فشل — الرسائل:"
+          cat /tmp/analyze.txt
+
+          # ملاحظات داخل صفحة التشغيل (أول 10 رسائل).
+          head -10 /tmp/analyze.txt | while IFS='|' read -r sev type code file line col len msg; do
+            case "$sev" in
+              ERROR)   echo "::error file=$file,line=$line,col=$col::$code: $msg" ;;
+              WARNING) echo "::warning file=$file,line=$line,col=$col::$code: $msg" ;;
+              INFO)    echo "::notice file=$file,line=$line,col=$col::$code: $msg" ;;
+            esac
+          done
+
+          # التعليق الكامل على الكوميت (قابل للقراءة عبر API).
+          {
+            echo "### نتيجة \`dart analyze\` (فشل)"
+            echo
+            echo '```'
+            head -250 /tmp/analyze.txt
+            echo '```'
+          } > /tmp/comment.md
+
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            -f body="$(cat /tmp/comment.md)" \
+            -H "Accept: application/vnd.github+json" || echo "تعذّر نشر التعليق."
+
+          exit "$status"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload analyze log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-log
+          path: /tmp/analyze.txt
+          if-no-files-found: ignore
 
       - name: Test
         run: flutter test --reporter expanded
