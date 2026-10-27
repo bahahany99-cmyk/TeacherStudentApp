@@ -1,67 +1,90 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/constants/app_strings.dart';
-import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/core/widgets/error_state.dart';
+import 'package:teacher_student_app/core/widgets/loading_state.dart';
 
-/// غلاف موحّد لتحميل البيانات غير المتزامنة.
+/// حالة عنصر غير متزامن (تحميل / خطأ / فراغ / بيانات).
 ///
-/// في المرحلة 2 تُستخدم futures مُخزَّنة مؤقتًا من مستودعات تجريبية.
-/// عند ربط Firestore يمكن استبدال هذا الغلاف بـ `StreamBuilder` أو إدارة حالة
-/// مناسبة، دون تغيير الشاشات من حيث المفهوم.
-class AsyncView<T> extends StatelessWidget {
+/// كل الشاشات تستخدم هذا الغلاف بدل كتابة `FutureBuilder` يدويًا، حتى تكون
+/// الحالات الأربع بنفس الشكل والسلوك في كل الأقسام، ويوجد **دائمًا** زر
+/// «إعادة المحاولة» عند الخطأ.
+///
+/// عند ربط Firestore يمكن استبدال المصدر بـ`Stream` عبر [AsyncView.stream]
+/// دون تغيير الشاشات.
+class AsyncView<T> extends StatefulWidget {
   const AsyncView({
     super.key,
     required this.future,
     required this.builder,
     this.loadingLabel = AppStrings.loading,
-    this.errorTitle = 'تعذّر تحميل البيانات',
-    this.errorMessage = 'تحقق من الاتصال ثم أعد المحاولة.',
+    this.isEmpty,
+    this.emptyBuilder,
+    this.onRetry,
   });
 
   final Future<T> future;
+
+  /// يبني المحتوى عند وجود بيانات.
   final Widget Function(BuildContext context, T data) builder;
+
   final String loadingLabel;
-  final String errorTitle;
-  final String errorMessage;
+
+  /// هل النتيجة فارغة؟ (يُستخدم لإظهار [emptyBuilder] بدل قائمة فارغة).
+  final bool Function(T data)? isEmpty;
+
+  /// الحالة البديلة عند الفراغ. إن لم تُحدَّد، تُعرض قائمة فارغة افتراضية.
+  final WidgetBuilder? emptyBuilder;
+
+  /// إن حُدِّد، يُستدعى لإعادة جلب البيانات (ويُعاد تشغيل [future] من الأب).
+  final VoidCallback? onRetry;
+
+  @override
+  State<AsyncView<T>> createState() => _AsyncViewState<T>();
+}
+
+class _AsyncViewState<T> extends State<AsyncView<T>> {
+  /// مفتاح إعادة البناء: يسمح بإعادة تشغيل الـfuture دون إعادة بناء الشاشة.
+  Key _futureKey = UniqueKey();
+
+  void _retry() {
+    setState(() => _futureKey = UniqueKey());
+    widget.onRetry?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<T>(
-      future: future,
+      key: _futureKey,
+      future: widget.future,
       builder: (BuildContext context, AsyncSnapshot<T> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2.4),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(loadingLabel, style: Theme.of(context).textTheme.bodyMedium),
-              ],
-            ),
-          );
+          return LoadingState(label: widget.loadingLabel);
         }
 
         if (snapshot.hasError) {
-          return EmptyState(
-            icon: Icons.cloud_off_outlined,
-            title: errorTitle,
-            message: errorMessage,
-          );
+          return ErrorState(error: snapshot.error!, onRetry: _retry);
         }
 
         final T? data = snapshot.data;
+
         if (data == null) {
-          return const SizedBox.shrink();
+          return const EmptyState(
+            icon: Icons.inbox_outlined,
+            title: 'لا توجد بيانات لعرضها',
+          );
         }
 
-        return builder(context, data);
+        if (widget.isEmpty?.call(data) ?? false) {
+          return widget.emptyBuilder?.call(context) ??
+              const EmptyState(
+                icon: Icons.inbox_outlined,
+                title: 'لا توجد بيانات لعرضها',
+              );
+        }
+
+        return widget.builder(context, data);
       },
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
@@ -82,18 +84,21 @@ class StudentHomeScreen extends StatelessWidget {
                     Wrap(
                       spacing: AppSpacing.xs,
                       runSpacing: AppSpacing.xs,
-                      children: const <Widget>[
+                      children: <Widget>[
                         _ShortcutChip(
                           icon: Icons.person_search_outlined,
                           label: 'ابحث عن مدرس',
+                          onTap: () => ShellScope.read(context).goTo(AppTab.teachers),
                         ),
                         _ShortcutChip(
                           icon: Icons.groups_outlined,
                           label: 'المجموعات الدراسية',
+                          onTap: () => ShellScope.read(context).goTo(AppTab.groups),
                         ),
                         _ShortcutChip(
                           icon: Icons.event_note_outlined,
                           label: 'حجوزاتي',
+                          onTap: () => ShellScope.read(context).goTo(AppTab.bookings),
                         ),
                       ],
                     ),
@@ -101,9 +106,12 @@ class StudentHomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              const SectionHeader(
+              SectionHeader(
                 title: 'مدرسون مميزون',
                 subtitle: 'قسم مستقل عن نتائج البحث العادي',
+                actionLabel: 'عرض الكل',
+                onActionTap: () =>
+                    ShellScope.read(context).goTo(AppTab.teachers),
               ),
               AsyncView<List<TeacherProfile>>(
                 future: AppServicesScope.of(context).teachers.listFeatured(),
@@ -197,19 +205,25 @@ class StudentHomeScreen extends StatelessWidget {
   }
 }
 
-/// اختصار غير مفعّل (لتأكيد بنية الواجهة فقط).
+/// اختصار في الرئيسية ينقل إلى قسم آخر داخل الهيكل (بلا تكرار لمنطق التنقل).
 class _ShortcutChip extends StatelessWidget {
-  const _ShortcutChip({required this.icon, required this.label});
+  const _ShortcutChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
+    return ActionChip(
       avatar: Icon(icon, size: 18),
       label: Text(label),
       labelStyle: Theme.of(context).textTheme.labelSmall,
+      onPressed: onTap,
     );
   }
 }

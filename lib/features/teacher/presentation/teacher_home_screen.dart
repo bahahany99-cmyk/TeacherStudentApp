@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
@@ -87,9 +89,12 @@ class TeacherHomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              const SectionHeader(
+              SectionHeader(
                 title: 'طلبات بانتظار موافقتك',
                 subtitle: 'الموافقة والرفض سيُنفَّذان على الخادم في مرحلة لاحقة',
+                actionLabel: 'كل الطلبات',
+                onActionTap: () =>
+                    ShellScope.read(context).goTo(AppTab.bookings),
               ),
               AsyncView<List<BookingRequest>>(
                 future: AppServicesScope.of(context).bookings.listMine(),
@@ -148,7 +153,12 @@ class TeacherHomeScreen extends StatelessWidget {
                 },
               ),
               const SizedBox(height: AppSpacing.md),
-              const SectionHeader(title: 'مجموعاتي'),
+              SectionHeader(
+                title: 'مجموعاتي',
+                actionLabel: 'إدارة المجموعات',
+                onActionTap: () =>
+                    ShellScope.read(context).goTo(AppTab.groups),
+              ),
               AsyncView<List<StudyGroup>>(
                 future: AppServicesScope.of(
                   context,

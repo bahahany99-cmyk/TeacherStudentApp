@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_controller.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -14,26 +18,16 @@ import 'package:teacher_student_app/features/student/presentation/student_home_s
 import 'package:teacher_student_app/features/teacher/presentation/teacher_home_screen.dart';
 import 'package:teacher_student_app/features/teachers/presentation/teachers_screen.dart';
 
-/// عنصر تنقّل واحد داخل التطبيق.
-class _Destination {
-  const _Destination({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-    required this.builder,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-  final WidgetBuilder builder;
-}
-
 /// الهيكل الرئيسي بعد تسجيل الدخول.
 ///
-/// يفصل تجربة الطالب عن تجربة المدرس عبر قائمة تنقّل مختلفة لكل دور.
-/// ملاحظة أمنية: هذا الفصل **للتجربة فقط**؛ الوصول الحقيقي إلى بيانات الأدوار
-/// يُفرض على الخادم، وليس بإخفاء تبويب هنا.
+/// المسؤوليات:
+/// - شريط تنقّل يختلف حسب الدور (المصدر: [AppTabs]).
+/// - الحفاظ على حالة كل قسم عبر `IndexedStack` (لا يُعاد بناء القسم عند التبديل).
+/// - سلوك رجوع واحد: من أي قسم غير الرئيسية → العودة للرئيسية؛ ومن الرئيسية →
+///   الخروج من التطبيق (بعد تأكيد قصير أول مرة).
+///
+/// ملاحظة أمنية: الفصل بين تجربتي الطالب والمدرس **للتجربة فقط**؛ الصلاحيات
+/// الحقيقية تُفرض على الخادم، وليست بإخفاء تبويب هنا.
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -42,85 +36,19 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  int _index = 0;
+  late final ShellController _shell;
+  bool _exitHintShown = false;
 
-  List<_Destination> _destinationsFor(UserRole role) {
-    switch (role) {
-      case UserRole.student:
-        return <_Destination>[
-          _Destination(
-            label: 'الرئيسية',
-            icon: Icons.home_outlined,
-            selectedIcon: Icons.home_rounded,
-            builder: (BuildContext context) => const StudentHomeScreen(),
-          ),
-          _Destination(
-            label: 'المدرسون',
-            icon: Icons.person_search_outlined,
-            selectedIcon: Icons.person_search_rounded,
-            builder: (BuildContext context) => const TeachersScreen(),
-          ),
-          _Destination(
-            label: 'المجموعات',
-            icon: Icons.groups_outlined,
-            selectedIcon: Icons.groups_rounded,
-            builder: (BuildContext context) => const GroupsScreen.discover(),
-          ),
-          _Destination(
-            label: 'الحجوزات',
-            icon: Icons.event_note_outlined,
-            selectedIcon: Icons.event_note_rounded,
-            builder: (BuildContext context) =>
-                const BookingsScreen(viewerRole: UserRole.student),
-          ),
-          _Destination(
-            label: 'حسابي',
-            icon: Icons.account_circle_outlined,
-            selectedIcon: Icons.account_circle_rounded,
-            builder: (BuildContext context) => const ProfileScreen(),
-          ),
-        ];
-      case UserRole.teacher:
-        return <_Destination>[
-          _Destination(
-            label: 'الرئيسية',
-            icon: Icons.dashboard_outlined,
-            selectedIcon: Icons.dashboard_rounded,
-            builder: (BuildContext context) => const TeacherHomeScreen(),
-          ),
-          _Destination(
-            label: 'مجموعاتي',
-            icon: Icons.groups_outlined,
-            selectedIcon: Icons.groups_rounded,
-            // في المرحلة 2 نستخدم معرف المدرس التجريبي.
-            builder: (BuildContext context) =>
-                const GroupsScreen.forTeacher(teacherId: DemoData.demoTeacherId),
-          ),
-          _Destination(
-            label: 'الطلبات',
-            icon: Icons.event_note_outlined,
-            selectedIcon: Icons.event_note_rounded,
-            builder: (BuildContext context) =>
-                const BookingsScreen(viewerRole: UserRole.teacher),
-          ),
-          _Destination(
-            label: 'حسابي',
-            icon: Icons.account_circle_outlined,
-            selectedIcon: Icons.account_circle_rounded,
-            builder: (BuildContext context) => const ProfileScreen(),
-          ),
-        ];
-      case UserRole.admin:
-        // لوحة الإدارة ليست جزءًا من هذه المرحلة.
-        return <_Destination>[
-          _Destination(
-            label: 'حسابي',
-            icon: Icons.account_circle_outlined,
-            selectedIcon: Icons.account_circle_rounded,
-            builder: (BuildContext context) => const ProfileScreen(),
-          ),
-        ];
-    }
+  @override
+  void initState() {
+    super.initState();
+    _shell = ShellController();
+  }
+
+  @override
+  void dispose() {
+    _shell.dispose();
+    super.dispose();
   }
 
   @override
@@ -132,46 +60,114 @@ class _AppShellState extends State<AppShell> {
       return const _SessionRequiredScreen();
     }
 
-    final List<_Destination> destinations = _destinationsFor(role);
-    final int safeIndex = _index < destinations.length ? _index : 0;
-    final _Destination current = destinations[safeIndex];
+    final List<AppTabSpec> specs = AppTabs.forRole(role);
+    final AppTab firstTab = specs.first.tab;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(current.label),
-        actions: <Widget>[
-          if (session.isDemoSession)
-            const Padding(
-              padding: EdgeInsetsDirectional.only(end: AppSpacing.md),
-              child: Tooltip(
-                message: 'وضع تجريبي — بلا Firebase',
-                child: Icon(Icons.science_outlined, size: 20),
+    return ShellScope(
+      controller: _shell,
+      child: AnimatedBuilder(
+        animation: _shell,
+        builder: (BuildContext context, Widget? _) {
+          // إن لم يكن القسم الحالي متاحًا لهذا الدور (مثلًا بعد تبديل واجهة
+          // المعاينة)، نعرض الرئيسية دون تعديل الحالة أثناء البناء.
+          final bool allowed = specs.any(
+            (AppTabSpec spec) => spec.tab == _shell.current,
+          );
+          final AppTab effectiveTab = allowed ? _shell.current : firstTab;
+          final int index = specs.indexWhere(
+            (AppTabSpec spec) => spec.tab == effectiveTab,
+          );
+          final AppTabSpec currentSpec = specs[index < 0 ? 0 : index];
+
+          return PopScope(
+            // من الرئيسية نسمح بالخروج؛ ومن أي قسم آخر نعترض الرجوع.
+            canPop: effectiveTab == firstTab,
+            onPopInvokedWithResult: (bool didPop, Object? result) {
+              if (didPop) {
+                return;
+              }
+              if (effectiveTab != firstTab) {
+                _shell.goTo(firstTab);
+                return;
+              }
+              if (!_exitHintShown) {
+                _exitHintShown = true;
+                AppSnackBar.show(
+                  context,
+                  'اضغط رجوع مرة أخرى للخروج من التطبيق',
+                  type: AppMessageType.info,
+                );
+              }
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                title: Text(currentSpec.label),
+                actions: <Widget>[
+                  if (effectiveTab != firstTab)
+                    IconButton(
+                      tooltip: 'الرئيسية',
+                      onPressed: () => _shell.goTo(firstTab),
+                      icon: const Icon(Icons.home_outlined),
+                    ),
+                  if (session.isDemoSession)
+                    const Padding(
+                      padding: EdgeInsetsDirectional.only(end: AppSpacing.md),
+                      child: Tooltip(
+                        message: 'وضع تجريبي — بلا Firebase',
+                        child: Icon(Icons.science_outlined, size: 20),
+                      ),
+                    ),
+                ],
+              ),
+              body: SafeArea(
+                child: IndexedStack(
+                  index: index < 0 ? 0 : index,
+                  children: <Widget>[
+                    for (final AppTabSpec spec in specs)
+                      _pageFor(spec.tab, role),
+                  ],
+                ),
+              ),
+              bottomNavigationBar: NavigationBar(
+                selectedIndex: index < 0 ? 0 : index,
+                onDestinationSelected: (int selected) =>
+                    _shell.goTo(specs[selected].tab),
+                destinations: <Widget>[
+                  for (final AppTabSpec spec in specs)
+                    NavigationDestination(
+                      icon: Icon(spec.icon),
+                      selectedIcon: Icon(spec.selectedIcon),
+                      label: spec.label,
+                      tooltip: spec.label,
+                    ),
+                ],
               ),
             ),
-        ],
-      ),
-      body: SafeArea(
-        child: IndexedStack(
-          index: safeIndex,
-          children: destinations
-              .map((_Destination d) => d.builder(context))
-              .toList(growable: false),
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: safeIndex,
-        onDestinationSelected: (int index) => setState(() => _index = index),
-        destinations: destinations
-            .map(
-              (_Destination d) => NavigationDestination(
-                icon: Icon(d.icon),
-                selectedIcon: Icon(d.selectedIcon),
-                label: d.label,
-              ),
-            )
-            .toList(growable: false),
+          );
+        },
       ),
     );
+  }
+
+  /// يربط كل قسم بشاشته. المفتاح ثابت حتى لا يُعاد بناء القسم عند كل تبديل.
+  Widget _pageFor(AppTab tab, UserRole role) {
+    return switch (tab) {
+      AppTab.home => role == UserRole.teacher
+          ? const TeacherHomeScreen(key: ValueKey<String>('tab-home'))
+          : const StudentHomeScreen(key: ValueKey<String>('tab-home')),
+      AppTab.teachers => const TeachersScreen(key: ValueKey<String>('tab-teachers')),
+      AppTab.groups => role == UserRole.teacher
+          ? const GroupsScreen.forTeacher(
+              key: ValueKey<String>('tab-groups'),
+              teacherId: DemoData.demoTeacherId,
+            )
+          : const GroupsScreen.discover(key: ValueKey<String>('tab-groups')),
+      AppTab.bookings => BookingsScreen(
+        key: const ValueKey<String>('tab-bookings'),
+        viewerRole: role,
+      ),
+      AppTab.profile => const ProfileScreen(key: ValueKey<String>('tab-profile')),
+    };
   }
 }
 
