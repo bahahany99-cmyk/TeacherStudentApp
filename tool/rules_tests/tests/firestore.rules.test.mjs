@@ -72,7 +72,8 @@ const groupDoc = (teacherId, overrides = {}) => ({
   subject: 'الرياضيات',
   stage: 'الثانوية العامة',
   seatsTotal: 12,
-  seatsTaken: 9,
+  // صفر هو القيمة الصحيحة للإنشاء؛ اختبارات التعديل تمرّر 9 صريحًا.
+  seatsTaken: 0,
   meetingMode: 'center',
   scheduleNote: 'السبت 5 م',
   isActive: true,
@@ -310,7 +311,10 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
 describe('studyGroups — قراءة مقيّدة، وكل كتابة مرفوضة الآن', () => {
   it('الطالب يقرأ المجموعة النشطة فقط', async () => {
     await seed([
-      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTaken: 9 }),
+      },
       {
         path: 'studyGroups/g2',
         data: groupDoc('teacher-1', { title: 'موقوفة', isActive: false }),
@@ -353,16 +357,143 @@ describe('studyGroups — قراءة مقيّدة، وكل كتابة مرفوض
     );
   });
 
-  it('لا كتابة من التطبيق (مرحلة P7 لم تبدأ)', async () => {
+  // ── P7: الكتابة من المدرس صاحب المجموعة ──────────────────────────────────
+  it('المدرس ينشئ مجموعته بحقول مسموحة', async () => {
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'studyGroups/new-1'), groupDoc('teacher-1')),
+    );
+  });
+
+  it('الإنشاء مرفوض إن لم يكن المالك هو المنشئ', async () => {
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/new-2'),
+        groupDoc('teacher-2', { teacherId: 'teacher-2' }),
+      ),
+    );
+  });
+
+  it('الإنشاء مرفوض بمقاعد مشغولة مسبقًا', async () => {
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/new-3'),
+        groupDoc('teacher-1', { seatsTaken: 5 }),
+      ),
+    );
+  });
+
+  it('الإنشاء مرفوض بسعة خارج 2..50', async () => {
+    for (const seats of [0, 1, 51]) {
+      await assertFails(
+        setDoc(
+          doc(asTeacher(), `studyGroups/seat-${seats}`),
+          groupDoc('teacher-1', { seatsTotal: seats, seatsTaken: 0 }),
+        ),
+      );
+    }
+  });
+
+  it('الإنشاء مرفوض بطريقة حضور أو عنوان غير صالحين', async () => {
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/bad-mode'),
+        groupDoc('teacher-1', { meetingMode: 'telepathy' }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/bad-title'),
+        groupDoc('teacher-1', { title: 'ري' }),
+      ),
+    );
+  });
+
+  it('الإنشاء مرفوض بحقل غير معروف أو وصف موعد طويل', async () => {
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/extra'),
+        groupDoc('teacher-1', { rating: 5 }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'studyGroups/long-note'),
+        groupDoc('teacher-1', { scheduleNote: 'س'.repeat(121) }),
+      ),
+    );
+  });
+
+  it('المدرس يعدّل مجموعته (العنوان والسعة والإيقاف)', async () => {
+    await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), {
+        title: 'التفاضل المتقدم',
+        seatsTotal: 14,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { isActive: false }),
+    );
+  });
+
+  it('لا يجوز تقليل السعة تحت عدد المنضمين', async () => {
+    await seed([
+      {
+        path: 'studyGroups/g1',
+        data: groupDoc('teacher-1', { seatsTotal: 12, seatsTaken: 9 }),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTotal: 8 }),
+    );
+    // الحد نفسه مسموح.
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTotal: 9 }),
+    );
+  });
+
+  it('لا يجوز تغيير المقاعد المشغولة أو المالك من التطبيق', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 9 }) },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 8 }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { teacherId: 'teacher-9' }),
+    );
+  });
+
+  it('مدرس آخر لا يعدّل مجموعة غيره، والطالب لا يعدّل', async () => {
     await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1') }]);
 
     await assertFails(
-      setDoc(doc(asTeacher(), 'studyGroups/g3'), groupDoc('teacher-1')),
+      updateDoc(
+        doc(testEnv.authenticatedContext('teacher-2').firestore(),
+            'studyGroups/g1'),
+        { title: 'محاولة' },
+      ),
     );
     await assertFails(
-      updateDoc(doc(asTeacher(), 'studyGroups/g1'), { seatsTaken: 10 }),
+      updateDoc(doc(asStudent(), 'studyGroups/g1'), { title: 'محاولة' }),
     );
+  });
+
+  it('لا حذف من التطبيق (الإيقاف بدل الحذف)', async () => {
+    await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1') }]);
+
     await assertFails(deleteDoc(doc(asTeacher(), 'studyGroups/g1')));
+  });
+
+  it('الإدارة تستطيع الاعتماد على أي مجموعة', async () => {
+    await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'studyGroups/g1'), { isActive: false }),
+    );
   });
 });
 

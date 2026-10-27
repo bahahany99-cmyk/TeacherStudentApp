@@ -4,14 +4,14 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 
 /// التدرّجات اللونية الناعمة.
 ///
-/// النسخة 3 (2026-10-27): بعد مراجعة صاحب المشروع للنسخة 2 على الجهاز، صار
-/// المطلوب **تفتيحًا إضافيًا**: لا كتل مشبعة، بل غسيل باستيلي خفيف يلمع أعلى
-/// الصفحة ويتلاشى إلى الأبيض في المنتصف.
+/// النسخة 4 (2026-10-27): اللوحة كلها **وردية فاخرة** بدل الأخضر/النعناع.
+/// لا كتل مشبعة: غسيل وردي باهت أعلى الصفحة يتلاشى إلى الأبيض، ثم لمسة لافندر
+/// وردية في الأسفل — نفس بنية المرجع البصري.
 ///
 /// القاعدة الحاكمة: **لا يُكتب تدرّج داخل شاشة**. كل خلفية أو سطح متدرّج يأتي
 /// من هنا، حتى يبقى المظهر موحّدًا وقابلًا للتعديل من نقطة واحدة (A-44).
 abstract final class AppGradients {
-  /// خلفية الصفحات: نعناعي باهت ← أبيض ← لافندر باهت.
+  /// خلفية الصفحات: وردي باهت ← أبيض ← أبيض ← لافندر وردي.
   ///
   /// النسب مقصودة: التلاشي إلى الأبيض يبدأ مبكرًا (35%) حتى تبقى مساحة واسعة
   /// نظيفة للبطاقات البيضاء، فلا تظهر أي «كتلة لون» خلف المحتوى.
@@ -19,34 +19,38 @@ abstract final class AppGradients {
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: <Color>[
-      AppColors.washMint,
+      AppColors.washRose,
       Color(0xFFFFFFFF),
       Color(0xFFFFFFFF),
-      AppColors.washLavender,
+      AppColors.washLilac,
     ],
     stops: <double>[0.0, 0.35, 0.72, 1.0],
   );
 
-  /// خلفية أدفأ (صفحات الحساب/الملف الشخصي) — نفس المنطق بلون وردي باهت.
+  /// خلفية أدفأ (صفحات الحساب/الملف الشخصي) — خوخي ← أبيض ← وردي.
   static const LinearGradient pageWarm = LinearGradient(
     begin: AlignmentDirectional.topEnd,
     end: AlignmentDirectional.bottomStart,
     colors: <Color>[
-      AppColors.washBlush,
+      AppColors.washPeach,
       Color(0xFFFFFFFF),
-      AppColors.washMint,
+      AppColors.washRose,
     ],
     stops: <double>[0.0, 0.45, 1.0],
   );
 
-  /// سطح «لمعة» للبطاقات التمهيدية (بديل الكتلة الخضراء المشبعة).
+  /// سطح «لمعة» للبطاقات التمهيدية (بديل الكتلة المشبعة).
   ///
-  /// أبيض في معظمه مع لمسة نعناعية في الركن العلوي — يُستخدم مع نص داكن،
-  ///所以就 لا حاجة لقيم تباين خاصة.
+  /// أبيض في معظمه مع لمسة وردية في الركن العلوي — يُستخدم مع نص داكن،
+  /// فلا حاجة لقيم تباين خاصة.
   static const LinearGradient glow = LinearGradient(
     begin: AlignmentDirectional.topStart,
     end: AlignmentDirectional.bottomEnd,
-    colors: <Color>[AppColors.washMint, Color(0xFFFFFFFF), AppColors.washLavender],
+    colors: <Color>[
+      AppColors.washRose,
+      Color(0xFFFFFFFF),
+      AppColors.washLilac,
+    ],
     stops: <double>[0.0, 0.55, 1.0],
   );
 
@@ -122,7 +126,7 @@ abstract final class AppShadows {
   /// ظل الشعار الملوّن (يُستخدم مرة واحدة على شاشة الدخول).
   static const List<BoxShadow> hero = <BoxShadow>[
     BoxShadow(
-      color: Color(0x2E0E7C66),
+      color: Color(0x2E9E4C6C),
       blurRadius: 26,
       offset: Offset(0, 12),
       spreadRadius: -8,

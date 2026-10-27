@@ -25,6 +25,10 @@ abstract final class RoutePaths {
   /// تفاصيل مجموعة. `arguments` = معرّف المجموعة.
   static const String groupDetails = '/group';
 
+  /// إنشاء/تعديل مجموعة (واجهة المدرس — P7).
+  /// `arguments` = معرّف المجموعة عند التعديل، أو `null` للإنشاء.
+  static const String groupForm = '/group/form';
+
   /// أعضاء مجموعة (واجهة المدرس). `arguments` = معرّف المجموعة.
   static const String groupMembers = '/group/members';
 

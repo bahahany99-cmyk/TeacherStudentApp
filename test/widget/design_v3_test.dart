@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,6 +133,54 @@ void main() {
       final Border border = decoration.border! as Border;
       expect(border.top.width, 1.2);
       expect(border.top.color.a, closeTo(0.8, 0.01));
+    });
+  });
+
+  group('لوحة v4 — وردي فاخر بلا أخضر', () {
+    test('الهوية وردية والغسيل وردي/لافندر', () {
+      // اللون الأساسي وردي عميق (قناة حمراء أعلى من الخضراء والزرقاء).
+      final Color seed = AppColors.seed;
+      expect(seed.r, greaterThan(seed.g));
+      expect(seed.b, greaterThan(seed.g));
+
+      // لا بقايا نعناع/أخضر في خلفيات الغسيل.
+      for (final Color wash in <Color>[
+        AppColors.washRose,
+        AppColors.washLilac,
+        AppColors.washPeach,
+      ]) {
+        expect(wash.g, lessThanOrEqualTo(wash.r));
+      }
+    });
+
+    test('الحالات الدلالية خالية من الأخضر', () {
+      for (final Color status in <Color>[
+        AppColors.statusAccepted,
+        AppColors.statusPending,
+        AppColors.statusRejected,
+        AppColors.statusNeutral,
+      ]) {
+        expect(
+          status.g,
+          lessThanOrEqualTo(status.r),
+          reason: 'اللون $status ليس أخضر مسيطرًا',
+        );
+      }
+    });
+
+    test('لا لون أخضر هوية قديم في أي مكان من الشجرة', () {
+      // 0E7C66 كان لون الهوية القديم؛ نتأكد أنه لم يبقَ في أي مصدر.
+      final Directory lib = Directory('lib');
+      final RegExp oldGreen = RegExp(r'0x[Ff]{2}0E7C66|0x[Ff]{2}0A5D4C');
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
+        if (entity is File && entity.path.endsWith('.dart')) {
+          if (oldGreen.hasMatch(entity.readAsStringSync())) {
+            offenders.add(entity.path);
+          }
+        }
+      }
+      expect(offenders, isEmpty);
     });
   });
 

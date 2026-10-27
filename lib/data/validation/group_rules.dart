@@ -1,0 +1,74 @@
+import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/validation/model_validators.dart';
+
+/// قواعد دورة حياة المجموعة الدراسية — **دوال نقية**.
+///
+/// هذه القواعد موجودة في ثلاثة أماكن بقصد، وكل مكان له دور مختلف:
+/// 1. **هنا (العميل)**: رسالة عربية فورية قبل أي طلب شبكة، وتجربة كتابة سليمة.
+/// 2. **`firestore.rules`**: الحارس الحقيقي؛ العميل غير موثوق.
+/// 3. **اختبارات المحاكي**: تُثبت أن (2) يطابق ما نعتقده فعلًا.
+///
+/// أي تغيير في حدّ هنا يجب أن يقابله تغيير في القواعد — والاختبارات تحمي ذلك.
+abstract final class GroupRules {
+  /// أقل سعة ذات معنى (مجموعة من مقعد مذاكرة فردية لا مجموعة).
+  static const int minSeats = ModelLimits.seatsMin;
+
+  /// أقصى سعة واقعية في هذه المرحلة (C-08: السعة يحددها المدرس).
+  static const int maxSeats = ModelLimits.seatsMax;
+
+  /// هل يمكن قبول عضو جديد الآن؟
+  ///
+  /// المنع النهائي يحدث على الخادم بعملية ذرية عند قبول الطلب (P8)؛ هنا نعرض
+  /// الحالة فقط حتى لا يُرسل التطبيق طلبًا سيعرف أنه مرفوض.
+  static bool canAcceptMember(StudyGroup group) =>
+      group.isActive && group.seatsAvailable > 0;
+
+  /// أقصى قيمة «مقاعد» يجوز للمدرس كتابتها عند التعديل.
+  ///
+  /// لا يجوز تقليل السعة تحت عدد الطلاب المنضمين فعلًا؛ وإلا صارت المجموعة
+  /// «ممتلئة سالبًا» وكسرت شاشة العرض.
+  static int minAllowedSeats(int seatsTaken) =>
+      seatsTaken > minSeats ? seatsTaken : minSeats;
+
+  /// تحقق كامل من المسودة (إنشاء أو تعديل).
+  ///
+  /// [seatsTaken] تُمرَّر عند التعديل فقط؛ عند الإنشاء تكون صفرًا.
+  static ValidationResult validateDraft(
+    GroupDraft draft, {
+    int seatsTaken = 0,
+  }) {
+    final List<ValidationProblem> problems = <ValidationProblem>[
+      ...validateGroupDraft(
+        title: draft.title,
+        subject: draft.subject,
+        stage: draft.stage,
+        seatsTotal: draft.seatsTotal,
+        scheduleNote: draft.scheduleNote,
+      ).problems,
+    ];
+
+    if (draft.seatsTotal < seatsTaken) {
+      problems.add(
+        const ValidationProblem('seatsTotal', FieldIssue.outOfRange),
+      );
+    }
+
+    return ValidationResult(List<ValidationProblem>.unmodifiable(problems));
+  }
+
+  /// هل التعديل محاولة «إغلاق» للمجموعة؟ (يُستخدم لتأكيد قبل الحفظ.)
+  static bool isBecomingInactive(StudyGroup? current, bool newIsActive) =>
+      current != null && current.isActive && !newIsActive;
+
+  /// ملخص عربي لحالة السعة — يُعرض في بطاقة المجموعة داخل نموذج التعديل.
+  static String capacitySummary(StudyGroup group) {
+    if (!group.isActive) {
+      return 'المجموعة موقوفة: لا تظهر للطلاب ولا تُقبل طلبات انضمام جديدة.';
+    }
+    if (group.seatsAvailable <= 0) {
+      return 'المجموعة مكتملة (${group.seatsTaken} من ${group.seatsTotal}).';
+    }
+    return 'متاح ${group.seatsAvailable} من ${group.seatsTotal} مقعدًا.';
+  }
+}

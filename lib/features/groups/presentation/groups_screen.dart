@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/teacher_groups_section.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 
 /// صفحة المجموعات الدراسية — صفحة مستقلة (وليست قائمة داخل الرئيسية).
@@ -43,47 +44,43 @@ class GroupsScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const DemoBanner(),
-              SectionHeader(
-                title: _isDiscover ? 'مجموعات متاحة' : 'مجموعاتي',
-                subtitle: _isDiscover
-                    ? 'طلب الانضمام يحتاج موافقة المدرس (C-09)'
-                    : 'السعة والموافقات تُفرض على الخادم',
-              ),
-              AsyncView<List<StudyGroup>>(
-                load: () => _isDiscover
-                    ? AppServicesScope.of(context).groups.listDiscoverable()
-                    : AppServicesScope.of(
-                        context,
-                      ).groups.listForTeacher(teacherId ?? ''),
-                builder: (BuildContext context, List<StudyGroup> groups) {
-                  if (groups.isEmpty) {
-                    return EmptyState(
-                      icon: Icons.groups_outlined,
-                      title: _isDiscover
-                          ? 'لا توجد مجموعات متاحة الآن'
-                          : 'لم تُنشأ مجموعات بعد',
-                      message: 'إنشاء المجموعات وإدارة الأعضاء قيد التنفيذ لاحقًا.',
-                    );
-                  }
-                  return Column(
-                    children: groups
-                        .map(
-                          (StudyGroup g) => GroupCard(
-                            group: g,
-                            onTap: () => Navigator.of(context).pushNamed(
-                              RoutePaths.groupDetails,
-                              arguments: g.id,
+              if (_isDiscover) ...<Widget>[
+                const SectionHeader(
+                  title: 'مجموعات متاحة',
+                  subtitle: 'طلب الانضمام يحتاج موافقة المدرس (C-09)',
+                ),
+                AsyncView<List<StudyGroup>>(
+                  load: () => AppServicesScope.of(
+                    context,
+                  ).groups.listDiscoverable(),
+                  builder: (BuildContext context, List<StudyGroup> groups) {
+                    if (groups.isEmpty) {
+                      return const EmptyState(
+                        icon: Icons.groups_outlined,
+                        title: 'لا توجد مجموعات متاحة الآن',
+                        message: 'يعرض المدرسون مجموعاتهم عند نشرها.',
+                      );
+                    }
+                    return Column(
+                      children: groups
+                          .map(
+                            (StudyGroup g) => GroupCard(
+                              group: g,
+                              onTap: () => Navigator.of(context).pushNamed(
+                                RoutePaths.groupDetails,
+                                arguments: g.id,
+                              ),
+                              onJoinTap: () => _showComingSoon(context),
                             ),
-                            // واجهة المدرس لا تطلب الانضمام لمجموعته.
-                            onJoinTap: _isDiscover
-                                ? () => _showComingSoon(context)
-                                : null,
-                          ),
-                        )
-                        .toList(growable: false),
-                  );
-                },
-              ),
+                          )
+                          .toList(growable: false),
+                    );
+                  },
+                ),
+              ],
+              // واجهة المدرس: قسم إدارة كامل (إنشاء + تعديل + إيقاف).
+              if (!_isDiscover)
+                const TeacherGroupsSection(headerActionLabel: 'إنشاء'),
               const SizedBox(height: AppSpacing.md),
               Text(
                 'السعة المتاحة محسوبة للعرض فقط. منع تجاوز السعة يتم بعملية '

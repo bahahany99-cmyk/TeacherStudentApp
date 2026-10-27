@@ -27,10 +27,27 @@ import 'package:teacher_student_app/data/services/app_services_scope.dart';
 /// - المدرس: لا يرى زر انضمام، ويرى بدلًا منه مدخل «أعضاء المجموعة».
 ///
 /// ⚠️ إخفاء زر لا يعني صلاحية: أي قراءة/كتابة حقيقية تُفرض في قواعد Firestore.
-class GroupDetailsScreen extends StatelessWidget {
+class GroupDetailsScreen extends StatefulWidget {
   const GroupDetailsScreen({super.key, required this.groupId});
 
   final String groupId;
+
+  @override
+  State<GroupDetailsScreen> createState() => _GroupDetailsScreenState();
+}
+
+class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
+  /// عدّاد إعادة القراءة بعد العودة من نموذج التعديل.
+  int _revision = 0;
+
+  Future<void> _openEditForm() async {
+    final bool? saved = await Navigator.of(
+      context,
+    ).pushNamed<bool>(RoutePaths.groupForm, arguments: widget.groupId);
+    if (saved == true && mounted) {
+      setState(() => _revision++);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +61,10 @@ class GroupDetailsScreen extends StatelessWidget {
           children: <Widget>[
             ResponsiveContent(
               child: AsyncView<StudyGroup?>(
-                load: () => AppServicesScope.of(context).groups.findById(groupId),
+                key: ValueKey<int>(_revision),
+                load: () => AppServicesScope.of(
+                  context,
+                ).groups.findById(widget.groupId),
                 emptyBuilder: (BuildContext context) => const EmptyState(
                   icon: Icons.groups_outlined,
                   title: 'المجموعة غير موجودة',
@@ -57,7 +77,10 @@ class GroupDetailsScreen extends StatelessWidget {
                       title: 'المجموعة غير موجودة',
                     );
                   }
-                  return _GroupDetailsBody(group: group);
+                  return _GroupDetailsBody(
+                    group: group,
+                    onEditTap: _openEditForm,
+                  );
                 },
               ),
             ),
@@ -69,9 +92,12 @@ class GroupDetailsScreen extends StatelessWidget {
 }
 
 class _GroupDetailsBody extends StatelessWidget {
-  const _GroupDetailsBody({required this.group});
+  const _GroupDetailsBody({required this.group, required this.onEditTap});
 
   final StudyGroup group;
+
+  /// فتح نموذج التعديل (P7) — للمدرس صاحب المجموعة.
+  final VoidCallback onEditTap;
 
   @override
   Widget build(BuildContext context) {
@@ -100,10 +126,14 @@ class _GroupDetailsBody extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   StatusChip(
-                    label: group.isFull ? 'مكتملة' : 'متاحة',
-                    color: group.isFull
-                        ? AppColors.statusRejected
-                        : AppColors.statusAccepted,
+                    label: group.isActive
+                        ? (group.isFull ? 'مكتملة' : 'متاحة')
+                        : 'موقوفة',
+                    color: !group.isActive
+                        ? AppColors.statusNeutral
+                        : (group.isFull
+                              ? AppColors.statusRejected
+                              : AppColors.statusAccepted),
                   ),
                 ],
               ),
@@ -173,8 +203,28 @@ class _GroupDetailsBody extends StatelessWidget {
         if (isTeacherView) ...<Widget>[
           const SectionHeader(
             title: 'إدارة المجموعة',
-            subtitle: 'إدارة الأعضاء والمواعيد تُنفَّذ على الخادم لاحقًا',
+            subtitle: 'التعديل والإيقاف متاحان لصاحب المجموعة فقط',
           ),
+          AppCard(
+            onTap: onEditTap,
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.edit_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'تعديل بيانات المجموعة',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                const Icon(Icons.chevron_left),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
           AppCard(
             onTap: () => Navigator.of(context).pushNamed(
               RoutePaths.groupMembers,

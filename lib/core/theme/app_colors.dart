@@ -1,61 +1,62 @@
 import 'package:flutter/material.dart';
 
-/// لوحة ألوان المشروع.
+/// لوحة ألوان المشروع — **نسخة 4: وردي فاخر (Rose / Rose-gold)**.
 ///
-/// كل تعديل تصميمي يجب أن يحدث هنا (أو في `app_theme.dart`) وليس داخل الشاشات.
+/// قرار صاحب المشروع (2026-10-27): إزالة كل تدرّجات الأخضر والنعناع من التطبيق
+/// بالكامل، والانتقال إلى خلفية وردية باستيلية متلاشية إلى الأبيض، مع لمسات
+/// وردية/ذهبية هادئة ونصوص داكنة محايدة — مطابقة للمرجع البصري المعتمد.
 ///
-/// النسخة الثانية من النظام البصري (2026-10-27) أضافت **طبقة التدرّجات
-/// الناعمة**: نفس الأخضر المؤسسي، لكن بدرجات مضيئة/مخمّدة تُستخدم كخلفيات
-/// فاخرة بدل اللون المسطّح. الألوان الجديدة مخصّصة للخلفيات فقط ولا تُستخدم
-/// كنص (تباينها منخفض).
+/// قواعد الاستخدام:
+/// - `wash*` **للخلفيات فقط** (تباينها منخفض جدًا، لا تُستخدم كنص).
+/// - `seed` هو لون الهوية: يُشتق منه `ColorScheme` كاملًا (أزرار، روابط، أيقونات).
+///   مُختار غامقًا بما يكفي لتباين جيد على الأبيض.
+/// - `hero*` محصور في الشعار الصغير فقط؛ لا كتل مشبعة داخل الصفحات.
+/// - ألوان الحالات دلالية وليست هوية: لا أخضر عمدًا — «مقبول» صار أزرق رمادي
+///   هادئ، و«مرفوض» وردي محروق، و«قيد الانتظار» عسلي ترابي.
 abstract final class AppColors {
-  /// اللون الأساسي: أخضر مزرق هادئ (مناسب لسياق تعليمي).
-  static const Color seed = Color(0xFF0E7C66);
+  /// لون الهوية: وردي عميق (لا فوشيا). تباينه على الأبيض كافٍ للنصوص.
+  static const Color seed = Color(0xFF9E4C6C);
 
-  /// لون تمييز ثانوي: عسلي دافئ.
-  static const Color accent = Color(0xFFE8A33D);
+  /// لمسة ثانوية: ذهبي وردي هادئ (النجوم والوسام).
+  static const Color accent = Color(0xFFB98A5E);
 
   // خلفيات وأسطح
-  static const Color lightBackground = Color(0xFFF7F9F8);
-  static const Color darkBackground = Color(0xFF101613);
+  static const Color lightBackground = Color(0xFFFDFBFB);
+  static const Color darkBackground = Color(0xFF17121A);
 
-  /// أبيض الأسطح العائمة (البطاقات) — أنقى من لون الخلفية قليلًا.
+  /// أبيض الأسطح العائمة (البطاقات).
   static const Color surfaceRaised = Color(0xFFFFFFFF);
 
-  // ── طبقة التدرّجات (نسخة 2) ────────────────────────────────────────────────
-  // غسيل باستيلي (نسخة 3): أفتح من النسخة 2 بدرجة، وبلا أي إشباع.
-  // هذه الألوان **للخلفيات فقط**؛ تباينها منخفض جدًا فلا تُستخدم كنص.
+  // ── طبقة الغسيل الوردي (الخلفيات) ─────────────────────────────────────────
+  /// أعلى الصفحة: وردي باهت جدًا.
+  static const Color washRose = Color(0xFFFBEDF3);
 
-  /// أعلى الصفحة: لمسة نعناعية باهتة.
-  static const Color washMint = Color(0xFFEBF5F0);
+  /// أسفل الصفحة: لافندر وردي باهت (يعطي العمق بلا إشباع).
+  static const Color washLilac = Color(0xFFF5EFFA);
 
-  /// أسفل الصفحة: لمسة لافندر باردة تمنح الإحساس الفاخر في المرجع.
-  static const Color washLavender = Color(0xFFF2EFFC);
+  /// لمسة خوخية دافئة (صفحات الحساب).
+  static const Color washPeach = Color(0xFFFDF2EC);
 
-  /// لمسة وردية دافئة خفيفة جدًا (صفحات الحساب).
-  static const Color washBlush = Color(0xFFFCF1F5);
+  // مرادفات النسخة 3 — محفوظة حتى لا تتعطّل أي مراجع قائمة.
+  static const Color washMint = washRose;
+  static const Color washLavender = washLilac;
+  static const Color washBlush = washPeach;
 
-  /// مرادفات النسخة 2 — محفوظة حتى لا تتعطّل أي مراجع قائمة.
-  static const Color mistMint = washMint;
-  static const Color mistLavender = washLavender;
-  static const Color mistBlush = washBlush;
-
-  /// بداية/نهاية تدرّج البطاقة المميّزة (hero).
-  static const Color heroFrom = Color(0xFF128C73);
-  static const Color heroTo = Color(0xFF0A5D4C);
+  /// بداية/نهاية الشعار المتدرّج (الموضع الوحيد المسموح فيه بالإشباع).
+  static const Color heroFrom = Color(0xFFB76E86);
+  static const Color heroTo = Color(0xFF8E465F);
 
   // ظلال
-  static const Color shadow = Color(0x1A0E1F1B);
+  static const Color shadow = Color(0x14000000);
 
-  // وضع الزائر (نسخة 3): شريحة دقيقة لا صندوق تحذيري.
-  // الحدّ لون دافئ خفيف جدًا، والنص بنّي متوسط يُقرأ بلا صراخ.
-  static const Color demoBackground = Color(0xFFFFFBF2);
-  static const Color demoBorder = Color(0xFFF0DCB4);
-  static const Color demoForeground = Color(0xFF8A6A33);
+  // شريحة وضع الزائر: بيج دافئ محايد (لا أصفر صارخ، ولا أخضر).
+  static const Color demoBackground = Color(0xFFFFF8F3);
+  static const Color demoBorder = Color(0xFFEFDCCB);
+  static const Color demoForeground = Color(0xFF8A6A52);
 
-  // حالات الطلبات
-  static const Color statusPending = Color(0xFFB26A00);
-  static const Color statusAccepted = Color(0xFF1B7F4B);
-  static const Color statusRejected = Color(0xFFB3261E);
-  static const Color statusNeutral = Color(0xFF5F6B66);
+  // حالات الطلبات — دلالية، خالية من الأخضر بقرار صاحب المشروع.
+  static const Color statusPending = Color(0xFFA9762F);
+  static const Color statusAccepted = Color(0xFF4A6C8C);
+  static const Color statusRejected = Color(0xFFB04A5E);
+  static const Color statusNeutral = Color(0xFF6B6670);
 }

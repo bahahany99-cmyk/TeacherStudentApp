@@ -17,10 +17,8 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
-import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
-import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
-import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/teacher_groups_section.dart';
 
 /// الصفحة الرئيسية لواجهة المدرس.
 ///
@@ -105,7 +103,9 @@ class TeacherHomeScreen extends StatelessWidget {
                         const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () => _showComingSoon(context),
+                            onPressed: () => Navigator.of(
+                              context,
+                            ).pushNamed<bool>(RoutePaths.groupForm),
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(46),
                               padding: const EdgeInsets.symmetric(
@@ -194,38 +194,11 @@ class TeacherHomeScreen extends StatelessWidget {
                 },
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              SectionHeader(
-                title: 'مجموعاتي',
-                actionLabel: 'إدارة المجموعات',
-                onActionTap: () =>
-                    ShellScope.read(context).goTo(AppTab.groups),
-              ),
-              AsyncView<List<StudyGroup>>(
-                load: () => AppServicesScope.of(
-                  context,
-                ).groups.listForTeacher(DemoData.demoTeacherId),
-                builder: (BuildContext context, List<StudyGroup> groups) {
-                  if (groups.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.groups_outlined,
-                      title: 'لم تُنشئ مجموعات بعد',
-                      message: 'إنشاء المجموعات وإدارة الأعضاء في مرحلة لاحقة.',
-                    );
-                  }
-                  return Column(
-                    children: groups
-                        .map(
-                          (StudyGroup g) => GroupCard(
-                            group: g,
-                            onTap: () => Navigator.of(context).pushNamed(
-                              RoutePaths.groupDetails,
-                              arguments: g.id,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  );
-                },
+              const TeacherGroupsSection(
+                maxItems: 3,
+                headerActionLabel: 'إدارة المجموعات',
+                // الزر داخل القسم؛ ولا نكرّره هنا.
+                showCreateButton: true,
               ),
               const SizedBox(height: AppSpacing.md),
               AppCard(

@@ -3,6 +3,7 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -11,6 +12,8 @@ import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/group_rules.dart';
+import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// تنفيذات تجريبية محلية (بدون Firebase) لعقود طبقة الخدمات.
 ///
@@ -100,39 +103,114 @@ class DemoTeacherRepository implements TeacherRepository {
 
 class DemoGroupRepository implements GroupRepository {
   DemoGroupRepository({List<StudyGroup>? source})
-    : _source = source ?? DemoData.groups;
+    : _groups = <StudyGroup>[...(source ?? DemoData.groups)];
 
-  final List<StudyGroup> _source;
+  /// قائمة **قابلة للتغيير** محليًا: تسمح بتجربة الإنشاء والتعديل في وضع
+  /// الزائر بلا خادم. تُفقد عند إغلاق التطبيق — وهذا مقصود ومعلن في الشاشة.
+  final List<StudyGroup> _groups;
 
-  late final Future<List<StudyGroup>> _allCache = Future<List<StudyGroup>>.value(
-    List<StudyGroup>.unmodifiable(_source),
-  );
-
-  @override
-  Future<List<StudyGroup>> listDiscoverable() => _allCache;
+  int _nextId = 1;
 
   @override
-  Future<List<StudyGroup>> listForTeacher(String teacherId) {
-    return Future<List<StudyGroup>>.value(
-      _source
-          .where((StudyGroup g) => g.teacherId == teacherId)
-          .toList(growable: false),
+  Future<List<StudyGroup>> listDiscoverable() async {
+    return List<StudyGroup>.unmodifiable(
+      _groups.where((StudyGroup g) => g.isActive),
     );
   }
 
   @override
-  Future<StudyGroup?> findById(String id) {
-    for (final StudyGroup group in _source) {
-      if (group.id == id) {
-        return Future<StudyGroup?>.value(group);
-      }
-    }
-    return Future<StudyGroup?>.value(null);
+  Future<List<StudyGroup>> listForTeacher(String teacherId) async {
+    return List<StudyGroup>.unmodifiable(
+      _groups.where((StudyGroup g) => g.teacherId == teacherId),
+    );
   }
 
   @override
-  Future<List<GroupMember>> listMembers(String groupId) {
-    return Future<List<GroupMember>>.value(DemoData.membersFor(groupId));
+  Future<StudyGroup?> findById(String id) async {
+    for (final StudyGroup group in _groups) {
+      if (group.id == id) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<List<GroupMember>> listMembers(String groupId) async {
+    return DemoData.membersFor(groupId);
+  }
+
+  @override
+  Future<StudyGroup> createGroup({
+    required String teacherId,
+    required String teacherName,
+    required GroupDraft draft,
+  }) async {
+    _ensureValid(draft, seatsTaken: 0);
+
+    final StudyGroup group = StudyGroup(
+      id: 'demo-new-${_nextId++}',
+      teacherId: teacherId,
+      teacherName: teacherName,
+      title: draft.normalizedTitle,
+      subject: draft.normalizedSubject,
+      stage: draft.normalizedStage,
+      seatsTotal: draft.seatsTotal,
+      seatsTaken: 0,
+      meetingMode: draft.meetingMode,
+      scheduleNote: draft.normalizedScheduleNote,
+      isActive: true,
+    );
+    _groups.add(group);
+    return group;
+  }
+
+  @override
+  Future<StudyGroup> updateGroup({
+    required String groupId,
+    required String teacherId,
+    required GroupDraft draft,
+    required bool isActive,
+  }) async {
+    final int index = _groups.indexWhere((StudyGroup g) => g.id == groupId);
+    if (index == -1) {
+      throw const AppException.notFound(debugMessage: 'demo group missing');
+    }
+
+    final StudyGroup current = _groups[index];
+    if (current.teacherId != teacherId) {
+      // نفس سلوك القواعد: غير المالك لا يعدّل.
+      throw const AppException.permission(debugMessage: 'not group owner');
+    }
+
+    _ensureValid(draft, seatsTaken: current.seatsTaken);
+
+    final StudyGroup updated = StudyGroup(
+      id: current.id,
+      teacherId: current.teacherId,
+      teacherName: current.teacherName,
+      title: draft.normalizedTitle,
+      subject: draft.normalizedSubject,
+      stage: draft.normalizedStage,
+      seatsTotal: draft.seatsTotal,
+      seatsTaken: current.seatsTaken,
+      meetingMode: draft.meetingMode,
+      scheduleNote: draft.normalizedScheduleNote,
+      isActive: isActive,
+    );
+    _groups[index] = updated;
+    return updated;
+  }
+
+  /// نفس تحقق القواعد، لكن برسالة عربية مبكرة بدل خطأ شبكة غامض.
+  void _ensureValid(GroupDraft draft, {required int seatsTaken}) {
+    final ValidationResult result = GroupRules.validateDraft(
+      draft,
+      seatsTaken: seatsTaken,
+    );
+    if (!result.isValid) {
+      throw AppException.invalidInput(debugMessage: result.firstMessage);
+    }
   }
 }
 

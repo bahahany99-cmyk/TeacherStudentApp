@@ -11,12 +11,21 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 /// - `onTap`: يفتح تفاصيل المجموعة.
 /// - `onJoinTap`: زر طلب الانضمام. **لا يظهر** إذا لم يُمرَّر، لأن واجهة المدرس
 ///   لا تطلب الانضمام لمجموعته. الزر نفسه غير منفّذ بعد (المرحلة 8).
+/// - `onEditTap`: زر تعديل (P7) — يظهر لصاحب المجموعة فقط، ويُمرَّر من الواجهة
+///   التي تعرف الدور. إخفاؤه ليس حماية؛ القواعد تمنع أي تعديل من غير المالك.
 class GroupCard extends StatelessWidget {
-  const GroupCard({super.key, required this.group, this.onTap, this.onJoinTap});
+  const GroupCard({
+    super.key,
+    required this.group,
+    this.onTap,
+    this.onJoinTap,
+    this.onEditTap,
+  });
 
   final StudyGroup group;
   final VoidCallback? onTap;
   final VoidCallback? onJoinTap;
+  final VoidCallback? onEditTap;
 
   @override
   Widget build(BuildContext context) {
@@ -40,14 +49,34 @@ class GroupCard extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 PillBadge(
-                  label: group.isFull ? 'مكتملة' : 'متاحة',
-                  icon: group.isFull
-                      ? Icons.lock_outline
-                      : Icons.check_circle_outline,
-                  color: group.isFull
-                      ? AppColors.statusRejected
-                      : AppColors.statusAccepted,
+                  label: group.isActive
+                      ? (group.isFull ? 'مكتملة' : 'متاحة')
+                      : 'موقوفة',
+                  icon: group.isActive
+                      ? (group.isFull
+                            ? Icons.lock_outline
+                            : Icons.check_circle_outline)
+                      : Icons.visibility_off_outlined,
+                  color: !group.isActive
+                      ? AppColors.statusNeutral
+                      : (group.isFull
+                            ? AppColors.statusRejected
+                            : AppColors.statusAccepted),
                 ),
+                if (onEditTap != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.xxs),
+                  IconButton(
+                    onPressed: onEditTap,
+                    tooltip: 'تعديل المجموعة',
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
+                      foregroundColor: theme.colorScheme.primary,
+                      backgroundColor: theme.colorScheme.primary.withAlpha(18),
+                      minimumSize: const Size(34, 34),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: AppSpacing.xxs),

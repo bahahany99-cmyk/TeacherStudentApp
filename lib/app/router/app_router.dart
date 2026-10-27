@@ -10,6 +10,7 @@ import 'package:teacher_student_app/features/auth/presentation/role_selection_sc
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_form_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_members_screen.dart';
 import 'package:teacher_student_app/features/splash/presentation/splash_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
@@ -47,6 +48,13 @@ abstract final class AppRouter {
           return _page(const UnknownRouteScreen(), settings);
         }
         return _page(GroupDetailsScreen(groupId: groupId), settings);
+      case RoutePaths.groupForm:
+        // معرّف اختياري: غيابه يعني «إنشاء مجموعة جديدة».
+        final Object? formArgs = settings.arguments;
+        final String? editId = formArgs is String && formArgs.trim().isNotEmpty
+            ? formArgs.trim()
+            : null;
+        return _page(GroupFormScreen(groupId: editId), settings);
       case RoutePaths.groupMembers:
         final String? membersGroupId = _idFrom(settings);
         if (membersGroupId == null) {

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
+import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
@@ -11,6 +12,8 @@ import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/group_rules.dart';
+import 'package:teacher_student_app/data/validation/model_validators.dart';
 
 /// أسماء المجموعات في Firestore — مكان واحد، مطابقة لـ`firestore.rules`.
 abstract final class FirestoreCollections {
@@ -138,6 +141,88 @@ class FirestoreGroupRepository implements GroupRepository {
       }
       return studyGroupFromMap(doc.id, data);
     });
+  }
+
+  @override
+  Future<StudyGroup> createGroup({
+    required String teacherId,
+    required String teacherName,
+    required GroupDraft draft,
+  }) {
+    return _guard(() async {
+      _ensureValid(draft, seatsTaken: 0);
+
+      final DocumentReference<Map<String, dynamic>> ref = await _groups.add(
+        draft.toCreateMap(teacherId: teacherId, teacherName: teacherName),
+      );
+      final DocumentSnapshot<Map<String, dynamic>> created = await ref.get();
+      final Map<String, Object?>? data = created.data();
+      final StudyGroup? group = data == null
+          ? null
+          : studyGroupFromMap(created.id, data);
+      if (group == null) {
+        throw const AppException.unknown(
+          debugMessage: 'created group document is unreadable',
+        );
+      }
+      return group;
+    });
+  }
+
+  @override
+  Future<StudyGroup> updateGroup({
+    required String groupId,
+    required String teacherId,
+    required GroupDraft draft,
+    required bool isActive,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _groups.doc(groupId);
+      final DocumentSnapshot<Map<String, dynamic>> current = await ref.get();
+      final Map<String, Object?>? data = current.data();
+      if (!current.exists || data == null) {
+        throw const AppException.notFound(debugMessage: 'group missing');
+      }
+
+      final StudyGroup? existing = studyGroupFromMap(current.id, data);
+      if (existing == null) {
+        throw const AppException.unknown(
+          debugMessage: 'group document is unreadable',
+        );
+      }
+      if (existing.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not group owner');
+      }
+
+      // التحقق يستخدم السعة المشغولة الحقيقية من الخادم لا من الواجهة.
+      _ensureValid(draft, seatsTaken: existing.seatsTaken);
+
+      await ref.update(draft.toUpdateMap(isActive: isActive));
+      return StudyGroup(
+        id: existing.id,
+        teacherId: existing.teacherId,
+        teacherName: existing.teacherName,
+        title: draft.normalizedTitle,
+        subject: draft.normalizedSubject,
+        stage: draft.normalizedStage,
+        seatsTotal: draft.seatsTotal,
+        seatsTaken: existing.seatsTaken,
+        meetingMode: draft.meetingMode,
+        scheduleNote: draft.normalizedScheduleNote,
+        isActive: isActive,
+      );
+    });
+  }
+
+  /// تحقق مبكر برسالة عربية — نفس حدود القواعد.
+  void _ensureValid(GroupDraft draft, {required int seatsTaken}) {
+    final ValidationResult result = GroupRules.validateDraft(
+      draft,
+      seatsTaken: seatsTaken,
+    );
+    if (!result.isValid) {
+      throw AppException.invalidInput(debugMessage: result.firstMessage);
+    }
   }
 
   @override

@@ -99,19 +99,85 @@ service cloud.firestore {
     }
 
     // ── 3) studyGroups/{groupId} ─────────────────────────────────────────────
-    // الواجهة تقرأ فقط في هذه المرحلة (إنشاء/تعديل المجموعات = P7).
+    // القراءة: النشِطة للمسجّلين، وصاحبها يرى الموقوفة.
+    // الكتابة: **المدرس صاحب المجموعة فقط** (P7): إنشاء/تعديل/إيقاف.
+    // لا حذف من التطبيق — الإيقاف عبر isActive بدل فقدان سجل الطلاب.
     match /studyGroups/{groupId} {
+      function isGroupOwner() {
+        return signedIn() && request.auth.uid == resource.data.teacherId;
+      }
+
+      function validGroupPayload() {
+        return request.resource.data.title is string
+          && request.resource.data.title.size() >= 3
+          && request.resource.data.title.size() <= 80
+          && request.resource.data.subject is string
+          && request.resource.data.subject.size() > 0
+          && request.resource.data.subject.size() <= 40
+          && request.resource.data.stage is string
+          && request.resource.data.stage.size() > 0
+          && request.resource.data.stage.size() <= 40
+          && request.resource.data.teacherName is string
+          && request.resource.data.teacherName.size() > 0
+          && request.resource.data.teacherName.size() <= 80
+          && request.resource.data.meetingMode in ['online', 'home', 'center']
+          && request.resource.data.isActive is bool;
+      }
+
+      // السعة: عدد صحيح داخل النطاق، ولا تقل عن المنضمين فعلًا.
+      function validSeats() {
+        return request.resource.data.seatsTotal is int
+          && request.resource.data.seatsTotal >= 2
+          && request.resource.data.seatsTotal <= 50
+          && request.resource.data.seatsTotal >= request.resource.data.seatsTaken;
+      }
+
       allow read: if isAdmin()
         || (signedIn() && (
              resource.data.isActive == true
              || request.auth.uid == resource.data.teacherId
            ));
 
-      // الكتابة من التطبيق ممنوعة الآن. تُفتح في P7 بشروط السعة والمواعيد.
-      allow write: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'teacherId', 'teacherName', 'title', 'subject', 'stage',
+             'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
+             'isActive'])
+        && request.resource.data.seatsTaken == 0
+        && request.resource.data.isActive == true
+        && validGroupPayload()
+        && validSeats()
+        && (
+             !('scheduleNote' in request.resource.data.keys())
+             || (request.resource.data.scheduleNote is string
+                 && request.resource.data.scheduleNote.size() <= 120)
+           );
+
+      // التعديل: المالك فقط، ولا يغيّر المالك ولا المقاعد المشغولة.
+      allow update: if isAdmin() || (
+        isGroupOwner()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.seatsTaken == resource.data.seatsTaken
+        && request.resource.data.keys().hasOnly([
+             'teacherId', 'teacherName', 'title', 'subject', 'stage',
+             'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
+             'isActive'])
+        && validGroupPayload()
+        && validSeats()
+        && (
+             !('scheduleNote' in request.resource.data.keys())
+             || (request.resource.data.scheduleNote is string
+                 && request.resource.data.scheduleNote.size() <= 120)
+           )
+      );
+
+      allow delete: if isAdmin();
+// (نص scheduleNote الفارغ مقبول: يعني «بلا موعد محدد».)
 
       // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
-      // الطالب لا يرى أسماء بقية الطلاب (خصوصية).
+      // الطالب لا يرى أسماء بقية الطلاب (خصوصية)، والانضمام (P8) يتم على
+      // الخادم بعملية ذرية تمنع تجاوز السعة.
       match /members/{memberId} {
         allow read: if isAdmin()
           || (signedIn()

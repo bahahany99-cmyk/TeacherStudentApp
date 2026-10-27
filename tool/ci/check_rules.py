@@ -87,7 +87,23 @@ def main() -> int:
     if "request.resource.data.status == 'pendingReview'" not in code:
         problems.append('teacherProfiles: الإنشاء غير مقيّد بحالة pendingReview')
 
-    # 6) منع الحقول الإدارية في ملف المدرس
+    # 6) المجموعات: الكتابة للمالك فقط، والسعة مقيّدة، والمقاعد المشغولة ثابتة
+    if 'validSeats()' not in code:
+        problems.append('studyGroups: لا توجد دالة تحقق للسعة (validSeats)')
+    if 'request.resource.data.seatsTotal <= 50' not in code:
+        problems.append('studyGroups: الحد الأعلى للسعة غير مفروض')
+    if 'request.resource.data.seatsTaken == 0' not in code:
+        problems.append('studyGroups: الإنشاء غير مقيّد بـseatsTaken = 0')
+    if 'request.resource.data.seatsTaken == resource.data.seatsTaken' not in code:
+        problems.append('studyGroups: التعديل يمكنه تغيير المقاعد المشغولة')
+    if 'request.resource.data.teacherId == request.auth.uid' not in code:
+        problems.append('studyGroups: الإنشاء غير مقيّد بمالك المجموعة')
+    if "request.resource.data.meetingMode in ['online', 'home', 'center']" not in code:
+        problems.append('studyGroups: طريقة الحضور غير مقيّدة بقائمة')
+    if "'scheduleNote'" not in code or '.size() <= 120' not in code:
+        problems.append('studyGroups: طول وصف الموعد غير مقيّد')
+
+    # 7) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:
