@@ -86,12 +86,13 @@ void main() {
         ).groups.map((StudyGroup g) => g.id),
         <String>['c'],
       );
+      // المجموعتان «سنتر» مرتبتان بالأنسب: الأكثر مقاعد أولًا.
       expect(
         DiscoveryRules.search(
           sample,
           const GroupFilter(meetingMode: GroupMeetingMode.center),
         ).groups.map((StudyGroup g) => g.id),
-        <String>['a'],
+        <String>['a', 'b'],
       );
     });
 

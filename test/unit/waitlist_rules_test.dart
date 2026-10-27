@@ -165,7 +165,7 @@ void main() {
     test('المنتظرون أولًا بالأقدم، ثم المنتهون بالأحدث', () {
       expect(
         WaitlistRules.ordered(entries).map((GroupWaitlistEntry e) => e.studentId),
-        <String>['first', 'third', 'second', 'done'],
+        <String>['first', 'second', 'third', 'done'],
       );
     });
 
@@ -175,8 +175,12 @@ void main() {
         1,
       );
       expect(
-        WaitlistRules.positionOf(entries, _entry(studentId: 'third').id),
+        WaitlistRules.positionOf(entries, _entry(studentId: 'second').id),
         2,
+      );
+      expect(
+        WaitlistRules.positionOf(entries, _entry(studentId: 'third').id),
+        3,
       );
       expect(
         WaitlistRules.positionOf(entries, _entry(studentId: 'done').id),
