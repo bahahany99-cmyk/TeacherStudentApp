@@ -4,15 +4,15 @@ name: Build & Verify
 # بيئة العمل لا تحتوي Flutter/Dart وpub.dev محجوب، لذلك التحقق الآلي الحقيقي
 # (analyze / test / APK) يجري على GitHub Actions.
 #
-# سياسة الموارد (قرار 2026-10-27، مُحدَّثة):
-# - كل دفعة (push / PR): analyze + test + **بناء APK للتحقق فقط بلا رفع**.
-#   البناء لا يستهلك مساحة التخزين (المساحة تُستهلك بالـ artifacts المرفوعة)،
-#   فبهذا نكتشف أعطال Gradle/الحزم فورًا بدل الانتظار إلى بناء يدوي.
-# - الطلب اليدوي (workflow_dispatch): نفس الخطوات + **رفع APK** كـ artifact
-#   لتنزيله وتجربته على الهاتف.
+# سياسة الموارد (قرار 2026-10-27، مُحدَّثة بعد ملاحظات صاحب المشروع):
+# - كل دفعة (push / PR): `analyze` + `test` فقط. **لا بناء APK إطلاقًا** —
+#   لا استهلاك لدقائق CI ولا حصة تخزين.
+# - البناء عند الطلب فقط (`workflow_dispatch`) ويظهر كـ artifact مؤقت
+#   (7 أيام) ولا يُنشر في Releases.
+# - Releases للنسخ النهائية الكبرى فقط، وتُنشر يدويًا من صاحب المشروع.
 
 permissions:
-  contents: write # لنشر ملخص النتائج كتعليق على الكوميت عند الفشل
+  contents: read
 
 on:
   push:
@@ -20,27 +20,34 @@ on:
       - main
       - 'arena/**'
   pull_request:
-  workflow_dispatch: # ← هذا وحده يرفع APK كـ artifact
+  workflow_dispatch:
+    inputs:
+      build_apk:
+        description: 'ابنِ APK بعد نجاح الفحص والاختبارات'
+        type: boolean
+        default: true
+      build_mode:
+        description: 'نوع البناء'
+        type: choice
+        options:
+          - release        # الأصغر حجمًا (الموصى به للتجربة على الهاتف)
+          - debug
+        default: release
 
+# نُلغي التشغيلات القديمة على نفس الفرع لتوفير دقائق CI.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: analyze · test · build
+    name: analyze · test
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -52,7 +59,6 @@ jobs:
         run: |
           flutter --version
           dart --version
-          java -version
 
       - name: Resolve dependencies
         run: |
@@ -91,14 +97,6 @@ jobs:
 
           exit "$status"
 
-      - name: Upload analyze log
-        if: always() && github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: analyze-log
-          path: /tmp/analyze.txt
-          if-no-files-found: ignore
-
       - name: Test
         run: |
           set -o pipefail
@@ -114,65 +112,77 @@ jobs:
 
           echo "✅ flutter test: كل الاختبارات ناجحة."
 
-      - name: Upload test log
+      # السجلات تُرفع في وضع الطلب فقط (لأننا نستطيع قراءة الـannotations).
+      - name: Upload logs (يدوي فقط)
         if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: test-log
-          path: /tmp/test.txt
+          name: verify-logs
+          path: |
+            /tmp/pub.txt
+            /tmp/analyze.txt
+            /tmp/test.txt
           if-no-files-found: ignore
+          retention-days: 3
+
+  # ── بناء APK: عند الطلب فقط، ونتيجة مؤقتة (لا Releases) ─────────────────────
+  build_apk:
+    name: build apk (يدوي)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.build_apk == true
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
       - name: Scaffold Android platform (deterministic, com.darsly.app)
         run: bash tool/scaffold_android.sh
 
-      # بناء تحقّق فقط: يثبت أن Gradle + Firebase Android يعملان، بلا رفع.
-      #
-      # نقسّم حسب المعمارية ونبني ARM فقط: حزم Firebase تضيف مكتبات أصلية لكل
-      # معمارية، فـAPK «عام» يقترب من 150 م.ب، بينما ملف arm64 وحده يقارب نصفه
-      # وأسرع في التنزيل على الهاتف.
-      - name: Build debug APK (verification)
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # بناء مقسّم حسب المعمارية: يقلّل الحجم إلى النصف تقريبًا مقارنة بملف
+      # واحد يحمل مكتبات كل المعماريات (Firebase تضيف مكتبات أصلية كبيرة).
+      - name: Build APK
+        env:
+          MODE: ${{ inputs.build_mode }}
         run: |
           set -o pipefail
           status=0
-          flutter build apk --debug \
+          flutter build apk --"$MODE" \
             --split-per-abi \
             --target-platform android-arm64,android-arm \
             > /tmp/build.txt 2>&1 || status=$?
-          tail -60 /tmp/build.txt
+          tail -80 /tmp/build.txt
 
           if [ "$status" -ne 0 ]; then
-            # فشل Gradle يُقرأ من الـ annotations لأن السجلات محجوبة.
             python3 tool/ci/annotate_log.py /tmp/build.txt "apk-build"
             exit "$status"
           fi
 
           ls -l build/app/outputs/flutter-apk/*.apk
-          echo "✅ APK جُرِّب بناؤه بنجاح (بدون رفع في وضع الدفع)."
 
-      # تسليم APK بلا الحاجة إلى workflow_dispatch (الذي لا يملكه وكيل التطوير):
-      # أي دفعة تحتوي «[apk]» في رسالة الكوميت تنشر Release مرفقًا به الملف.
-      # Releases لا تُحتسب من مساحة الـ artifacts.
-      - name: Publish APK release (عند كلمة [apk] في رسالة الكوميت)
-        if: >-
-          success() && github.event_name == 'push' &&
-          contains(github.event.head_commit.message, '[apk]')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          short="${GITHUB_SHA:0:7}"
-          tag="apk-${short}"
-          gh release create "$tag" \
-            build/app/outputs/flutter-apk/*.apk \
-            --title "APK تجريبي ${short} — وضع الزائر" \
-            --notes "بناء تلقائي لوضع الزائر (بيانات تجريبية، بلا Firebase). الفرع: ${GITHUB_REF_NAME}. الإصدار: ${short}." \
-            --repo "${GITHUB_REPOSITORY}"
-
-      - name: Upload APK artifact (يدوي فقط)
-        if: success() && github.event_name == 'workflow_dispatch'
+      - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: apk-${{ inputs.build_mode }}
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
           retention-days: 7
