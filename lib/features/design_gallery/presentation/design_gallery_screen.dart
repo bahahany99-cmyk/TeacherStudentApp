@@ -221,7 +221,7 @@ class DesignGalleryScreen extends StatelessWidget {
                         label: 'pageWarm',
                         gradient: AppGradients.pageWarm,
                       ),
-                      SizedBox(height: AppSpacing.xs),
+                      const SizedBox(height: AppSpacing.xs),
                       const _GradientPreview(
                         label: 'hero',
                         gradient: AppGradients.hero,
@@ -309,8 +309,8 @@ class DesignGalleryScreen extends StatelessWidget {
                     spacing: AppSpacing.xs,
                     runSpacing: AppSpacing.xs,
                     crossAxisAlignment: WrapCrossAlignment.center,
-                    children: const <Widget>[
-                      PillChip(label: 'وسم ثابت', dense: true),
+                    children: <Widget>[
+                      const PillChip(label: 'وسم ثابت', dense: true),
                       PillBadge(label: 'مدرس مميز', icon: Icons.workspace_premium),
                       PillBadge(
                         label: 'متاح',
@@ -336,9 +336,9 @@ class DesignGalleryScreen extends StatelessWidget {
                 AppCard(
                   child: Row(
                     children: <Widget>[
-                      CircleAvatar(
+                      const CircleAvatar(
                         radius: AppSpacing.avatarSm / 2,
-                        child: const Text('س'),
+                        child: Text('س'),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
@@ -365,12 +365,15 @@ class DesignGalleryScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                AppCard(
+                const AppCard(
                   child: Wrap(
                     spacing: AppSpacing.xs,
                     runSpacing: AppSpacing.xs,
-                    children: const <Widget>[
-                      StatusChip(label: 'قيد الانتظار', color: AppColors.statusPending),
+                    children: <Widget>[
+                      StatusChip(
+                        label: 'قيد الانتظار',
+                        color: AppColors.statusPending,
+                      ),
                       StatusChip(label: 'مقبول', color: AppColors.statusAccepted),
                       StatusChip(label: 'مرفوض', color: AppColors.statusRejected),
                       StatusChip(label: 'مسودة', color: AppColors.statusNeutral),

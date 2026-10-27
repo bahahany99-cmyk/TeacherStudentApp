@@ -399,7 +399,7 @@ class _RequestCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: <Widget>[
-                PillChip(
+                const PillChip(
                   label: 'بانتظار موافقة المدرس',
                   icon: Icons.schedule,
                   color: AppColors.statusPending,

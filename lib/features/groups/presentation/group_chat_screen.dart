@@ -313,7 +313,7 @@ class _MessageBubble extends StatelessWidget {
     final Color background = isMine
         ? theme.colorScheme.primary.withAlpha(22)
         : Colors.white;
-    final BorderRadius radius = BorderRadiusDirectional.only(
+    final BorderRadiusDirectional radius = BorderRadiusDirectional.only(
       topStart: const Radius.circular(AppSpacing.radiusLg),
       topEnd: const Radius.circular(AppSpacing.radiusLg),
       bottomStart: Radius.circular(isMine ? AppSpacing.radiusLg : 6),
@@ -415,12 +415,13 @@ class _Composer extends StatelessWidget {
               maxLines: 4,
               maxLength: MessageRules.maxLength,
               textInputAction: TextInputAction.newline,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'اكتب رسالة…',
-                counterText:
-                    '', // العدّاد يظهر في تلميح مستقل أدناه لتفادي الازدحام
+                // لا عدّاد على كل حرف: يزاحم سطر الكتابة، والحد معلن في
+                // validation عند تجاوزه.
+                counterText: '',
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
+                contentPadding: EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
                   vertical: AppSpacing.sm,
                 ),

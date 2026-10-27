@@ -83,9 +83,9 @@ class StudentHomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              TextField(
+              const TextField(
                 enabled: false,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'ابحث باسم المدرس أو المادة (غير مفعّل في هذه المرحلة)',
                   prefixIcon: Icon(Icons.search),
                 ),
@@ -177,7 +177,7 @@ class StudentHomeScreen extends StatelessWidget {
                             child: AppCard(
                               child: Row(
                                 children: <Widget>[
-                                  Icon(
+                                  const Icon(
                                     Icons.schedule_outlined,
                                     color: AppColors.statusPending,
                                   ),
