@@ -122,556 +122,6 @@ class FirestoreTeacherRepository implements TeacherRepository {
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
 
-  // ── P10: كتابة الحجوزات ─────────────────────────────────────────────────
-
-  CollectionReference<Map<String, dynamic>> get _calendar =>
-      _firestore.collection(FirestoreCollections.teacherCalendar);
-
-  DocumentReference<Map<String, dynamic>> _calendarDoc(
-    String teacherId,
-    String dateKey,
-  ) => _calendar.doc('${teacherId}_$dateKey');
-
-  @override
-  Future<BookingRequest> createRequest({
-    required String teacherId,
-    required String teacherName,
-    required String studentId,
-    required String studentName,
-    required String subject,
-    required DateTime startsAt,
-    required int durationMinutes,
-    String? note,
-  }) {
-    return _guard(() async {
-      final DateTime now = DateTime.now();
-      final String? slotReason = BookingRules.slotBlockReason(
-        startsAt: startsAt,
-        durationMinutes: durationMinutes,
-        now: now,
-      );
-      if (slotReason != null) {
-        throw AppException(
-          AppErrorKind.invalidInput,
-          overrideMessage: slotReason,
-          debugMessage: 'invalid booking slot',
-        );
-      }
-      final String trimmedSubject = subject.trim();
-      if (trimmedSubject.length < 3) {
-        throw const AppException.invalidInput(
-          overrideMessage: 'اكتب مادة الحصة (3 أحرف على الأقل).',
-        );
-      }
-      final String? cleanNote = note?.trim();
-
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc();
-      final String dateKey = BookingRulesLite.keyOf(startsAt);
-      final int startMinutes = BookingRulesLite.minutesOf(startsAt);
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        // الطلب الجديد معلّق لا يشغل وقتًا، لكن نفحص التقويم حتى لا نرسل طلبًا
-        // مصيره الرفض. الفحص النهائي عند القبول.
-        final DocumentSnapshot<Map<String, dynamic>> calendar = await transaction
-            .get(_calendarDoc(teacherId, dateKey));
-        final Map<String, Map<String, int>> busy = _readBusy(calendar.data());
-        if (_overlapsBusy(busy, startMinutes, durationMinutes)) {
-          throw const AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: BookingRules.conflictMessage,
-            debugMessage: 'booking conflict',
-          );
-        }
-
-        final Map<String, Object?> data = <String, Object?>{
-          'teacherId': teacherId,
-          'teacherName': teacherName,
-          'studentId': studentId,
-          'studentName': studentName,
-          'subject': trimmedSubject,
-          'status': BookingStatus.pending.name,
-          'requestedAt': now,
-          'dateKey': dateKey,
-          'startMinutes': startMinutes,
-          'durationMinutes': durationMinutes,
-          if (cleanNote != null && cleanNote.isNotEmpty) 'note': cleanNote,
-        };
-        transaction.set(ref, data);
-        return bookingFromMap(ref.id, data)!;
-      });
-    });
-  }
-
-  @override
-  Future<BookingRequest> decideRequest({
-    required BookingRequest request,
-    required String teacherId,
-    required bool approve,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
-        request.id,
-      );
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: teacherId,
-          byTeacher: true,
-        );
-        final DateTime now = DateTime.now();
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: BookingViewer.teacher,
-          action: approve ? BookingAction.accept : BookingAction.reject,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'decision blocked',
-          );
-        }
-
-        if (!approve) {
-          transaction.update(ref, <String, Object?>{
-            'status': BookingStatus.rejected.name,
-            'decidedAt': now,
-            'decidedBy': teacherId,
-          });
-          return current.copyWith(
-            status: BookingStatus.rejected,
-            decidedAt: now,
-            decidedBy: teacherId,
-          );
-        }
-
-        final BookingRequest accepted = _accepting(current, now, teacherId);
-        await _bookSlot(transaction, accepted);
-        return accepted;
-      });
-    });
-  }
-
-  @override
-  Future<BookingRequest> cancelRequest({
-    required BookingRequest request,
-    required String actorId,
-    required bool byTeacher,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
-        request.id,
-      );
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: byTeacher ? actorId : null,
-          byTeacher: byTeacher,
-          studentId: byTeacher ? null : actorId,
-        );
-        final DateTime now = DateTime.now();
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
-          action: BookingAction.cancel,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'cancel blocked',
-          );
-        }
-
-        final BookingStatus status = BookingRules.cancelStatus(
-          booking: current,
-          now: now,
-        );
-        // تحرير الوقت من التقويم في المعاملة نفسها.
-        await _releaseSlot(transaction, current);
-        transaction.update(ref, <String, Object?>{
-          'status': status.name,
-          'cancelledAt': now,
-          'cancelledBy': actorId,
-        });
-        return current.copyWith(
-          status: status,
-          cancelledAt: now,
-          cancelledBy: actorId,
-        );
-      });
-    });
-  }
-
-  @override
-  Future<BookingRequest> proposeReschedule({
-    required BookingRequest request,
-    required String actorId,
-    required bool byTeacher,
-    required DateTime startsAt,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
-        request.id,
-      );
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: byTeacher ? actorId : null,
-          byTeacher: byTeacher,
-          studentId: byTeacher ? null : actorId,
-        );
-        final DateTime now = DateTime.now();
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
-          action: BookingAction.proposeReschedule,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'propose blocked',
-          );
-        }
-
-        final int duration = current.durationMinutes ?? 60;
-        final String? slotReason = BookingRules.slotBlockReason(
-          startsAt: startsAt,
-          durationMinutes: duration,
-          now: now,
-        );
-        if (slotReason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: slotReason,
-            debugMessage: 'invalid proposal slot',
-          );
-        }
-
-        final String dateKey = BookingRulesLite.keyOf(startsAt);
-        final int startMinutes = BookingRulesLite.minutesOf(startsAt);
-        final BookingActor actor = byTeacher
-            ? BookingActor.teacher
-            : BookingActor.student;
-
-        transaction.update(ref, <String, Object?>{
-          'status': BookingStatus.rescheduleProposed.name,
-          'proposalDateKey': dateKey,
-          'proposalStartMinutes': startMinutes,
-          'proposedBy': actor.name,
-          'proposedAt': now,
-        });
-        return current.copyWith(
-          status: BookingStatus.rescheduleProposed,
-          proposalDateKey: dateKey,
-          proposalStartMinutes: startMinutes,
-          proposedBy: actor,
-          proposedAt: now,
-        );
-      });
-    });
-  }
-
-  @override
-  Future<BookingRequest> respondToProposal({
-    required BookingRequest request,
-    required String actorId,
-    required bool byTeacher,
-    required bool accept,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
-        request.id,
-      );
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: byTeacher ? actorId : null,
-          byTeacher: byTeacher,
-          studentId: byTeacher ? null : actorId,
-        );
-        final DateTime now = DateTime.now();
-
-        // رفض الوقت البديل يُنهي الطلب: لا موعد متفق عليه.
-        if (!accept) {
-          transaction.update(ref, <String, Object?>{
-            'status': BookingStatus.rejected.name,
-            'decidedAt': now,
-            'decidedBy': actorId,
-          });
-          return current.copyWith(
-            status: BookingStatus.rejected,
-            decidedAt: now,
-            decidedBy: actorId,
-          );
-        }
-
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
-          action: BookingAction.acceptProposal,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'proposal response blocked',
-          );
-        }
-
-        final BookingRequest accepted = _accepting(current, now, actorId);
-        await _releaseSlot(transaction, current);
-        await _bookSlot(transaction, accepted);
-        return accepted;
-      });
-    });
-  }
-
-  @override
-  Future<BookingRequest> completeRequest({
-    required BookingRequest request,
-    required String teacherId,
-  }) {
-    return _guard(() async {
-      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
-        request.id,
-      );
-
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: teacherId,
-          byTeacher: true,
-        );
-        final DateTime now = DateTime.now();
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: BookingViewer.teacher,
-          action: BookingAction.complete,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'complete blocked',
-          );
-        }
-
-        await _releaseSlot(transaction, current);
-        transaction.update(ref, <String, Object?>{
-          'status': BookingStatus.completed.name,
-          'decidedAt': now,
-          'decidedBy': teacherId,
-        });
-        return current.copyWith(
-          status: BookingStatus.completed,
-          decidedAt: now,
-          decidedBy: teacherId,
-        );
-      });
-    });
-  }
-
-  /// الطلب بعد القبول: إن كان قبولًا لاقتراح فالوقت المقترح يصبح الموعد.
-  BookingRequest _accepting(
-    BookingRequest current,
-    DateTime now,
-    String decidedBy,
-  ) {
-    return current.status.isReschedule
-        ? current.applyingProposal(now, decidedBy)
-        : current.copyWith(
-            status: BookingStatus.accepted,
-            decidedAt: now,
-            decidedBy: decidedBy,
-          );
-  }
-
-  /// يحجز الفترة في تقويم اليوم داخل المعاملة الحالية.
-  ///
-  /// مستند واحد لكل يوم مدرس: قراءته وكتابته في المعاملة تُسلسل القرارات
-  /// المتزامنة، فلا يُقبل موعدان متقاطعان (A-76).
-  Future<void> _bookSlot(
-    Transaction transaction,
-    BookingRequest booking,
-  ) async {
-    final DateTime? start = booking.startsAt;
-    if (start == null) {
-      throw const AppException.invalidInput(
-        overrideMessage: 'الطلب بلا موعد محدد.',
-      );
-    }
-    final int duration = booking.durationMinutes ?? 60;
-    final String dateKey = booking.dateKey!;
-    final int startMinutes = booking.startMinutes!;
-    final String teacherId = booking.teacherId ?? '';
-    final DocumentReference<Map<String, dynamic>> calendarRef = _calendarDoc(
-      teacherId,
-      dateKey,
-    );
-
-    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
-        .get(calendarRef);
-    final Map<String, Map<String, int>> busy = _readBusy(snapshot.data());
-    if (_overlapsBusy(busy, startMinutes, duration)) {
-      throw const AppException(
-        AppErrorKind.invalidInput,
-        overrideMessage: BookingRules.conflictMessage,
-        debugMessage: 'booking conflict',
-      );
-    }
-
-    final Map<String, Object?> updatedBusy = <String, Object?>{
-      ...busy.map(
-        (String key, Map<String, int> value) =>
-            MapEntry<String, Object?>(key, value),
-      ),
-      booking.id: <String, Object?>{
-        'start': startMinutes,
-        'end': startMinutes + duration,
-      },
-    };
-
-    transaction.set(calendarRef, <String, Object?>{
-      'teacherId': teacherId,
-      'dateKey': dateKey,
-      'busy': updatedBusy,
-    });
-    transaction.update(_bookings.doc(booking.id), <String, Object?>{
-      'status': BookingStatus.accepted.name,
-      'dateKey': dateKey,
-      'startMinutes': startMinutes,
-      'durationMinutes': duration,
-      'decidedAt': booking.decidedAt,
-      'decidedBy': booking.decidedBy,
-    });
-  }
-
-  /// يحرّر فترة الطلب من التقويم (إلغاء أو إكمال أو انتقال لوقت جديد).
-  Future<void> _releaseSlot(
-    Transaction transaction,
-    BookingRequest booking,
-  ) async {
-    final String? dateKey = booking.dateKey;
-    final String? teacherId = booking.teacherId;
-    if (dateKey == null || teacherId == null) {
-      return;
-    }
-    final DocumentReference<Map<String, dynamic>> calendarRef = _calendarDoc(
-      teacherId,
-      dateKey,
-    );
-    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
-        .get(calendarRef);
-    if (!snapshot.exists) {
-      return;
-    }
-    final Map<String, Map<String, int>> busy = _readBusy(snapshot.data());
-    if (!busy.containsKey(booking.id)) {
-      return;
-    }
-    final Map<String, Object?> updatedBusy = <String, Object?>{
-      for (final MapEntry<String, Map<String, int>> entry in busy.entries)
-        if (entry.key != booking.id) entry.key: entry.value,
-    };
-    transaction.set(calendarRef, <String, Object?>{
-      'teacherId': teacherId,
-      'dateKey': dateKey,
-      'busy': updatedBusy,
-    });
-  }
-
-  Map<String, Map<String, int>> _readBusy(Map<String, Object?>? data) {
-    final Object? raw = data?['busy'];
-    if (raw is! Map) {
-      return <String, Map<String, int>>{};
-    }
-    final Map<String, Map<String, int>> result = <String, Map<String, int>>{};
-    for (final MapEntry<Object?, Object?> entry in raw.entries) {
-      final Object? value = entry.value;
-      final Object? rawKey = entry.key;
-      if (rawKey is! String || value is! Map) {
-        continue;
-      }
-      final Object? start = value['start'];
-      final Object? end = value['end'];
-      if (start is int && end is int) {
-        result[rawKey] = <String, int>{'start': start, 'end': end};
-      }
-    }
-    return result;
-  }
-
-  bool _overlapsBusy(
-    Map<String, Map<String, int>> busy,
-    int startMinutes,
-    int duration,
-  ) {
-    final int end = startMinutes + duration;
-    for (final Map<String, int> slot in busy.values) {
-      final int existingStart = slot['start'] ?? 0;
-      final int existingEnd = slot['end'] ?? 0;
-      if (startMinutes < existingEnd && existingStart < end) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// يقرأ طلبًا داخل معاملة ويتحقق من الملكية قبل أي كتابة.
-  Future<BookingRequest> _readBooking(
-    Transaction transaction,
-    DocumentReference<Map<String, dynamic>> ref, {
-    String? teacherId,
-    String? studentId,
-    required bool byTeacher,
-  }) async {
-    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
-        .get(ref);
-    final Map<String, Object?>? data = snapshot.data();
-    final BookingRequest? booking = !snapshot.exists || data == null
-        ? null
-        : bookingFromMap(snapshot.id, data);
-    if (booking == null) {
-      throw const AppException.notFound(debugMessage: 'booking missing');
-    }
-    if (byTeacher) {
-      if (teacherId != null && booking.teacherId != teacherId) {
-        throw const AppException.permission(debugMessage: 'not the teacher');
-      }
-    } else if (studentId != null && booking.studentId != studentId) {
-      throw const AppException.permission(debugMessage: 'not the student');
-    }
-    return booking;
-  }
-
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
@@ -2119,6 +1569,556 @@ class FirestoreBookingRepository implements BookingRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
+
+  // ── P10: كتابة الحجوزات ─────────────────────────────────────────────────
+
+  CollectionReference<Map<String, dynamic>> get _calendar =>
+      _firestore.collection(FirestoreCollections.teacherCalendar);
+
+  DocumentReference<Map<String, dynamic>> _calendarDoc(
+    String teacherId,
+    String dateKey,
+  ) => _calendar.doc('${teacherId}_$dateKey');
+
+  @override
+  Future<BookingRequest> createRequest({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required String subject,
+    required DateTime startsAt,
+    required int durationMinutes,
+    String? note,
+  }) {
+    return _guard(() async {
+      final DateTime now = DateTime.now();
+      final String? slotReason = BookingRules.slotBlockReason(
+        startsAt: startsAt,
+        durationMinutes: durationMinutes,
+        now: now,
+      );
+      if (slotReason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: slotReason,
+          debugMessage: 'invalid booking slot',
+        );
+      }
+      final String trimmedSubject = subject.trim();
+      if (trimmedSubject.length < 3) {
+        throw const AppException.invalidInput(
+          overrideMessage: 'اكتب مادة الحصة (3 أحرف على الأقل).',
+        );
+      }
+      final String? cleanNote = note?.trim();
+
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc();
+      final String dateKey = BookingRulesLite.keyOf(startsAt);
+      final int startMinutes = BookingRulesLite.minutesOf(startsAt);
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        // الطلب الجديد معلّق لا يشغل وقتًا، لكن نفحص التقويم حتى لا نرسل طلبًا
+        // مصيره الرفض. الفحص النهائي عند القبول.
+        final DocumentSnapshot<Map<String, dynamic>> calendar = await transaction
+            .get(_calendarDoc(teacherId, dateKey));
+        final Map<String, Map<String, int>> busy = _readBusy(calendar.data());
+        if (_overlapsBusy(busy, startMinutes, durationMinutes)) {
+          throw const AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: BookingRules.conflictMessage,
+            debugMessage: 'booking conflict',
+          );
+        }
+
+        final Map<String, Object?> data = <String, Object?>{
+          'teacherId': teacherId,
+          'teacherName': teacherName,
+          'studentId': studentId,
+          'studentName': studentName,
+          'subject': trimmedSubject,
+          'status': BookingStatus.pending.name,
+          'requestedAt': now,
+          'dateKey': dateKey,
+          'startMinutes': startMinutes,
+          'durationMinutes': durationMinutes,
+          if (cleanNote != null && cleanNote.isNotEmpty) 'note': cleanNote,
+        };
+        transaction.set(ref, data);
+        return bookingFromMap(ref.id, data)!;
+      });
+    });
+  }
+
+  @override
+  Future<BookingRequest> decideRequest({
+    required BookingRequest request,
+    required String teacherId,
+    required bool approve,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
+        request.id,
+      );
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        final BookingRequest current = await _readBooking(
+          transaction,
+          ref,
+          teacherId: teacherId,
+          byTeacher: true,
+        );
+        final DateTime now = DateTime.now();
+        final String? reason = BookingRules.actionBlockReason(
+          booking: current,
+          viewer: BookingViewer.teacher,
+          action: approve ? BookingAction.accept : BookingAction.reject,
+          now: now,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'decision blocked',
+          );
+        }
+
+        if (!approve) {
+          transaction.update(ref, <String, Object?>{
+            'status': BookingStatus.rejected.name,
+            'decidedAt': now,
+            'decidedBy': teacherId,
+          });
+          return current.copyWith(
+            status: BookingStatus.rejected,
+            decidedAt: now,
+            decidedBy: teacherId,
+          );
+        }
+
+        final BookingRequest accepted = _accepting(current, now, teacherId);
+        await _bookSlot(transaction, accepted);
+        return accepted;
+      });
+    });
+  }
+
+  @override
+  Future<BookingRequest> cancelRequest({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
+        request.id,
+      );
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        final BookingRequest current = await _readBooking(
+          transaction,
+          ref,
+          teacherId: byTeacher ? actorId : null,
+          byTeacher: byTeacher,
+          studentId: byTeacher ? null : actorId,
+        );
+        final DateTime now = DateTime.now();
+        final String? reason = BookingRules.actionBlockReason(
+          booking: current,
+          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+          action: BookingAction.cancel,
+          now: now,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'cancel blocked',
+          );
+        }
+
+        final BookingStatus status = BookingRules.cancelStatus(
+          booking: current,
+          now: now,
+        );
+        // تحرير الوقت من التقويم في المعاملة نفسها.
+        await _releaseSlot(transaction, current);
+        transaction.update(ref, <String, Object?>{
+          'status': status.name,
+          'cancelledAt': now,
+          'cancelledBy': actorId,
+        });
+        return current.copyWith(
+          status: status,
+          cancelledAt: now,
+          cancelledBy: actorId,
+        );
+      });
+    });
+  }
+
+  @override
+  Future<BookingRequest> proposeReschedule({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+    required DateTime startsAt,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
+        request.id,
+      );
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        final BookingRequest current = await _readBooking(
+          transaction,
+          ref,
+          teacherId: byTeacher ? actorId : null,
+          byTeacher: byTeacher,
+          studentId: byTeacher ? null : actorId,
+        );
+        final DateTime now = DateTime.now();
+        final String? reason = BookingRules.actionBlockReason(
+          booking: current,
+          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+          action: BookingAction.proposeReschedule,
+          now: now,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'propose blocked',
+          );
+        }
+
+        final int duration = current.durationMinutes ?? 60;
+        final String? slotReason = BookingRules.slotBlockReason(
+          startsAt: startsAt,
+          durationMinutes: duration,
+          now: now,
+        );
+        if (slotReason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: slotReason,
+            debugMessage: 'invalid proposal slot',
+          );
+        }
+
+        final String dateKey = BookingRulesLite.keyOf(startsAt);
+        final int startMinutes = BookingRulesLite.minutesOf(startsAt);
+        final BookingActor actor = byTeacher
+            ? BookingActor.teacher
+            : BookingActor.student;
+
+        transaction.update(ref, <String, Object?>{
+          'status': BookingStatus.rescheduleProposed.name,
+          'proposalDateKey': dateKey,
+          'proposalStartMinutes': startMinutes,
+          'proposedBy': actor.name,
+          'proposedAt': now,
+        });
+        return current.copyWith(
+          status: BookingStatus.rescheduleProposed,
+          proposalDateKey: dateKey,
+          proposalStartMinutes: startMinutes,
+          proposedBy: actor,
+          proposedAt: now,
+        );
+      });
+    });
+  }
+
+  @override
+  Future<BookingRequest> respondToProposal({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+    required bool accept,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
+        request.id,
+      );
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        final BookingRequest current = await _readBooking(
+          transaction,
+          ref,
+          teacherId: byTeacher ? actorId : null,
+          byTeacher: byTeacher,
+          studentId: byTeacher ? null : actorId,
+        );
+        final DateTime now = DateTime.now();
+
+        // رفض الوقت البديل يُنهي الطلب: لا موعد متفق عليه.
+        if (!accept) {
+          transaction.update(ref, <String, Object?>{
+            'status': BookingStatus.rejected.name,
+            'decidedAt': now,
+            'decidedBy': actorId,
+          });
+          return current.copyWith(
+            status: BookingStatus.rejected,
+            decidedAt: now,
+            decidedBy: actorId,
+          );
+        }
+
+        final String? reason = BookingRules.actionBlockReason(
+          booking: current,
+          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+          action: BookingAction.acceptProposal,
+          now: now,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'proposal response blocked',
+          );
+        }
+
+        final BookingRequest accepted = _accepting(current, now, actorId);
+        await _releaseSlot(transaction, current);
+        await _bookSlot(transaction, accepted);
+        return accepted;
+      });
+    });
+  }
+
+  @override
+  Future<BookingRequest> completeRequest({
+    required BookingRequest request,
+    required String teacherId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _bookings.doc(
+        request.id,
+      );
+
+      return _firestore.runTransaction<BookingRequest>((
+        Transaction transaction,
+      ) async {
+        final BookingRequest current = await _readBooking(
+          transaction,
+          ref,
+          teacherId: teacherId,
+          byTeacher: true,
+        );
+        final DateTime now = DateTime.now();
+        final String? reason = BookingRules.actionBlockReason(
+          booking: current,
+          viewer: BookingViewer.teacher,
+          action: BookingAction.complete,
+          now: now,
+        );
+        if (reason != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: reason,
+            debugMessage: 'complete blocked',
+          );
+        }
+
+        await _releaseSlot(transaction, current);
+        transaction.update(ref, <String, Object?>{
+          'status': BookingStatus.completed.name,
+          'decidedAt': now,
+          'decidedBy': teacherId,
+        });
+        return current.copyWith(
+          status: BookingStatus.completed,
+          decidedAt: now,
+          decidedBy: teacherId,
+        );
+      });
+    });
+  }
+
+  /// الطلب بعد القبول: إن كان قبولًا لاقتراح فالوقت المقترح يصبح الموعد.
+  BookingRequest _accepting(
+    BookingRequest current,
+    DateTime now,
+    String decidedBy,
+  ) {
+    return current.status.isReschedule
+        ? current.applyingProposal(now, decidedBy)
+        : current.copyWith(
+            status: BookingStatus.accepted,
+            decidedAt: now,
+            decidedBy: decidedBy,
+          );
+  }
+
+  /// يحجز الفترة في تقويم اليوم داخل المعاملة الحالية.
+  ///
+  /// مستند واحد لكل يوم مدرس: قراءته وكتابته في المعاملة تُسلسل القرارات
+  /// المتزامنة، فلا يُقبل موعدان متقاطعان (A-76).
+  Future<void> _bookSlot(
+    Transaction transaction,
+    BookingRequest booking,
+  ) async {
+    final DateTime? start = booking.startsAt;
+    if (start == null) {
+      throw const AppException.invalidInput(
+        overrideMessage: 'الطلب بلا موعد محدد.',
+      );
+    }
+    final int duration = booking.durationMinutes ?? 60;
+    final String dateKey = booking.dateKey!;
+    final int startMinutes = booking.startMinutes!;
+    final String teacherId = booking.teacherId ?? '';
+    final DocumentReference<Map<String, dynamic>> calendarRef = _calendarDoc(
+      teacherId,
+      dateKey,
+    );
+
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
+        .get(calendarRef);
+    final Map<String, Map<String, int>> busy = _readBusy(snapshot.data());
+    if (_overlapsBusy(busy, startMinutes, duration)) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: BookingRules.conflictMessage,
+        debugMessage: 'booking conflict',
+      );
+    }
+
+    final Map<String, Object?> updatedBusy = <String, Object?>{
+      ...busy.map(
+        (String key, Map<String, int> value) =>
+            MapEntry<String, Object?>(key, value),
+      ),
+      booking.id: <String, Object?>{
+        'start': startMinutes,
+        'end': startMinutes + duration,
+      },
+    };
+
+    transaction.set(calendarRef, <String, Object?>{
+      'teacherId': teacherId,
+      'dateKey': dateKey,
+      'busy': updatedBusy,
+    });
+    transaction.update(_bookings.doc(booking.id), <String, Object?>{
+      'status': BookingStatus.accepted.name,
+      'dateKey': dateKey,
+      'startMinutes': startMinutes,
+      'durationMinutes': duration,
+      'decidedAt': booking.decidedAt,
+      'decidedBy': booking.decidedBy,
+    });
+  }
+
+  /// يحرّر فترة الطلب من التقويم (إلغاء أو إكمال أو انتقال لوقت جديد).
+  Future<void> _releaseSlot(
+    Transaction transaction,
+    BookingRequest booking,
+  ) async {
+    final String? dateKey = booking.dateKey;
+    final String? teacherId = booking.teacherId;
+    if (dateKey == null || teacherId == null) {
+      return;
+    }
+    final DocumentReference<Map<String, dynamic>> calendarRef = _calendarDoc(
+      teacherId,
+      dateKey,
+    );
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
+        .get(calendarRef);
+    if (!snapshot.exists) {
+      return;
+    }
+    final Map<String, Map<String, int>> busy = _readBusy(snapshot.data());
+    if (!busy.containsKey(booking.id)) {
+      return;
+    }
+    final Map<String, Object?> updatedBusy = <String, Object?>{
+      for (final MapEntry<String, Map<String, int>> entry in busy.entries)
+        if (entry.key != booking.id) entry.key: entry.value,
+    };
+    transaction.set(calendarRef, <String, Object?>{
+      'teacherId': teacherId,
+      'dateKey': dateKey,
+      'busy': updatedBusy,
+    });
+  }
+
+  Map<String, Map<String, int>> _readBusy(Map<String, Object?>? data) {
+    final Object? raw = data?['busy'];
+    if (raw is! Map) {
+      return <String, Map<String, int>>{};
+    }
+    final Map<String, Map<String, int>> result = <String, Map<String, int>>{};
+    for (final MapEntry<Object?, Object?> entry in raw.entries) {
+      final Object? value = entry.value;
+      final Object? rawKey = entry.key;
+      if (rawKey is! String || value is! Map) {
+        continue;
+      }
+      final Object? start = value['start'];
+      final Object? end = value['end'];
+      if (start is int && end is int) {
+        result[rawKey] = <String, int>{'start': start, 'end': end};
+      }
+    }
+    return result;
+  }
+
+  bool _overlapsBusy(
+    Map<String, Map<String, int>> busy,
+    int startMinutes,
+    int duration,
+  ) {
+    final int end = startMinutes + duration;
+    for (final Map<String, int> slot in busy.values) {
+      final int existingStart = slot['start'] ?? 0;
+      final int existingEnd = slot['end'] ?? 0;
+      if (startMinutes < existingEnd && existingStart < end) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// يقرأ طلبًا داخل معاملة ويتحقق من الملكية قبل أي كتابة.
+  Future<BookingRequest> _readBooking(
+    Transaction transaction,
+    DocumentReference<Map<String, dynamic>> ref, {
+    String? teacherId,
+    String? studentId,
+    required bool byTeacher,
+  }) async {
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await transaction
+        .get(ref);
+    final Map<String, Object?>? data = snapshot.data();
+    final BookingRequest? booking = !snapshot.exists || data == null
+        ? null
+        : bookingFromMap(snapshot.id, data);
+    if (booking == null) {
+      throw const AppException.notFound(debugMessage: 'booking missing');
+    }
+    if (byTeacher) {
+      if (teacherId != null && booking.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not the teacher');
+      }
+    } else if (studentId != null && booking.studentId != studentId) {
+      throw const AppException.permission(debugMessage: 'not the student');
+    }
+    return booking;
+  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,

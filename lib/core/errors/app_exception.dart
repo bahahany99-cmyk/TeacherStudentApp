@@ -31,20 +31,60 @@ class AppException implements Exception {
     this.overrideMessage,
   });
 
-  const AppException.network({String? debugMessage})
-    : this(AppErrorKind.network, debugMessage: debugMessage);
+  const AppException.network({
+    String? debugMessage,
+    String? overrideMessage,
+    String? overrideTitle,
+  }) : this(
+         AppErrorKind.network,
+         debugMessage: debugMessage,
+         overrideMessage: overrideMessage,
+         overrideTitle: overrideTitle,
+       );
 
-  const AppException.permission({String? debugMessage})
-    : this(AppErrorKind.permission, debugMessage: debugMessage);
+  const AppException.permission({
+    String? debugMessage,
+    String? overrideMessage,
+    String? overrideTitle,
+  }) : this(
+         AppErrorKind.permission,
+         debugMessage: debugMessage,
+         overrideMessage: overrideMessage,
+         overrideTitle: overrideTitle,
+       );
 
-  const AppException.notFound({String? debugMessage})
-    : this(AppErrorKind.notFound, debugMessage: debugMessage);
+  const AppException.notFound({
+    String? debugMessage,
+    String? overrideMessage,
+    String? overrideTitle,
+  }) : this(
+         AppErrorKind.notFound,
+         debugMessage: debugMessage,
+         overrideMessage: overrideMessage,
+         overrideTitle: overrideTitle,
+       );
 
-  const AppException.unavailable({String? debugMessage})
-    : this(AppErrorKind.unavailable, debugMessage: debugMessage);
+  const AppException.unavailable({
+    String? debugMessage,
+    String? overrideMessage,
+    String? overrideTitle,
+  }) : this(
+         AppErrorKind.unavailable,
+         debugMessage: debugMessage,
+         overrideMessage: overrideMessage,
+         overrideTitle: overrideTitle,
+       );
 
-  const AppException.invalidInput({String? debugMessage})
-    : this(AppErrorKind.invalidInput, debugMessage: debugMessage);
+  const AppException.invalidInput({
+    String? debugMessage,
+    String? overrideMessage,
+    String? overrideTitle,
+  }) : this(
+         AppErrorKind.invalidInput,
+         debugMessage: debugMessage,
+         overrideMessage: overrideMessage,
+         overrideTitle: overrideTitle,
+       );
 
   final AppErrorKind kind;
 
