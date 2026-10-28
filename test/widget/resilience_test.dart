@@ -176,7 +176,8 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final FaultPlan plan = FaultPlan();
+      // البثّ سليم والرسائل تُقرأ؛ الفشل في الإرسال وحده (طلب واحد).
+      final FaultPlan plan = FaultPlan.once();
       await tester.pumpWidget(
         _host(
           _services(chatsFault: plan),

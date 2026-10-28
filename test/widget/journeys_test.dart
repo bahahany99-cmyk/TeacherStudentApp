@@ -7,12 +7,12 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
-import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 import 'package:teacher_student_app/features/chat/presentation/direct_chat_screen.dart';
@@ -25,36 +25,9 @@ import '../helpers/test_app.dart';
 
 /// رحلات كاملة (P16) على نفس حزمة الخدمات.
 ///
-/// كل رحلة تُبدّل الدور بإعادة بناء الشجرة على **نفس** `AppServices`: هذا هو
-/// الفرق بين اختبار شاشة واختبار رحلة — الحالة التي يكتبها طرف يجب أن يراها
-/// الطرف الآخر بلا وسيط.
-AppServices _services() {
-  final DemoNotificationRepository notifications = DemoNotificationRepository();
-  final DemoBookingRepository bookings = DemoBookingRepository(
-    notifications: notifications,
-  );
-  final DemoGroupRepository groups = DemoGroupRepository(
-    notifications: notifications,
-  );
-  return AppServices(
-    admin: DemoAdminRepository(),
-    auth: const DemoAuthService(),
-    teachers: DemoTeacherRepository(),
-    groups: groups,
-    bookings: bookings,
-    chats: DemoDirectChatRepository(
-      findBooking: bookings.findById,
-      isMember: groups.isMember,
-      notifications: notifications,
-    ),
-    notifications: notifications,
-    schedules: DemoScheduleRepository(),
-    messages: DemoMessageRepository(),
-    reviews: DemoReviewRepository(findBooking: bookings.findById),
-    favorites: DemoFavoriteRepository(),
-  );
-}
-
+/// `AppServices.demo()` هو ما يربط المستودعات بالقوائم نفسها (التوثيق يظهر في
+/// البحث، والتقييم يحرّك المتوسط)، ولهذا تُستخدم هنا بدل بناء حزمة يدويًا:
+/// رحلة لا تعبر حدود المصدر ليست رحلة.
 Widget _host(
   AppServices services,
   Widget child, {
@@ -118,7 +91,7 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final AppServices services = _services();
+      final AppServices services = AppServices.demo();
 
       // (١) الطالب يكتشف مدرس «عن بُعد»: الفلتر يفصل الفئتين فعلًا.
       await _resite(tester, _host(services, const TeachersScreen()));
@@ -178,8 +151,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('إلى اللقاء في الموعد.'), findsOneWidget);
 
-      // (٦) إعلان التنفيذ قبل انتهاء الموعد مرفوض برسالة عربية صريحة —
-      // هذا هو السلوك الصحيح، لا نُعلن تنفيذ حصة لم تبدأ.
+      // (٦) إعلان التنفيذ لا يظهر أصلًا قبل انتهاء الموعد: لا نُعلن تنفيذ حصة
+      // لم تبدأ، والقاعدة نفسها تقول السبب إن حاول أحد تجاوز الواجهة.
       await _resite(
         tester,
         _host(
@@ -188,8 +161,16 @@ void main() {
           role: UserRole.teacher,
         ),
       );
-      await tapVisible(tester, find.text('إعلان التنفيذ'));
-      expect(find.textContaining('قبل انتهاء موعد الحصة'), findsOneWidget);
+      expect(find.text('إعلان التنفيذ'), findsNothing);
+      expect(
+        BookingRules.actionBlockReason(
+          booking: (await services.bookings.findById(created.id))!,
+          viewer: BookingViewer.teacher,
+          action: BookingAction.complete,
+          now: DateTime.now(),
+        ),
+        contains('قبل انتهاء موعد الحصة'),
+      );
 
       // (٧) بدل انتظار الوقت، نستخدم حجزًا منفّذًا في البيانات التجريبية
       // لتكملة الرحلة إلى التقييم (G7): لا تقييم بلا حصة منفّذة.
@@ -222,7 +203,7 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final AppServices services = _services();
+      final AppServices services = AppServices.demo();
 
       // (١) مدرس أوقف استقبال الرسائل قبل الحجز، ولا حجز بينه وبين الطالب.
       expect(
@@ -284,7 +265,7 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final AppServices services = _services();
+      final AppServices services = AppServices.demo();
 
       // حجز مؤكد لم ينتهِ بعد: زر التقييم لا يظهر أصلًا.
       await _resite(
@@ -317,7 +298,7 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final AppServices services = _services();
+      final AppServices services = AppServices.demo();
       const String name = 'أ. خالد إبراهيم';
 
       // (١) قبل: لا يظهر للطالب.
@@ -355,7 +336,7 @@ void main() {
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
-      final AppServices services = _services();
+      final AppServices services = AppServices.demo();
       const String name = 'أ. خالد إبراهيم';
 
       await _resite(
