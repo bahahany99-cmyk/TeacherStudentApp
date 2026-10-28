@@ -7,6 +7,7 @@ import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/features/auth/presentation/email_auth_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_guard.dart';
+import 'package:teacher_student_app/features/admin/presentation/featured_teachers_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
@@ -120,6 +121,14 @@ abstract final class AppRouter {
       case RoutePaths.adminDashboard:
         return _page(
           const AdminGuard(child: AdminDashboardScreen()),
+          settings,
+        );
+      case RoutePaths.adminFeatured:
+        return _page(
+          const AdminGuard(
+            title: 'المدرسون المميزون',
+            child: FeaturedTeachersScreen(),
+          ),
           settings,
         );
       case RoutePaths.adminVerification:

@@ -1,56 +1,61 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 
-/// حارس الشاشات الإدارية (P14).
+/// حارس المسارات الإدارية (P14).
 ///
-/// **لماذا حارس واجهة وهو ليس أمانًا؟** لأن الأمان في القواعد وحدها
-/// (`request.auth.token.admin == true`). الحارس هنا يمنع حالة سيئة فقط: طالب
-/// يصل إلى مسار إداري بالخطأ فيرى شاشة فارغة أو أزرارًا لا تعمل. الأفضل أن
-/// يقرأ «لا تملك صلاحية» ويعود.
+/// **ماذا يفعل بالضبط؟** يمنع *الوصول إلى الواجهة* من حساب طالب أو مدرس، حتى
+/// لو عرف المسار وكتبه يدويًا أو وصل عبر رابط قديم. الحماية الحقيقية تبقى في
+/// `firestore.rules`؛ هذا الحارس يمنع رؤية الشاشة لا قراءة البيانات.
 ///
-/// القرار A-88 يوضّح أن الادعاء يُضبط بمفتاح خدمة خارج التطبيق، ولا يمكن
-/// للتطبيق منح نفسه صلاحية إدارة.
+/// المصدر: `SessionController.isAdmin` الذي يجمع بين الادعاء المقروء من الخادم
+/// (`request.auth.token.admin`) والدور التجريبي. **لا يوجد** أي مسار يمنح
+/// الصلاحية من داخل التطبيق.
 class AdminGuard extends StatelessWidget {
   const AdminGuard({super.key, required this.child, this.title = 'لوحة الإدارة'});
 
-  /// الشاشة الإدارية بعد اجتياز الفحص.
+  /// الشاشة المحمية.
   final Widget child;
 
-  /// عنوان شاشة الرفض — يخبر المستخدم أي قسم حُجب عنه.
+  /// عنوان الشاشة في حالة الرفض (ليس سرًّا: المسار معروف أصلًا).
   final String title;
 
   @override
   Widget build(BuildContext context) {
-    final bool allowed = SessionScope.of(context).isAdmin;
-    if (allowed) {
-      return child;
-    }
+    final SessionController session = SessionScope.of(context);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(title: Text(title)),
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: EmptyState(
-              icon: Icons.lock_outline_rounded,
-              title: 'لا تملك صلاحية',
-              message: 'هذه الشاشة للإدارة فقط. لو كنت مسؤولًا فسجّل الدخول '
-                  'بحساب إداري معتمد.',
-              actionLabel: 'العودة',
-              onActionTap: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                RoutePaths.shell,
-                (Route<dynamic> route) => false,
+    if (!session.isAdmin) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(title: Text(title)),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: EmptyState(
+                icon: Icons.lock_outline,
+                title: 'لا تملك صلاحية',
+                message:
+                    'هذه الشاشة للإدارة فقط. الوصول يُمنح بادعاء إداري على '
+                    'الخادم، ولا يُختار من التطبيق.',
+                actionLabel: 'العودة إلى التطبيق',
+                onActionTap: () {
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    RoutePaths.shell,
+                    (Route<dynamic> route) => false,
+                  );
+                },
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
+
+    return child;
   }
 }

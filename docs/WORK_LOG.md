@@ -1695,14 +1695,15 @@ Actions محجوب من بيئة التطوير).
 - **الواجهة:** `FeaturedTeachersCarousel` (بطاقة 232×210) في الرئيسية وصفحة
   الاستكشاف · `TeacherFilterBar` (بحث بمهلة 250 مللي ثانية + حبات «عن بُعد/
   حضوري فقط» + محافظات مشتقة من البيانات) · بطاقة المدرس وملفه يعرضان طريقة
-  التقديم والمكان · مفتاح تمييز لكل ملف موثّق في شاشة التوثيق.
+  التقديم والمكان · شاشة «المدرسون المميزون» (`/admin/featured`، محمية
+  بـ`AdminGuard`) بمفتاح تمييز لكل ملف موثّق، ومدخل رابع في لوحة الأرقام.
 - **القواعد:** `profileKeys`/`validProfilePayload`/`noAdminFields`/
   `unchangedAdminFields` في `teacherProfiles`، و`validAdminCuration` لمسار
   التمييز، وقراءة الاكتشاف مشروطة بـ`status == 'verified'`.
 
 ### 3) الاختبارات
 
-- `test/unit/teacher_discovery_test.dart` — 14 اختبارًا: `TeacherFilter`
+- `test/unit/teacher_discovery_test.dart` — 17 اختبارًا: `TeacherFilter`
   (عدّاد/تفريغ/copyWith/مساواة/وسم المكان)، قواعد البحث (الفصل عن غير الموثّق،
   عن بُعد/حضوري، محافظة، نص بتطبيع الهمزة، ترتيب، إجمالي)، شريط المميزين،
   وخدمات المستودع التجريبي.

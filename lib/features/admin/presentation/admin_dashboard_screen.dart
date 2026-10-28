@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -8,77 +9,48 @@ import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
-/// ملخّص اللوحة: ما ينتظر قرارًا الآن.
-class AdminOverview {
-  const AdminOverview({
+/// أرقام لوحة الإدارة — تُقرأ مرة واحدة عند فتح الشاشة.
+class _AdminOverview {
+  const _AdminOverview({
     required this.queue,
     required this.reports,
-    required this.verifiedCount,
-    required this.totalProfiles,
+    required this.verified,
+    required this.featured,
   });
 
   final List<TeacherProfile> queue;
   final List<ContentReport> reports;
-  final int verifiedCount;
-  final int totalProfiles;
+  final int verified;
+
+  /// كم ملفًا معروضًا في شريط «مدرسون مميزون» الآن (P15).
+  final int featured;
 }
 
 /// «لوحة الإدارة» (P14): مدخل واحد لطابور التوثيق والمراجعة.
 ///
-/// الأرقام تُقرأ من المستودع لا من عدّاد محلي، فلا تختلف عمّا تراه الشاشات.
-/// ولا شيء هنا يمنح صلاحية: كل كتابة تفحصها القواعد بالادعاء الإداري.
-class AdminDashboardScreen extends StatefulWidget {
+/// **لماذا شاشة أرقام لا جدول؟** لأن عمل المسؤول في هذا التطبيق قرارَان لا
+/// أكثر: توثيق ملف، وحسم بلاغ. الأرقام تجيب «هل يوجد ما ينتظرني؟» قبل فتح
+/// أي قائمة، وكل بطاقة تقود إلى الشاشة المتخصصة.
+class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
-
-  @override
-  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
-}
-
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  /// يُزاد بعد كل عودة من شاشة فرعية لتُقرأ الأرقام من جديد.
-  int _revision = 0;
-
-  Future<AdminOverview> _load() async {
-    // نقرأ الحاوية قبل أي `await` (قاعدة `use_build_context_synchronously`).
-    final AppServices services = AppServicesScope.of(context);
-    final List<TeacherProfile> queue = await services.admin
-        .listVerificationQueue();
-    final List<ContentReport> reports = await services.admin.listOpenReports();
-    final List<TeacherProfile> all = await services.admin.listAllProfiles();
-    return AdminOverview(
-      queue: queue,
-      reports: reports,
-      verifiedCount: all
-          .where(
-            (TeacherProfile profile) =>
-                profile.status == TeacherProfileStatus.verified,
-          )
-          .length,
-      totalProfiles: all.length,
-    );
-  }
-
-  Future<void> _open(String route) async {
-    await Navigator.of(context).pushNamed(route);
-    if (!mounted) {
-      return;
-    }
-    setState(() => _revision++);
-  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool isDemo = SessionScope.of(context).isDemoSession;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('لوحة الإدارة')),
       body: SafeArea(
+        bottom: false,
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
@@ -86,92 +58,124 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  const DemoBanner(),
-                  Text(
-                    'قرارات التوثيق والمراجعة تُفرض في قواعد Firestore '
-                    'بالادعاء الإداري، فلا تكفي هذه الشاشة لمنح صلاحية.',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AsyncView<AdminOverview>(
-                    key: ValueKey<int>(_revision),
-                    load: _load,
-                    builder: (BuildContext context, AdminOverview data) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: _StatTile(
-                                  icon: Icons.hourglass_top_rounded,
-                                  label: 'بانتظار التوثيق',
-                                  value: '${data.queue.length}',
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: _StatTile(
-                                  icon: Icons.flag_outlined,
-                                  label: 'بلاغات مفتوحة',
-                                  value: '${data.reports.length}',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: _StatTile(
-                                  icon: Icons.verified_outlined,
-                                  label: 'ملفات موثّقة',
-                                  value: '${data.verifiedCount}',
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: _StatTile(
-                                  icon: Icons.folder_copy_outlined,
-                                  label: 'كل الملفات',
-                                  value: '${data.totalProfiles}',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.sectionGap),
-                          const SectionHeader(title: 'الأقسام'),
-                          AppCard(
-                            onTap: () => _open(RoutePaths.adminVerification),
-                            child: _EntryRow(
-                              icon: Icons.badge_outlined,
-                              title: 'طابور التوثيق',
-                              subtitle:
-                                  '${data.queue.length} ملف بانتظار قرار',
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          AppCard(
-                            onTap: () => _open(RoutePaths.adminModeration),
-                            child: _EntryRow(
-                              icon: Icons.reviews_outlined,
-                              title: 'المراجعة والبلاغات',
-                              subtitle:
-                                  '${data.reports.length} بلاغ مفتوح · أحدث '
-                                  'التقييمات',
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sectionGap),
-                          const InfoNote(
-                            text: 'الملف غير الموثّق لا يظهر للطلاب ولا يقبل '
-                                'حجزًا، والفرض في القواعد لا في الواجهة.',
-                          ),
-                        ],
+                  if (isDemo) const DemoBanner(),
+                  const SizedBox(height: AppSpacing.sm),
+                  AsyncView<_AdminOverview>(
+                    load: () async {
+                      // نقرأ الخدمات مرة واحدة **قبل** أي `await`: لا نستخدم
+                      // `BuildContext` بعد فجوة غير متزامنة.
+                      final AppServices services = AppServicesScope.of(context);
+                      final List<TeacherProfile> queue =
+                          await services.admin.listVerificationQueue();
+                      final List<ContentReport> reports =
+                          await services.admin.listOpenReports();
+                      final List<TeacherProfile> all =
+                          await services.admin.listAllProfiles();
+                      return _AdminOverview(
+                        queue: queue,
+                        reports: reports,
+                        verified: all
+                            .where(
+                              (TeacherProfile profile) =>
+                                  profile.status ==
+                                  TeacherProfileStatus.verified,
+                            )
+                            .length,
+                        featured: all
+                            .where(
+                              (TeacherProfile profile) =>
+                                  profile.isFeatured &&
+                                  profile.status ==
+                                      TeacherProfileStatus.verified,
+                            )
+                            .length,
                       );
                     },
+                    builder:
+                        (BuildContext context, _AdminOverview overview) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              _OverviewTile(
+                                icon: Icons.verified_user_outlined,
+                                title: 'طابور التوثيق',
+                                value: '${overview.queue.length}',
+                                caption: overview.queue.isEmpty
+                                    ? 'لا ملفات بانتظار قرار'
+                                    : 'ملف بانتظار قرار',
+                                accent: theme.colorScheme.primary,
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminVerification),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              _OverviewTile(
+                                icon: Icons.flag_outlined,
+                                title: 'البلاغات المفتوحة',
+                                value: '${overview.reports.length}',
+                                caption: overview.reports.isEmpty
+                                    ? 'لا بلاغات تحتاج مراجعة'
+                                    : 'بلاغ بانتظار حسم',
+                                accent: AppColors.demoForeground,
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminModeration),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              _OverviewTile(
+                                icon: Icons.school_outlined,
+                                title: 'المدرسون الموثّقون',
+                                value: '${overview.verified}',
+                                caption: 'يظهرون في بحث الطلاب',
+                                accent: theme.colorScheme.secondary,
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminVerification),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              // (P15) التمييز قرار إداري مستقل عن التوثيق.
+                              _OverviewTile(
+                                icon: Icons.workspace_premium_outlined,
+                                title: 'المدرسون المميزون',
+                                value: '${overview.featured}',
+                                caption: overview.featured == 0
+                                    ? 'لا أحد في شريط الرئيسية'
+                                    : 'يظهرون في شريط الرئيسية',
+                                accent: AppColors.accent,
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminFeatured),
+                              ),
+                            ],
+                          );
+                        },
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const SectionHeader(title: 'كيف تُفرض الصلاحية؟'),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        InfoNote(
+                          text:
+                              'كل قرار في هذه اللوحة (توثيق، رفض، حسم بلاغ، '
+                              'حذف تقييم) يُفحص في قواعد Firestore بشرط '
+                              'الادعاء الإداري على الخادم. إخفاء الشاشة هنا '
+                              'لتجربة أنظف فقط، وليس حماية.',
+                          icon: Icons.shield_outlined,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'الملف غير الموثّق لا يظهر في البحث ولا يستطيع قبول '
+                          'حجز أو طلب انضمام — القواعد تقرأ حالته من مستنده '
+                          'لحظة الكتابة، فلا تنفع إعادة تسمية الحالة في الواجهة.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.7,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                 ],
@@ -184,88 +188,58 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-/// خلية رقم كبير فوق تسمية صغيرة.
-class _StatTile extends StatelessWidget {
-  const _StatTile({
+/// بطاقة رقم واحد + عنوان + شرح، تنقل إلى الشاشة المتخصصة.
+class _OverviewTile extends StatelessWidget {
+  const _OverviewTile({
     required this.icon,
-    required this.label,
+    required this.title,
     required this.value,
+    required this.caption,
+    required this.accent,
+    required this.onTap,
   });
 
   final IconData icon;
-  final String label;
+  final String title;
   final String value;
+  final String caption;
+  final Color accent;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      onTap: onTap,
+      child: Row(
         children: <Widget>[
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            value,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+          CircleAvatar(
+            radius: AppSpacing.avatarSm / 2,
+            backgroundColor: accent.withAlpha(28),
+            child: Icon(icon, color: accent, size: 20),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(title, style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  caption,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          const SizedBox(width: AppSpacing.xs),
+          StatusChip(label: value, color: accent),
         ],
       ),
-    );
-  }
-}
-
-/// صف مدخل قسم: أيقونة + عنوان + سطر توضيحي + سهم.
-class _EntryRow extends StatelessWidget {
-  const _EntryRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    return Row(
-      children: <Widget>[
-        Icon(icon, color: theme.colorScheme.primary),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(title, style: theme.textTheme.titleMedium),
-              Text(
-                subtitle,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Icon(
-          Icons.chevron_left_rounded,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ],
     );
   }
 }

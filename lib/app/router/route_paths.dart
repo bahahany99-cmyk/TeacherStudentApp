@@ -66,6 +66,9 @@ abstract final class RoutePaths {
   /// لوحة الإدارة (P14) — محمية بـ[AdminGuard] وتُخفي عن غير المسؤول.
   static const String adminDashboard = '/admin';
 
+  /// إدارة المدرسين المميزين (P15) — تمييز الملفات الموثّقة.
+  static const String adminFeatured = '/admin/featured';
+
   /// طابور توثيق ملفات المدرسين (P14).
   static const String adminVerification = '/admin/teachers';
 
