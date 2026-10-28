@@ -464,6 +464,22 @@ jobs:
               print(f'::notice title=SHA-256 ({name})::{colon(hashlib.sha256(cert).hexdigest())}')
           PYEOF
 
+          # موقع مفتاح debug الذي استخدمه Gradle (يختلف حسب ANDROID_SDK_HOME).
+          # نطبعه لنعرف هل هو مفتاح مُثبَّت في صورة الـrunner (ثابت بين البناءات)
+          # أم مفتاح مُولَّد لحظيًا (بصمته تتغيّر كل بناء).
+          for candidate in \
+            "$HOME/.android/debug.keystore" \
+            "${ANDROID_SDK_HOME:-/none}/.android/debug.keystore" \
+            "${ANDROID_USER_HOME:-/none}/debug.keystore" \
+            "${ANDROID_HOME:-/none}/.android/debug.keystore"; do
+            if [ -f "$candidate" ]; then
+              FP=$(keytool -list -v -keystore "$candidate" -alias androiddebugkey \
+                     -storepass android -keypass android 2>/dev/null \
+                     | grep -m1 'SHA1:' | sed 's/.*SHA1: *//')
+              echo "::notice title=keystore:: $candidate → $FP"
+            fi
+          done
+
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
