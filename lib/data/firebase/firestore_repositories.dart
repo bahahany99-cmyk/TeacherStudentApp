@@ -1280,6 +1280,38 @@ class FirestoreGroupRepository implements GroupRepository {
       });
     });
   }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12).
+  ///
+  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
+  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        title: title,
+        body: body,
+      );
+    } on Object catch (error) {
+      log('notification push failed', name: 'notifications', error: error);
+    }
+  }
 }
 
 /// الجدول الأسبوعي — مجموعة فرعية `studyGroups/{id}/sessions`.
@@ -1417,38 +1449,6 @@ class FirestoreScheduleRepository implements ScheduleRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-
-  /// ينشئ إشعارًا «بأفضل جهد» (P12).
-  ///
-  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
-  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
-  Future<void> _notify({
-    required NotificationType type,
-    required String recipientId,
-    required String actorId,
-    required String actorName,
-    required String targetId,
-    String? title,
-    String? body,
-  }) async {
-    final NotificationRepository? repo = _notifications;
-    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
-      return;
-    }
-    try {
-      await repo.push(
-        type: type,
-        recipientId: recipientId,
-        actorId: actorId,
-        actorName: actorName,
-        targetId: targetId,
-        title: title,
-        body: body,
-      );
-    } on Object catch (error) {
-      log('notification push failed', name: 'notifications', error: error);
-    }
-  }
 
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -1799,7 +1799,7 @@ class FirestoreBookingRepository implements BookingRepository {
       });
 
       await _notify(
-        type: approved
+        type: approve
             ? NotificationType.bookingAccepted
             : NotificationType.bookingRejected,
         recipientId: decided.studentId ?? '',
@@ -1807,7 +1807,7 @@ class FirestoreBookingRepository implements BookingRepository {
         actorName: decided.teacherName,
         targetId: decided.id,
         body: NotificationRules.bodyFor(
-          type: approved
+          type: approve
               ? NotificationType.bookingAccepted
               : NotificationType.bookingRejected,
           actorName: decided.teacherName,
@@ -2267,6 +2267,38 @@ class FirestoreBookingRepository implements BookingRepository {
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12).
+  ///
+  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
+  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        title: title,
+        body: body,
+      );
+    } on Object catch (error) {
+      log('notification push failed', name: 'notifications', error: error);
+    }
+  }
 }
 
 /// المحادثات المباشرة في Firestore (P11).
@@ -2622,6 +2654,10 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
     return data != null && data['status'] == 'rejected';
   }
 
+  (String, Map<String, Object?>) _entry(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) => (doc.id, doc.data());
+
   /// ينشئ إشعارًا «بأفضل جهد» (P12).
   ///
   /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
@@ -2653,10 +2689,6 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
       log('notification push failed', name: 'notifications', error: error);
     }
   }
-
-  (String, Map<String, Object?>) _entry(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) => (doc.id, doc.data());
 }
 
 /// الإشعارات داخل التطبيق في Firestore (P12).
@@ -2824,38 +2856,6 @@ class FirestoreNotificationRepository implements NotificationRepository {
         createdAt: now,
       );
     });
-  }
-
-  /// ينشئ إشعارًا «بأفضل جهد» (P12).
-  ///
-  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
-  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
-  Future<void> _notify({
-    required NotificationType type,
-    required String recipientId,
-    required String actorId,
-    required String actorName,
-    required String targetId,
-    String? title,
-    String? body,
-  }) async {
-    final NotificationRepository? repo = _notifications;
-    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
-      return;
-    }
-    try {
-      await repo.push(
-        type: type,
-        recipientId: recipientId,
-        actorId: actorId,
-        actorName: actorName,
-        targetId: targetId,
-        title: title,
-        body: body,
-      );
-    } on Object catch (error) {
-      log('notification push failed', name: 'notifications', error: error);
-    }
   }
 
   (String, Map<String, Object?>) _entry(

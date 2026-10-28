@@ -31,8 +31,13 @@ AppServices _services({
   List<DirectChatMessage>? messages,
   Map<String, bool>? settings,
 }) {
-  final DemoBookingRepository bookings = DemoBookingRepository();
-  final DemoGroupRepository groups = DemoGroupRepository();
+  final DemoNotificationRepository notifications = DemoNotificationRepository();
+  final DemoBookingRepository bookings = DemoBookingRepository(
+    notifications: notifications,
+  );
+  final DemoGroupRepository groups = DemoGroupRepository(
+    notifications: notifications,
+  );
   return AppServices(
     auth: const DemoAuthService(),
     teachers: DemoTeacherRepository(),
@@ -44,7 +49,9 @@ AppServices _services({
       settings: settings,
       findBooking: bookings.findById,
       isMember: groups.isMember,
+      notifications: notifications,
     ),
+    notifications: notifications,
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
   );
