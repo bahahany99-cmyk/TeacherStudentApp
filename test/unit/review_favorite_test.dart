@@ -214,7 +214,6 @@ void main() {
           bookingId: 'b1',
           teacherId: 't',
           studentId: 's1',
-          studentName: 'أ',
           rating: 5,
           createdAt: DateTime(2026, 10, 1),
         ),
@@ -222,7 +221,6 @@ void main() {
           bookingId: 'b3',
           teacherId: 't',
           studentId: 's3',
-          studentName: 'ج',
           rating: 5,
           createdAt: DateTime(2026, 10, 3),
         ),
@@ -230,7 +228,6 @@ void main() {
           bookingId: 'b2',
           teacherId: 't',
           studentId: 's2',
-          studentName: 'ب',
           rating: 4,
           createdAt: DateTime(2026, 10, 2),
         ),
@@ -277,7 +274,6 @@ void main() {
       final TeacherReview review = await repo.submit(
         booking: booking,
         studentId: _studentId,
-        studentName: 'طالب تجريبي',
         rating: 4,
         comment: 'شرح واضح',
       );
@@ -306,7 +302,6 @@ void main() {
       await repo.submit(
         booking: booking,
         studentId: _studentId,
-        studentName: 'طالب تجريبي',
         rating: 5,
       );
 
@@ -314,7 +309,6 @@ void main() {
         repo.submit(
           booking: booking,
           studentId: _studentId,
-          studentName: 'طالب تجريبي',
           rating: 1,
         ),
         throwsA(
@@ -339,7 +333,6 @@ void main() {
         repo.submit(
           booking: pending,
           studentId: _studentId,
-          studentName: 'طالب تجريبي',
           rating: 5,
         ),
         throwsA(isA<AppException>()),
@@ -352,7 +345,6 @@ void main() {
         repo.submit(
           booking: completed,
           studentId: 'student-last',
-          studentName: 'طالب آخر',
           rating: 5,
         ),
         throwsA(isA<AppException>()),
@@ -370,7 +362,6 @@ void main() {
         repo.submit(
           booking: booking,
           studentId: _studentId,
-          studentName: 'طالب تجريبي',
           rating: 9,
         ),
         throwsA(isA<AppException>()),
@@ -379,7 +370,6 @@ void main() {
         repo.submit(
           booking: booking,
           studentId: _studentId,
-          studentName: 'طالب تجريبي',
           rating: 5,
           comment: 'ا' * (ReviewRules.maxCommentLength + 1),
         ),
@@ -402,7 +392,6 @@ void main() {
       await repo.submit(
         booking: booking,
         studentId: _studentId,
-        studentName: 'طالب تجريبي',
         rating: 3,
       );
 

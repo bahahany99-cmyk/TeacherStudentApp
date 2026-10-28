@@ -36,11 +36,11 @@ abstract interface class ReviewRepository {
   /// يرفض مبكرًا (برسالة عربية) إن لم تنطبق G7 أو كان التقييم مكرّرًا؛
   /// والرفض النهائي يبقى للقواعد.
   ///
-  /// [studentName] يُنسخ من الحجز عند الكتابة لتطابقه القواعد.
+  /// **اسم الكاتب لا يُمرَّر:** يُنسخ من [booking] نفسه، لأن القواعد تقارنه
+  /// باسم الحجز حرفيًا — تمريره من الواجهة يفتح باب عدم تطابق يُفشل الكتابة.
   Future<TeacherReview> submit({
     required BookingRequest booking,
     required String studentId,
-    required String studentName,
     required int rating,
     String? comment,
   });

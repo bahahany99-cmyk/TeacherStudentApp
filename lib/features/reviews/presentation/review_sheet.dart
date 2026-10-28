@@ -57,7 +57,6 @@ class _ReviewSheetState extends State<_ReviewSheet> {
     final AppServices services = AppServicesScope.of(context);
     final SessionController session = SessionScope.read(context);
     final String studentId = CurrentStudent.idOf(session);
-    final String studentName = CurrentStudent.nameOf(session);
 
     final String? ratingProblem = ReviewRules.ratingProblem(
       _rating == 0 ? null : _rating,
@@ -76,7 +75,6 @@ class _ReviewSheetState extends State<_ReviewSheet> {
       await services.reviews.submit(
         booking: widget.booking,
         studentId: studentId,
-        studentName: studentName,
         rating: _rating,
         comment: _comment.text,
       );

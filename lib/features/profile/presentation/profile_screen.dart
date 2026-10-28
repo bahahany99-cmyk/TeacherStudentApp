@@ -143,14 +143,17 @@ class ProfileScreen extends StatelessWidget {
                       onTap: () => _showComingSoon(context),
                     ),
                     const Divider(height: 1),
-                    _ProfileTile(
-                      icon: Icons.favorite_border,
-                      label: 'المفضلة',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.favorites),
-                    ),
-                    const Divider(height: 1),
+                    // المفضلة للطالب (P13): المدرس لا يحفظ مدرسين ولا مجموعات.
+                    if (user?.role == UserRole.student) ...<Widget>[
+                      _ProfileTile(
+                        icon: Icons.favorite_border,
+                        label: 'المفضلة',
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pushNamed(RoutePaths.favorites),
+                      ),
+                      const Divider(height: 1),
+                    ],
                     _ProfileTile(
                       icon: Icons.notifications_none,
                       label: 'الإشعارات',

@@ -2989,7 +2989,6 @@ class FirestoreReviewRepository implements ReviewRepository {
   Future<TeacherReview> submit({
     required BookingRequest booking,
     required String studentId,
-    required String studentName,
     required int rating,
     String? comment,
   }) {
@@ -3078,7 +3077,8 @@ class FirestoreReviewRepository implements ReviewRepository {
           bookingId: fresh.id,
           teacherId: teacherId,
           studentId: studentId,
-          studentName: ReviewRules.normalize(studentName),
+          // الاسم منسوخ من الحجز (تقارنه القواعد باسم الحجز حرفيًا).
+          studentName: fresh.studentName,
           rating: rating,
           comment: trimmedComment.isEmpty ? null : trimmedComment,
           createdAt: now,

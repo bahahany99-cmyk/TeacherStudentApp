@@ -2413,7 +2413,6 @@ class DemoReviewRepository implements ReviewRepository {
   Future<TeacherReview> submit({
     required BookingRequest booking,
     required String studentId,
-    required String studentName,
     required int rating,
     String? comment,
   }) async {
@@ -2468,7 +2467,8 @@ class DemoReviewRepository implements ReviewRepository {
       bookingId: fresh.id,
       teacherId: teacherId,
       studentId: studentId,
-      studentName: ReviewRules.normalize(studentName),
+      // الاسم منسوخ من الحجز لا من الواجهة (مطابقة حرفية في القواعد).
+      studentName: ReviewRules.normalize(fresh.studentName),
       rating: rating,
       comment: cleanComment == null || cleanComment.isEmpty
           ? null
