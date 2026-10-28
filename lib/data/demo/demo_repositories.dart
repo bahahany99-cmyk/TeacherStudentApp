@@ -22,6 +22,7 @@ import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
@@ -1098,26 +1099,406 @@ class DemoMessageRepository implements MessageRepository {
 
 class DemoBookingRepository implements BookingRepository {
   DemoBookingRepository({List<BookingRequest>? source})
-    : _source = source ?? DemoData.bookings;
+    : _bookings = <BookingRequest>[...(source ?? DemoData.bookings)];
 
-  final List<BookingRequest> _source;
+  /// قائمة **قابلة للتغيير** محليًا: تسمح بتجربة الحجز والقبول في وضع الزائر
+  /// بلا خادم. تُفقد عند إغلاق التطبيق مثل بقية الوضع التجريبي (P10).
+  final List<BookingRequest> _bookings;
 
-  late final Future<List<BookingRequest>> _cache =
-      Future<List<BookingRequest>>.value(
-        List<BookingRequest>.unmodifiable(_source),
-      );
+  int _nextId = 1;
 
-  @override
-  Future<List<BookingRequest>> listMine() => _cache;
+  /// «قفل» يحاكي ذرّية المعاملة: كل قرار يقرأ التقويم ويكتبه بالترتيب، فلا
+  /// يقبل قراران متزامنان موعدين متقاطعين — نفس دور مستند التقويم اليومي في
+  /// Firestore (A-76).
+  Future<void> _tail = Future<void>.value();
 
-  @override
-  Future<BookingRequest?> findById(String id) {
-    for (final BookingRequest booking in _source) {
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final Completer<T> completer = Completer<T>();
+    _tail = _tail.then((_) async {
+      try {
+        completer.complete(await action());
+      } on Object catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  List<BookingRequest> _sorted() {
+    final List<BookingRequest> all = <BookingRequest>[..._bookings];
+    all.sort((BookingRequest a, BookingRequest b) {
+      final DateTime? left = a.startsAt;
+      final DateTime? right = b.startsAt;
+      if (left != null && right != null && left != right) {
+        return right.compareTo(left);
+      }
+      if (left != null && right == null) {
+        return -1;
+      }
+      if (left == null && right != null) {
+        return 1;
+      }
+      return b.requestedAt.compareTo(a.requestedAt);
+    });
+    return all;
+  }
+
+  BookingRequest? _find(String id) {
+    for (final BookingRequest booking in _bookings) {
       if (booking.id == id) {
-        return Future<BookingRequest?>.value(booking);
+        return booking;
       }
     }
-    return Future<BookingRequest?>.value(null);
+    return null;
+  }
+
+  void _replace(BookingRequest updated) {
+    final int index = _bookings.indexWhere(
+      (BookingRequest b) => b.id == updated.id,
+    );
+    if (index != -1) {
+      _bookings[index] = updated;
+    }
+  }
+
+  /// كل الحجوزات المؤكدة لمدرس — هي وحدها ما يشغل وقته.
+  List<BookingRequest> _acceptedFor(String teacherId) => _bookings
+      .where(
+        (BookingRequest b) => b.teacherId == teacherId && b.status.holdsSlot,
+      )
+      .toList(growable: false);
+
+  /// يرفع خطأ التعارض إن كان الموعد مشغولًا (مع تجاهل الطلب نفسه).
+  void _ensureNoConflict({
+    required String teacherId,
+    required DateTime startsAt,
+    required int durationMinutes,
+    required String bookingId,
+  }) {
+    final BookingRequest? conflict = BookingRules.findConflict(
+      start: startsAt,
+      durationMinutes: durationMinutes,
+      existing: _acceptedFor(teacherId),
+      ignoreId: bookingId,
+    );
+    if (conflict != null) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: BookingRules.conflictMessage,
+        debugMessage: 'booking conflict',
+      );
+    }
+  }
+
+  void _ensureSlot({
+    required DateTime startsAt,
+    required int durationMinutes,
+    required DateTime now,
+  }) {
+    final String? reason = BookingRules.slotBlockReason(
+      startsAt: startsAt,
+      durationMinutes: durationMinutes,
+      now: now,
+    );
+    if (reason != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: reason,
+        debugMessage: 'invalid booking slot',
+      );
+    }
+  }
+
+  @override
+  Future<List<BookingRequest>> listMine() async =>
+      List<BookingRequest>.unmodifiable(_sorted());
+
+  @override
+  Future<BookingRequest?> findById(String id) async => _find(id);
+
+  @override
+  Future<BookingRequest> createRequest({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required String subject,
+    required DateTime startsAt,
+    required int durationMinutes,
+    String? note,
+  }) {
+    return _serialized(() async {
+      final DateTime now = DateTime.now();
+      _ensureSlot(startsAt: startsAt, durationMinutes: durationMinutes, now: now);
+
+      final String trimmedSubject = subject.trim();
+      if (trimmedSubject.length < 3) {
+        throw const AppException.invalidInput(
+          overrideMessage: 'اكتب مادة الحصة (3 أحرف على الأقل).',
+        );
+      }
+      final String? cleanNote = note?.trim();
+      if (cleanNote != null && cleanNote.length > BookingRules.noteMax) {
+        throw AppException.invalidInput(
+          overrideMessage:
+              'الملاحظة أطول من ${BookingRules.noteMax} حرفًا.',
+        );
+      }
+
+      _ensureNoConflict(
+        teacherId: teacherId,
+        startsAt: startsAt,
+        durationMinutes: durationMinutes,
+        bookingId: '',
+      );
+
+      final BookingRequest request = BookingRequest(
+        id: 'demo-booking-new-${_nextId++}',
+        teacherId: teacherId,
+        teacherName: teacherName,
+        studentId: studentId,
+        studentName: studentName,
+        subject: trimmedSubject,
+        requestedAt: now,
+        status: BookingStatus.pending,
+        note: cleanNote == null || cleanNote.isEmpty ? null : cleanNote,
+        dateKey: BookingRulesLite.keyOf(startsAt),
+        startMinutes: BookingRulesLite.minutesOf(startsAt),
+        durationMinutes: durationMinutes,
+      );
+      _bookings.add(request);
+      return request;
+    });
+  }
+
+  @override
+  Future<BookingRequest> decideRequest({
+    required BookingRequest request,
+    required String teacherId,
+    required bool approve,
+  }) {
+    return _serialized(() async {
+      final BookingRequest current = _require(request.id);
+      final DateTime now = DateTime.now();
+      final String? reason = BookingRules.actionBlockReason(
+        booking: current,
+        viewer: BookingViewer.teacher,
+        action: approve ? BookingAction.accept : BookingAction.reject,
+        now: now,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'decision blocked',
+        );
+      }
+      if (current.teacherId != teacherId) {
+        throw const AppException.permission(debugMessage: 'not teacher');
+      }
+
+      if (!approve) {
+        final BookingRequest rejected = current.copyWith(
+          status: BookingStatus.rejected,
+          decidedAt: now,
+          decidedBy: teacherId,
+        );
+        _replace(rejected);
+        return rejected;
+      }
+
+      // قبول اقتراح الطالب يعني اعتماد موعده المقترح.
+      final BookingRequest accepted = current.status.isReschedule
+          ? current.applyingProposal(now, teacherId)
+          : current.copyWith(
+              status: BookingStatus.accepted,
+              decidedAt: now,
+              decidedBy: teacherId,
+            );
+      final DateTime? start = accepted.startsAt;
+      if (start == null) {
+        throw const AppException.invalidInput(
+          overrideMessage: 'الطلب بلا موعد محدد.',
+        );
+      }
+      _ensureNoConflict(
+        teacherId: teacherId,
+        startsAt: start,
+        durationMinutes: accepted.durationMinutes ?? 60,
+        bookingId: accepted.id,
+      );
+
+      _replace(accepted);
+      return accepted;
+    });
+  }
+
+  @override
+  Future<BookingRequest> cancelRequest({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+  }) {
+    return _serialized(() async {
+      final BookingRequest current = _require(request.id);
+      final DateTime now = DateTime.now();
+      final String? reason = BookingRules.actionBlockReason(
+        booking: current,
+        viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+        action: BookingAction.cancel,
+        now: now,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'cancel blocked',
+        );
+      }
+
+      final BookingRequest cancelled = current.copyWith(
+        status: BookingRules.cancelStatus(booking: current, now: now),
+        cancelledAt: now,
+        cancelledBy: actorId,
+      );
+      _replace(cancelled);
+      return cancelled;
+    });
+  }
+
+  @override
+  Future<BookingRequest> proposeReschedule({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+    required DateTime startsAt,
+  }) {
+    return _serialized(() async {
+      final BookingRequest current = _require(request.id);
+      final DateTime now = DateTime.now();
+      final String? reason = BookingRules.actionBlockReason(
+        booking: current,
+        viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+        action: BookingAction.proposeReschedule,
+        now: now,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'propose blocked',
+        );
+      }
+      _ensureSlot(
+        startsAt: startsAt,
+        durationMinutes: current.durationMinutes ?? 60,
+        now: now,
+      );
+
+      final BookingRequest proposed = current.copyWith(
+        status: BookingStatus.rescheduleProposed,
+        proposalDateKey: BookingRulesLite.keyOf(startsAt),
+        proposalStartMinutes: BookingRulesLite.minutesOf(startsAt),
+        proposedBy: byTeacher ? BookingActor.teacher : BookingActor.student,
+        proposedAt: now,
+      );
+      _replace(proposed);
+      return proposed;
+    });
+  }
+
+  @override
+  Future<BookingRequest> respondToProposal({
+    required BookingRequest request,
+    required String actorId,
+    required bool byTeacher,
+    required bool accept,
+  }) {
+    return _serialized(() async {
+      final BookingRequest current = _require(request.id);
+      final DateTime now = DateTime.now();
+
+      if (!accept) {
+        // رفض الوقت البديل يُنهي الطلب: لا موعد متفق عليه بين الطرفين.
+        final BookingRequest rejected = current.copyWith(
+          status: BookingStatus.rejected,
+          decidedAt: now,
+          decidedBy: actorId,
+        );
+        _replace(rejected);
+        return rejected;
+      }
+
+      final String? reason = BookingRules.actionBlockReason(
+        booking: current,
+        viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+        action: BookingAction.acceptProposal,
+        now: now,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'proposal response blocked',
+        );
+      }
+
+      final BookingRequest accepted = current.applyingProposal(now, actorId);
+      final DateTime? start = accepted.startsAt;
+      if (start == null) {
+        throw const AppException.invalidInput(
+          overrideMessage: 'الاقتراح بلا موعد محدد.',
+        );
+      }
+      _ensureNoConflict(
+        teacherId: accepted.teacherId ?? '',
+        startsAt: start,
+        durationMinutes: accepted.durationMinutes ?? 60,
+        bookingId: accepted.id,
+      );
+      _replace(accepted);
+      return accepted;
+    });
+  }
+
+  @override
+  Future<BookingRequest> completeRequest({
+    required BookingRequest request,
+    required String teacherId,
+  }) {
+    return _serialized(() async {
+      final BookingRequest current = _require(request.id);
+      final DateTime now = DateTime.now();
+      final String? reason = BookingRules.actionBlockReason(
+        booking: current,
+        viewer: BookingViewer.teacher,
+        action: BookingAction.complete,
+        now: now,
+      );
+      if (reason != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: reason,
+          debugMessage: 'complete blocked',
+        );
+      }
+
+      final BookingRequest completed = current.copyWith(
+        status: BookingStatus.completed,
+        decidedAt: now,
+        decidedBy: teacherId,
+      );
+      _replace(completed);
+      return completed;
+    });
+  }
+
+  BookingRequest _require(String id) {
+    final BookingRequest? booking = _find(id);
+    if (booking == null) {
+      throw const AppException.notFound(debugMessage: 'demo booking missing');
+    }
+    return booking;
   }
 }
 

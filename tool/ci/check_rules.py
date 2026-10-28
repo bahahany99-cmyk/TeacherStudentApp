@@ -13,6 +13,8 @@
 6. أن إزالة العضو تحرّر مقعدًا واحدًا، وأن قائمة الانتظار للمكتملة فقط.
 7. أن سعة المجموعة محدودة بـ40، وأن العضو يحمل `groupId` مطابقًا لمساره.
 8. أن حذف صفوف الطلبات/الانتظار للمالك مقيّد بالصفوف المفتوحة فقط.
+9. أن الحجوزات تبدأ بحالة pending وأن كل انتقال يحدد حقوله، وأن تقويم المدرس
+   اليومي لا يزيده غير المالك.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -182,7 +184,28 @@ def main() -> int:
     if "resource.data.status in ['waiting', 'promoted']" not in code:
         problems.append('حذف صفوف الانتظار غير مقيّد بالصفوف المفتوحة')
 
-    # 11) منع الحقول الإدارية في ملف المدرس
+    # 11) P10: الحجوزات وتقويم المدرس
+    if 'match /bookingRequests/{bookingId}' not in code:
+        problems.append('لا قواعد للحجوزات')
+    if "request.resource.data.status == 'pending'" not in code:
+        problems.append('الحجز لا يبدأ بحالة pending')
+    for fragment, message in (
+        ("'status', 'decidedAt', 'decidedBy'", 'الحقول المسموح تغييرها بقرار المدرس غير محددة'),
+        ("'status', 'cancelledAt', 'cancelledBy'", 'الحقول المسموح تغييرها بالإلغاء غير محددة'),
+        ("'status', 'proposalDateKey', 'proposalStartMinutes'", 'حقول اقتراح الوقت البديل غير محددة'),
+    ):
+        if fragment not in code:
+            problems.append(f'الحجوزات: {message}')
+    if 'request.resource.data.durationMinutes in [30, 45, 60, 90, 120]' not in code:
+        problems.append('الحجوزات: مدد الحصة غير مقيّدة')
+    if 'resource.data.proposedBy == \'teacher\'' not in code:
+        problems.append('الحجوزات: ردّ الطالب على الاقتراح غير مقيّد بمصدره')
+    if 'match /teacherCalendar/{calendarId}' not in code:
+        problems.append('لا قواعد لتقويم المدرس اليومي')
+    if 'request.resource.data.busy.size() <= resource.data.busy.size()' not in code:
+        problems.append('تقويم المدرس: الإزالة من غير المالك غير مقيّدة')
+
+    # 12) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):
         block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
         if field in block:

@@ -20,6 +20,9 @@ rules_version = '2';
 //   7. سعة المجموعة (P9): حدّ **صارم 40**، ولا تُقلَّب تحت المنضمين، ولا
 //      تتغيّر مع seatsTaken في كتابة واحدة. والنقل بين مجموعتين يحرّك مقعدًا
 //      في كل اتجاه ويُنشئ عضوية تحمل groupId مطابقًا لمسارها.
+//   9. الحجوزات (P10): الطالب ينشئ، والمدرس يقبل/يرفض/يعلن التنفيذ، والطرفان
+//      يلغيان ويقترحان وقتًا بديلًا — كل انتقال بقائمة حقول محددة. وتقويم يومي
+//      لكل مدرس يحوّل «هل الوقت مشغول؟» إلى قراءة مستند واحد داخل المعاملة.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -558,16 +561,210 @@ service cloud.firestore {
       );
     }
 
-    // ── 5) bookingRequests/{bookingId} ───────────────────────────────────────
-    // القراءة لطرفي الطلب فقط. الكتابة (إنشاء/قبول/رفض) لم تُفتح بعد.
+    // ── 5) bookingRequests/{bookingId} — الحجوزات (P10) ──────────────────────
+    // القراءة لطرفي الطلب فقط. الإنشاء للطالب، والقرار للمدرس، والإلغاء
+    // للطرفين، وكل انتقال مقيّد بقائمة الحقول المسموح بتغييرها (A-75).
+    //
+    // **ما لا تستطيع القواعد فرضه:** تقاطع المواعيد (تحتاج استعلامًا). لذلك
+    // يوجد مستند تقويم يومي لكل مدرس (5-ب) تكتبه المعاملة نفسها، وكشف التعارض
+    // في الطبقة الوسطى. القواعد تمنع أن يكتب التقويمَ غيرُ المدرس، أو أن يضيف
+    // أحدٌ حجزًا دون قرار مدرس.
     match /bookingRequests/{bookingId} {
+      function bookingKeys() {
+        return ['teacherId', 'teacherName', 'studentId', 'studentName',
+                'subject', 'note', 'status', 'requestedAt', 'dateKey',
+                'startMinutes', 'durationMinutes', 'decidedAt', 'decidedBy',
+                'cancelledAt', 'cancelledBy', 'proposalDateKey',
+                'proposalStartMinutes', 'proposedBy', 'proposedAt'];
+      }
+
+      function decisionKeys() {
+        return ['status', 'decidedAt', 'decidedBy'];
+      }
+
+      function cancellationKeys() {
+        return ['status', 'cancelledAt', 'cancelledBy'];
+      }
+
+      function proposalKeys() {
+        return ['status', 'proposalDateKey', 'proposalStartMinutes',
+                'proposedBy', 'proposedAt'];
+      }
+
+      // قبول اقتراح يحرّك الموعد إلى الوقت المقترح ويمسح حقول الاقتراح.
+      function acceptanceAfterProposalKeys() {
+        return ['status', 'decidedAt', 'decidedBy', 'dateKey', 'startMinutes',
+                'durationMinutes', 'proposalDateKey', 'proposalStartMinutes',
+                'proposedBy', 'proposedAt'];
+      }
+
+      function changedOnly(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      function validSlot() {
+        return request.resource.data.durationMinutes in [30, 45, 60, 90, 120]
+          && request.resource.data.startMinutes is int
+          && request.resource.data.startMinutes >= 480
+          && request.resource.data.startMinutes + request.resource.data.durationMinutes <= 1320
+          && request.resource.data.dateKey is string
+          && request.resource.data.dateKey.size() == 10;
+      }
+
+      function validProposal() {
+        return request.resource.data.proposalStartMinutes is int
+          && request.resource.data.proposalStartMinutes >= 480
+          && request.resource.data.proposalStartMinutes + resource.data.durationMinutes <= 1320
+          && request.resource.data.proposalDateKey is string
+          && request.resource.data.proposalDateKey.size() == 10
+          && request.resource.data.proposedAt is timestamp;
+      }
+
+      function isRequesterTeacher() {
+        return signedIn() && resource.data.teacherId == request.auth.uid;
+      }
+
+      function isRequesterStudent() {
+        return signedIn() && resource.data.studentId == request.auth.uid;
+      }
+
       allow read: if isAdmin()
         || (signedIn() && (
              request.auth.uid == resource.data.studentId
              || request.auth.uid == resource.data.teacherId
            ));
 
-      allow write: if isAdmin();
+      // الإنشاء: الطالب لنفسه، لمدرس آخر، بحالة pending وموعد صالح.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.teacherId is string
+        && request.resource.data.teacherId != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt is timestamp
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() >= 3
+        && request.resource.data.subject.size() <= 80
+        && request.resource.data.studentName is string
+        && request.resource.data.teacherName is string
+        && (!('note' in request.resource.data.keys())
+            || (request.resource.data.note is string
+                && request.resource.data.note.size() <= 200))
+        && validSlot()
+        && request.resource.data.keys().hasOnly(bookingKeys());
+
+      // (أ) ردّ المدرس على اقتراح وقت بديل: قبول (يصبح الوقت المقترح هو
+      // الموعد — نتحقق أنه هو نفسه) أو رفض (يُنهي الطلب).
+      allow update: if isRequesterTeacher()
+        && resource.data.status == 'rescheduleProposed'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(acceptanceAfterProposalKeys())
+        && (
+             request.resource.data.status == 'rejected'
+             || (
+                  request.resource.data.dateKey == resource.data.proposalDateKey
+                  && request.resource.data.startMinutes == resource.data.proposalStartMinutes
+                )
+           );
+
+      // (أ-٢) ردّ الطالب على اقتراح المدرس — نفس الشرطين بالضبط، بالدور الآخر.
+      allow update: if isRequesterStudent()
+        && resource.data.status == 'rescheduleProposed'
+        && resource.data.proposedBy == 'teacher'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(acceptanceAfterProposalKeys())
+        && (
+             request.resource.data.status == 'rejected'
+             || (
+                  request.resource.data.dateKey == resource.data.proposalDateKey
+                  && request.resource.data.startMinutes == resource.data.proposalStartMinutes
+                )
+           );
+
+      // (ب) المدرس يقبل طلبًا معلّقًا بلا اقتراح (الحقول الأساسية كما هي).
+      allow update: if isRequesterTeacher()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // (ج) المدرس يرفض طلبًا معلّقًا — بلا أي تغيير في الموعد المطلوب.
+      allow update: if isRequesterTeacher()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'rejected'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // (د) اقتراح وقت بديل: من أي طرف، لطلب معلّق أو مؤكد، بموعد صالح.
+      allow update: if (isRequesterTeacher() || isRequesterStudent())
+        && resource.data.status in ['pending', 'accepted']
+        && request.resource.data.status == 'rescheduleProposed'
+        && request.resource.data.proposedBy in ['teacher', 'student']
+        && validProposal()
+        && changedOnly(proposalKeys());
+
+      // (هـ) إلغاء: من أي طرف، والحالة تُصنَّف مبكرًا/متأخرًا في الطبقة الوسطى
+      // (التصنيف للعرض لا يمنح صلاحية، فالقواعد تقبل الحالتين).
+      allow update: if (isRequesterTeacher() || isRequesterStudent())
+        && resource.data.status in ['pending', 'accepted', 'rescheduleProposed']
+        && request.resource.data.status in ['cancelled', 'cancelledLate']
+        && request.resource.data.cancelledBy == request.auth.uid
+        && request.resource.data.cancelledAt is timestamp
+        && changedOnly(cancellationKeys());
+
+      // (و) إعلان التنفيذ: المدرس وحده، ولموعد مؤكد.
+      allow update: if isRequesterTeacher()
+        && resource.data.status == 'accepted'
+        && request.resource.data.status == 'completed'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // لا حذف: سجل الحجز يبقى بعد الإلغاء.
+      allow delete: if isAdmin();
+    }
+
+    // ── 5-ب) teacherCalendar/{teacherId_dateKey} — تقويم يومي (P10) ──────────
+    // مستند واحد لكل مدرس/يوم يحمل فترات محجوزة. وجوده يجعل قرار القبول
+    // وقراءة التقويم في معاملة واحدة، فيتسلسل القبولان المتزامنان (A-76).
+    //
+    // المالك يضيف/يحدّث، وأي مسجّل يستطيع **الحذف فقط** (لأن الطالب يلغي
+    // حجزه بنفسه فيحرّر وقته). الحذف لا يضيف وقتًا ولا يغيّر المالك.
+    match /teacherCalendar/{calendarId} {
+      function busyKeys() {
+        return ['teacherId', 'dateKey', 'busy'];
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.teacherId == request.auth.uid);
+
+      allow create: if signedIn()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.dateKey is string
+        && request.resource.data.busy is map
+        && request.resource.data.keys().hasOnly(busyKeys());
+
+      allow update: if signedIn()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.dateKey == resource.data.dateKey
+        && request.resource.data.keys().hasOnly(busyKeys())
+        && request.resource.data.busy is map
+        && (
+             // (أ) المدرس صاحب التقويم: يضيف أو يحرّر أي فترة.
+             request.auth.uid == resource.data.teacherId
+             // (ب) غيره: **إزالة فقط** — لا يزيد حجم الخريطة ولا يضيف مفاتيح.
+             || (
+                  request.resource.data.busy.size() <= resource.data.busy.size()
+                  && request.resource.data.busy.keys().hasOnly(resource.data.busy.keys())
+                )
+           );
+
+      allow delete: if isAdmin();
     }
 
     // ── 6) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────

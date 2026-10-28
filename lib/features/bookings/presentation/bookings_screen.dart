@@ -29,6 +29,8 @@ class BookingsScreen extends StatelessWidget {
       BookingStatus.accepted => AppColors.statusAccepted,
       BookingStatus.rejected => AppColors.statusRejected,
       BookingStatus.cancelled => AppColors.statusNeutral,
+      BookingStatus.cancelledLate => AppColors.statusRejected,
+      BookingStatus.rescheduleProposed => AppColors.statusPending,
       BookingStatus.completed => AppColors.statusAccepted,
     };
   }

@@ -41,6 +41,23 @@ int readInt(Object? value, {int fallback = 0}) {
   return fallback;
 }
 
+/// يقرأ رقمًا اختياريًا: `null` إن كانت القيمة غائبة أو ليست رقمًا.
+///
+/// يختلف عن [readInt] لأن الصفر قيمة صالحة (منتصف الليل = 0 دقيقة)، فلا يصلح
+/// كعلامة على الغياب.
+int? readOptInt(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.tryParse(value);
+  }
+  return null;
+}
+
 /// يقرأ عددًا عشريًا، أو قيمة افتراضية.
 double readDouble(Object? value, {double fallback = 0}) {
   if (value is num) {
@@ -108,16 +125,12 @@ GroupMeetingMode parseMeetingMode(Object? raw) {
 }
 
 /// يحوّل حالة طلب الحجز النصية إلى التعداد (الافتراضي: قيد الانتظار).
-BookingStatus parseBookingStatus(Object? raw) {
-  return switch (readString(raw)) {
-    'accepted' => BookingStatus.accepted,
-    'rejected' => BookingStatus.rejected,
-    'cancelled' => BookingStatus.cancelled,
-    'completed' => BookingStatus.completed,
-    'pending' => BookingStatus.pending,
-    _ => BookingStatus.pending,
-  };
-}
+BookingStatus parseBookingStatus(Object? raw) => BookingStatus.parse(raw);
+
+/// يحوّل من اقترح الوقت البديل (الافتراضي: المدرس — الأسلم لأن الطالب هو من
+/// يقبل افتراضيًا في الواجهة).
+BookingActor? parseBookingActor(Object? raw) =>
+    raw == null ? null : BookingActor.parse(raw);
 
 /// `teacherProfiles/{id}` → [TeacherProfile].
 ///
@@ -328,6 +341,17 @@ BookingRequest? bookingFromMap(String id, Map<String, Object?> data) {
         DateTime.fromMillisecondsSinceEpoch(0),
     status: parseBookingStatus(data['status']),
     note: readString(data['note']),
+    dateKey: readString(data['dateKey']),
+    startMinutes: readOptInt(data['startMinutes']),
+    durationMinutes: readOptInt(data['durationMinutes']),
+    decidedAt: readDate(data['decidedAt']),
+    decidedBy: readString(data['decidedBy']),
+    cancelledAt: readDate(data['cancelledAt']),
+    cancelledBy: readString(data['cancelledBy']),
+    proposalDateKey: readString(data['proposalDateKey']),
+    proposalStartMinutes: readOptInt(data['proposalStartMinutes']),
+    proposedBy: parseBookingActor(data['proposedBy']),
+    proposedAt: readDate(data['proposedAt']),
   );
 }
 

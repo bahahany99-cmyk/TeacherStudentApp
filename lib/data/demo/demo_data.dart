@@ -178,6 +178,10 @@ abstract final class DemoData {
       requestedAt: DateTime(2026, 10, 24, 18, 30),
       status: BookingStatus.pending,
       note: 'أحتاج حصة لمراجعة الوحدة الثانية.',
+      // موعد مقترح (P10): التاريخ ثابت مثل بقية البيانات التجريبية.
+      dateKey: '2026-10-26',
+      startMinutes: 18 * 60,
+      durationMinutes: 60,
     ),
     BookingRequest(
       id: 'demo-booking-2',
@@ -188,6 +192,11 @@ abstract final class DemoData {
       subject: 'اللغة العربية — النحو',
       requestedAt: DateTime(2026, 10, 20, 11, 0),
       status: BookingStatus.accepted,
+      dateKey: '2026-10-21',
+      startMinutes: 16 * 60,
+      durationMinutes: 60,
+      decidedAt: DateTime(2026, 10, 20, 12, 0),
+      decidedBy: 'demo-teacher-3',
     ),
     BookingRequest(
       id: 'demo-booking-3',
@@ -199,6 +208,11 @@ abstract final class DemoData {
       requestedAt: DateTime(2026, 10, 12, 9, 15),
       status: BookingStatus.rejected,
       note: 'الموعد غير مناسب حاليًا.',
+      dateKey: '2026-10-14',
+      startMinutes: 17 * 60,
+      durationMinutes: 45,
+      decidedAt: DateTime(2026, 10, 12, 10, 0),
+      decidedBy: 'demo-teacher-2',
     ),
   ];
 
