@@ -202,8 +202,13 @@ void main() {
     });
 
     test('أمس وما قبله ثم تاريخ صريح', () {
+      // 17 ساعة تبقى «قبل ساعات»؛ و«أمس» بعد تجاوز 24 ساعة بيوم تقويمي واحد.
       expect(
         NotificationRules.relativeTime(DateTime(2026, 10, 27, 22), now: now),
+        'قبل 17 ساعة',
+      );
+      expect(
+        NotificationRules.relativeTime(DateTime(2026, 10, 27, 10), now: now),
         'أمس',
       );
       expect(
@@ -290,6 +295,14 @@ void main() {
           DemoNotificationRepository(source: <AppNotification>[]);
       final DemoGroupRepository groups = DemoGroupRepository(
         notifications: notifications,
+      );
+
+      // المجموعة المكتملة (6/6) لا تُرقّي أحدًا: نرفع السعة أولًا كما يفعل
+      // المدرس فعلًا عندما يفتح مقعدًا.
+      await groups.updateGroupCapacity(
+        groupId: 'demo-group-5',
+        teacherId: 'demo-teacher-1',
+        seatsTotal: 7,
       );
 
       final List<GroupWaitlistEntry> waiting = await groups.listWaitlist(
