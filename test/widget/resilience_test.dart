@@ -133,7 +133,11 @@ void main() {
 
       // عودة الشبكة: نفس الشاشة تعيد القراءة بلا إعادة تشغيل التطبيق.
       plan.alwaysFail = false;
-      await tapVisible(tester, find.text('إعادة المحاولة').first);
+      // قسمان فشلا (المميزون والنتائج) ولكل منهما زرّه.
+      final int retries = find.text('إعادة المحاولة').evaluate().length;
+      for (int i = 0; i < retries; i++) {
+        await tapVisible(tester, find.text('إعادة المحاولة').first);
+      }
 
       expect(find.byType(FeaturedTeachersCarousel), findsOneWidget);
       expect(find.text('لا يوجد اتصال بالإنترنت'), findsNothing);

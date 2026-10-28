@@ -101,6 +101,17 @@ Widget _host(
   );
 }
 
+/// ينقل الرحلة إلى شجرة جديدة **بعد تفريغ الحالة السابقة**.
+///
+/// `pumpWidget` بنوع الجذر نفسه يعيد استخدام `State` القائم، فتبقى فلترة
+/// الشاشة السابقة وبياناتها المحمّلة. التفريغ بينهما يجعل كل طور يبدأ من
+/// الشاشة كما يراها المستخدم عند فتحها.
+Future<void> _resite(WidgetTester tester, Widget child) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pumpWidget(child);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('رحلة A — طالب يكتشف مدرسًا ويحجز ثم يقيّم (G7)', () {
     testWidgets('اكتشاف ← طلب حجز ← قبول ← محادثة ← حصة منفّذة ← تقييم', (
@@ -110,8 +121,7 @@ void main() {
       final AppServices services = _services();
 
       // (١) الطالب يكتشف مدرس «عن بُعد»: الفلتر يفصل الفئتين فعلًا.
-      await tester.pumpWidget(_host(services, const TeachersScreen()));
-      await tester.pumpAndSettle();
+      await _resite(tester, _host(services, const TeachersScreen()));
       await tapVisible(tester, find.widgetWithText(PillChip, 'عن بُعد'));
       await tester.pumpAndSettle();
       expect(
@@ -123,15 +133,15 @@ void main() {
       // (٢) نعود إلى القائمة بلا فلتر ونفتح ملف مدرس حضوري، لأن جلسة الزائر
       //     لها مدرس واحد ثابت (`demo-teacher-1`) لا يمكن أن يقبل حجزًا
       //     موجّهًا إلى غيره — والقبول نفسه هو ما نختبره في الخطوة التالية.
-      await tester.pumpWidget(_host(services, const TeachersScreen()));
-      await tester.pumpAndSettle();
+      await _resite(tester, _host(services, const TeachersScreen()));
       await tapVisible(
         tester,
         find.widgetWithText(TeacherCard, 'أ. سارة الخطيب'),
       );
       expect(find.text('طلب حجز'), findsOneWidget);
+
+      // (٣) يطلب حجزًا: موعد مقترح (الافتراضي صالح) ثم إرسال.
       await tapVisible(tester, find.text('طلب حجز'));
-      // ورقة الطلب: نختار موعدًا (الافتراضي صالح) ثم نؤكده ثم نُرسل.
       await tapVisible(tester, find.text('اختر اليوم والساعة'));
       await tapVisible(tester, find.text('تأكيد الموعد'));
       await tapVisible(tester, find.text('إرسال الطلب'));
@@ -140,26 +150,26 @@ void main() {
       final BookingRequest created = (await services.bookings.listMine()).first;
       expect(created.status, BookingStatus.pending);
 
-      // (٣) المدرس يقبل الطلب من شاشة التفاصيل.
-      await tester.pumpWidget(
+      // (٤) المدرس يقبل الطلب من شاشة التفاصيل.
+      await _resite(
+        tester,
         _host(
           services,
           BookingDetailsScreen(bookingId: created.id),
           role: UserRole.teacher,
         ),
       );
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('قبول الطلب'));
       expect(
         (await services.bookings.findById(created.id))!.status,
         BookingStatus.accepted,
       );
 
-      // (٤) المحادثة تُفتح من أصل موثّق (الحجز المقبول) ويُرسل الطالب رسالة.
-      await tester.pumpWidget(
+      // (٥) المحادثة تُفتح من أصل موثّق (الحجز المقبول) ويُرسل الطالب رسالة.
+      await _resite(
+        tester,
         _host(services, BookingDetailsScreen(bookingId: created.id)),
       );
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('محادثة بخصوص الطلب'));
       expect(find.text('محادثة مباشرة'), findsOneWidget);
 
@@ -168,25 +178,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('إلى اللقاء في الموعد.'), findsOneWidget);
 
-      // (٥) إعلان التنفيذ قبل انتهاء الموعد مرفوض برسالة عربية صريحة —
+      // (٦) إعلان التنفيذ قبل انتهاء الموعد مرفوض برسالة عربية صريحة —
       // هذا هو السلوك الصحيح، لا نُعلن تنفيذ حصة لم تبدأ.
-      await tester.pumpWidget(
+      await _resite(
+        tester,
         _host(
           services,
           BookingDetailsScreen(bookingId: created.id),
           role: UserRole.teacher,
         ),
       );
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('إعلان التنفيذ'));
       expect(find.textContaining('قبل انتهاء موعد الحصة'), findsOneWidget);
 
-      // (٦) بدل انتظار الوقت، نستخدم حجزًا منفّذًا في البيانات التجريبية
+      // (٧) بدل انتظار الوقت، نستخدم حجزًا منفّذًا في البيانات التجريبية
       // لتكملة الرحلة إلى التقييم (G7): لا تقييم بلا حصة منفّذة.
-      await tester.pumpWidget(
-        _host(services, const BookingDetailsScreen(bookingId: 'demo-booking-4')),
+      await _resite(
+        tester,
+        _host(
+          services,
+          const BookingDetailsScreen(bookingId: 'demo-booking-4'),
+        ),
       );
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('قيّم الحصة'));
       await tester.tap(find.byIcon(Icons.star_outline_rounded).at(4));
       await tester.pumpAndSettle();
@@ -205,21 +218,37 @@ void main() {
   });
 
   group('رحلة B — خصوصية المدرس تُحترم في الاتجاهين', () {
-    testWidgets('إغلاق «استقبال رسائل قبل الحجز» يمنع الطالب بسببه', (
+    testWidgets('لا محادثة قبل الحجز، وتُفتح فور السماح', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
       final AppServices services = _services();
 
-      // المدرس يغلق الاستقبال من ملفه.
-      await tester.pumpWidget(
+      // (١) مدرس أوقف استقبال الرسائل قبل الحجز، ولا حجز بينه وبين الطالب.
+      expect(
+        await services.chats.allowDirectMessages('demo-teacher-2'),
+        isFalse,
+      );
+
+      await _resite(
+        tester,
         _host(
           services,
-          const MyTeacherProfileScreen(),
-          role: UserRole.teacher,
+          const TeacherProfileScreen(teacherId: 'demo-teacher-2'),
         ),
       );
-      await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('محادثة'));
+      expect(
+        find.textContaining('لا يستقبل رسائل قبل الحجز'),
+        findsOneWidget,
+        reason: 'المنع يشرح السبب ويقترح البديل، لا خطأ صلاحيات خام',
+      );
+
+      // (٢) المدرس يغيّر الخيار من واجهته الحقيقية (مدرّس الجلسة التجريبية).
+      await _resite(
+        tester,
+        _host(services, const MyTeacherProfileScreen(), role: UserRole.teacher),
+      );
       final Finder toggle = find.widgetWithText(
         SwitchListTile,
         'استقبال رسائل قبل الحجز',
@@ -228,42 +257,24 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-
       expect(
         await services.chats.allowDirectMessages('demo-teacher-1'),
         isFalse,
+        reason: 'المفتاح يكتب القرار فعلًا',
       );
 
-      // الطالب يحاول المراسلة: لا خطأ خادم، بل سبب مفهوم.
-      await tester.pumpWidget(
-        _host(services, const TeacherProfileScreen(teacherId: 'demo-teacher-1')),
+      // (٣) السماح (على مدرس الحالة الثانية) يفتح المحادثة فورًا بلا تغيير كود.
+      await services.chats.setAllowDirectMessages(
+        teacherId: 'demo-teacher-2',
+        allow: true,
       );
-      await tester.pumpAndSettle();
-      await tapVisible(tester, find.text('محادثة'));
-      expect(
-        find.textContaining('لا يستقبل رسائل قبل الحجز'),
-        findsOneWidget,
-        reason: 'المنع يشرح السبب ويقترح البديل، لا خطأ صلاحيات خام',
-      );
-
-      // المدرس يعيد تشغيلها، فتنجح المحادثة بلا تغيير في الكود.
-      await tester.pumpWidget(
+      await _resite(
+        tester,
         _host(
           services,
-          const MyTeacherProfileScreen(),
-          role: UserRole.teacher,
+          const TeacherProfileScreen(teacherId: 'demo-teacher-2'),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(toggle);
-      await tester.pumpAndSettle();
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-
-      await tester.pumpWidget(
-        _host(services, const TeacherProfileScreen(teacherId: 'demo-teacher-1')),
-      );
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('محادثة'));
       expect(find.text('محادثة مباشرة'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -276,10 +287,13 @@ void main() {
       final AppServices services = _services();
 
       // حجز مؤكد لم ينتهِ بعد: زر التقييم لا يظهر أصلًا.
-      await tester.pumpWidget(
-        _host(services, const BookingDetailsScreen(bookingId: 'demo-booking-1')),
+      await _resite(
+        tester,
+        _host(
+          services,
+          const BookingDetailsScreen(bookingId: 'demo-booking-1'),
+        ),
       );
-      await tester.pumpAndSettle();
       expect(find.text('قيّم الحصة'), findsNothing);
 
       // والمستودع نفسه يرفض الكتابة لو حاول أحد تجاوز الواجهة.
@@ -307,19 +321,18 @@ void main() {
       const String name = 'أ. خالد إبراهيم';
 
       // (١) قبل: لا يظهر للطالب.
-      await tester.pumpWidget(_host(services, const TeachersScreen()));
-      await tester.pumpAndSettle();
+      await _resite(tester, _host(services, const TeachersScreen()));
       expect(find.widgetWithText(TeacherCard, name), findsNothing);
 
       // (٢) المسؤول يوثّق الملف من طابور التوثيق.
-      await tester.pumpWidget(
+      await _resite(
+        tester,
         _host(
           services,
           const TeacherVerificationScreen(),
           role: UserRole.admin,
         ),
       );
-      await tester.pumpAndSettle();
 
       final Finder queueCard = find.ancestor(
         of: find.text(name),
@@ -333,27 +346,26 @@ void main() {
       expect(find.textContaining('تم توثيق'), findsOneWidget);
 
       // (٣) بعد: يظهر في بحث الطلاب بلا إعادة تشغيل.
-      await tester.pumpWidget(_host(services, const TeachersScreen()));
-      await tester.pumpAndSettle();
+      await _resite(tester, _host(services, const TeachersScreen()));
       expect(find.widgetWithText(TeacherCard, name), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('الرفض يحتاج سببًا مكتوبًا ولا يُوثّق الملف', (
+    testWidgets('الرفض يحتاج سببًا مكتوبًا ولا يوثّق الملف', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
       final AppServices services = _services();
       const String name = 'أ. خالد إبراهيم';
 
-      await tester.pumpWidget(
+      await _resite(
+        tester,
         _host(
           services,
           const TeacherVerificationScreen(),
           role: UserRole.admin,
         ),
       );
-      await tester.pumpAndSettle();
 
       final Finder queueCard = find.ancestor(
         of: find.text(name),

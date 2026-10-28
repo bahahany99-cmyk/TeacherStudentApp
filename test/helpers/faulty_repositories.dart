@@ -171,7 +171,9 @@ class FaultyDirectChatRepository extends DemoDirectChatRepository {
 
   @override
   Stream<List<DirectChatMessage>> watchMessages(String chatId) {
-    if (plan.alwaysFail || plan.take()) {
+    // عطل البثّ مربوط بـ`alwaysFail` وحده: عدّاد الطلبات مخصّص للعمليات
+    // (الإرسال/الفتح)، ولو استهلكه الاشتراك لفشل الإرسال اللاحق بلا سبب.
+    if (plan.alwaysFail) {
       // خطأ في التدفّق نفسه: هذا ما يحدث فعلًا عند سقوط الشبكة أثناء البثّ.
       return Stream<List<DirectChatMessage>>.error(plan.exception);
     }
