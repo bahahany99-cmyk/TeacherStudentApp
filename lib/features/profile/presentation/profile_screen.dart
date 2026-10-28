@@ -212,7 +212,7 @@ class ProfileScreen extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                       OutlinedButton(
                         onPressed: () => _switchRole(context, UserRole.admin),
-                        child: const Text('لوحة الإدارة'),
+                        child: const Text('واجهة الإدارة (تجريبي)'),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       OutlinedButton(

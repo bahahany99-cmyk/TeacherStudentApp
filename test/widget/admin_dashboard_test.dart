@@ -128,9 +128,13 @@ void main() {
       await tapVisible(tester, find.text('رفض').first);
       expect(find.text('سبب الرفض'), findsOneWidget);
 
-      // بلا سبب: رسالة خطأ ولا إغلاق للنافذة.
+      // بلا سبب: رسالة خطأ ولا إغلاق للنافذة (النص الدقيق لخطأ التحقق، لأن
+      // وصف النافذة نفسه يبدأ بالكلمات نفسها).
       await tapVisible(tester, find.text('تأكيد الرفض'));
-      expect(find.textContaining('اكتب سببًا واضحًا'), findsOneWidget);
+      expect(
+        find.text('اكتب سببًا واضحًا (٥ أحرف على الأقل) قبل حفظ القرار.'),
+        findsOneWidget,
+      );
 
       await tester.enterText(
         find.byType(TextField),

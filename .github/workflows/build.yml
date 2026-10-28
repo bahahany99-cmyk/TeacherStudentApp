@@ -171,6 +171,10 @@ jobs:
           status=0
           npm --prefix tool/rules_tests test > /tmp/rules.txt 2>&1 || status=$?
           tail -80 /tmp/rules.txt
+          # الملخّص دائمًا (نجاحًا أو فشلًا): عدد الفاشل يحدّد إن كان العطل في
+          # الاختبارات أم في تشغيل المحاكي نفسه.
+          grep -E "^ℹ (tests|pass|fail) " /tmp/rules.txt | tr '\n' ' ' \
+            | xargs -r -0 echo "::notice title=rules-summary::" || true
 
           if [ "$status" -ne 0 ]; then
             python3 tool/ci/annotate_log.py /tmp/rules.txt "firestore-rules"

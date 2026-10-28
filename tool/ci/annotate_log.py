@@ -47,7 +47,13 @@ HIGH_PRIORITY = (
     'failing tests',
     'AssertionError',
     'EXCEPTION CAUGHT',
+    'Error:',
+    'error •',
+    'FAILED',
 )
+
+# سطور نهاية السجل: فيها ملخّص `node --test` (`ℹ fail`) وسطر خروج الأداة.
+TAIL_LINES = 40
 
 
 def escape(value: str) -> str:
@@ -87,9 +93,13 @@ def main() -> int:
     candidates.sort(key=lambda item: (item[0], item[1]))
     blocks: list[str] = [item[2] for item in candidates]
 
-    if not blocks:
-        tail = lines[-LINES_PER_BLOCK:]
-        blocks = ['\n'.join(tail)[:MAX_CHARS]] if tail else []
+    # ذيل السجل دائمًا: ملخّص الفشل الحقيقي يكون في آخر السطور، وكان يضيع
+    # حين تستهلك مقاطع الضجيج الحدّ الأقصى للـannotations.
+    tail = lines[-TAIL_LINES:]
+    if tail:
+        tail_block = '[النهاية]\n' + '\n'.join(tail)[:MAX_CHARS]
+        if tail_block not in blocks:
+            blocks.insert(0, tail_block)
 
     for number, block in enumerate(blocks[:MAX_ANNOTATIONS], start=1):
         print(f'::error title={title} ({number}/{len(blocks)})::{escape(block)}')
