@@ -361,8 +361,13 @@ def main() -> int:
         else:
             if "'isFeatured', 'featuredOrder'" not in curation:
                 problems.append('teacherProfiles: التمييز قد يغيّر حقولًا أخرى')
-            if 'affectedKeys().hasOnly' not in curation:
-                problems.append('teacherProfiles: التمييز بلا فحص affectedKeys')
+            # لا بد من diff على المستند السابق: `request.resource.data`
+            # وحدها ليست MapDiff، واستدعاء affectedKeys عليها خطأ وقت التنفيذ
+            # (أفشل مسار التمييز الناجح في 2026-10-28).
+            compact = curation.replace(' ', '').replace('\n', '')
+            if 'request.resource.data.diff(resource.data).affectedKeys().hasOnly' \
+                    not in compact:
+                problems.append('teacherProfiles: التمييز بلا diff().affectedKeys')
             if "resource.data.status == 'verified'" not in curation:
                 problems.append('teacherProfiles: تمييز ملف غير موثّق غير ممنوع')
             if 'featuredOrder <= 999' not in curation:
