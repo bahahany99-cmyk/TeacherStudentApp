@@ -10,7 +10,6 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
-import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
 
 import '../helpers/test_app.dart';
