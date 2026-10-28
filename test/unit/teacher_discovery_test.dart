@@ -335,4 +335,69 @@ void main() {
       );
     });
   });
+
+  group('المدرس المخفي بحذف الحساب (P17)', () {
+    const TeacherProfile hidden = TeacherProfile(
+      id: 'hidden-1',
+      displayName: 'أ. سارة المخفية',
+      subject: 'الرياضيات',
+      stage: 'الثانوية العامة',
+      area: 'المعادي',
+      bio: 'نبذة',
+      status: TeacherProfileStatus.verified,
+      isFeatured: true,
+      featuredOrder: 0,
+      isOnline: true,
+      isAccountHidden: true,
+    );
+
+    const TeacherProfile visible = TeacherProfile(
+      id: 'visible-1',
+      displayName: 'أ. سارة الظاهرة',
+      subject: 'الرياضيات',
+      stage: 'الثانوية العامة',
+      area: 'المعادي',
+      bio: 'نبذة',
+      status: TeacherProfileStatus.verified,
+      isFeatured: true,
+      featuredOrder: 1,
+      isOnline: true,
+    );
+
+    test('موثّق لكنه مخفي: لا بحث ولا شريط مميزين', () {
+      final List<TeacherProfile> source = <TeacherProfile>[hidden, visible];
+
+      final TeacherSearchResult result = TeacherDiscoveryRules.search(
+        source,
+        TeacherFilter.empty,
+      );
+      expect(
+        result.teachers.map((TeacherProfile t) => t.id),
+        <String>['visible-1'],
+      );
+      expect(result.total, 1);
+      expect(
+        TeacherDiscoveryRules.featured(source).map((TeacherProfile t) => t.id),
+        <String>['visible-1'],
+      );
+    });
+
+    test('المستودع التجريبي يسقطه من كل قوائم الاكتشاف', () async {
+      final DemoTeacherRepository repository = DemoTeacherRepository(
+        source: <TeacherProfile>[hidden, visible],
+      );
+
+      expect(
+        (await repository.listVerified()).map((TeacherProfile t) => t.id),
+        <String>['visible-1'],
+      );
+      expect(
+        (await repository.listFeatured()).map((TeacherProfile t) => t.id),
+        <String>['visible-1'],
+      );
+      expect((await repository.search(TeacherFilter.empty)).total, 1);
+      expect(await repository.findById('hidden-1'), isNull);
+      expect(await repository.findById('visible-1'), isNotNull);
+    });
+  });
 }

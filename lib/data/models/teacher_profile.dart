@@ -46,6 +46,7 @@ class TeacherProfile {
     this.isOnline = false,
     this.governorate,
     this.district,
+    this.isAccountHidden = false,
     this.rating = 0,
     this.reviewsCount = 0,
     this.priceHint,
@@ -91,6 +92,13 @@ class TeacherProfile {
   /// المركز/الحي داخل المحافظة — أدقّ ما يُعرض للطالب قبل الحجز.
   final String? district;
 
+  /// أخفى صاحبه ملفه بطلب حذف الحساب (P17).
+  ///
+  /// يُكتب في `teacherProfiles/{uid}` **في نفس حزمة** طلب الحذف، وتقرأه القاعدة
+  /// من المستند نفسه. البديل (قراءة `users/{uid}` من داخل القاعدة) أسقط كل ملف
+  /// مدرس لا مستند مستخدم له، لأن `get()` على مستند غائب خطأ لا `false` (A-102ب).
+  final bool isAccountHidden;
+
   final double rating;
   final int reviewsCount;
 
@@ -103,7 +111,10 @@ class TeacherProfile {
   final String? reviewNote;
 
   /// هل يظهر للطلاب؟ القاعدة الحقيقية تُفرض في قواعد Firestore.
-  bool get isVisibleToStudents => status == TeacherProfileStatus.verified;
+  ///
+  /// (P17) الملف المخفي بحذف الحساب لا يُعدّ ظاهرًا حتى لو بقي موثّقًا.
+  bool get isVisibleToStudents =>
+      status == TeacherProfileStatus.verified && !isAccountHidden;
 
   /// وصف المكان للعرض: «المعادي — القاهرة» ثم [area] كبديل للبيانات القديمة.
   ///
@@ -143,6 +154,7 @@ class TeacherProfile {
     bool? isOnline,
     String? governorate,
     String? district,
+    bool? isAccountHidden,
     double? rating,
     int? reviewsCount,
     String? priceHint,
@@ -162,6 +174,7 @@ class TeacherProfile {
       isOnline: isOnline ?? this.isOnline,
       governorate: governorate ?? this.governorate,
       district: district ?? this.district,
+      isAccountHidden: isAccountHidden ?? this.isAccountHidden,
       rating: rating ?? this.rating,
       reviewsCount: reviewsCount ?? this.reviewsCount,
       priceHint: priceHint ?? this.priceHint,

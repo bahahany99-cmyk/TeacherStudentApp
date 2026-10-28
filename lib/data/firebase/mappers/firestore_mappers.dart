@@ -163,6 +163,7 @@ TeacherProfile? teacherProfileFromMap(String id, Map<String, Object?> data) {
     isOnline: readBool(data['isOnline']),
     governorate: readString(data['governorate']),
     district: readString(data['district']),
+    isAccountHidden: readBool(data['accountHidden']),
     rating: readDouble(data['rating']),
     reviewsCount: readInt(data['reviewsCount']),
     priceHint: readString(data['priceHint']),

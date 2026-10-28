@@ -83,6 +83,36 @@ void main() {
       expect(profile.reviewsCount, 126);
     });
 
+    test('(P17) الملف المخفي بحذف الحساب لا يُعدّ ظاهرًا للطلاب', () {
+      final TeacherProfile? hidden = teacherProfileFromMap(
+        't1',
+        <String, Object?>{
+          'displayName': 'أ. سارة الخطيب',
+          'status': 'verified',
+          'accountHidden': true,
+        },
+      );
+
+      expect(hidden, isNotNull);
+      expect(hidden!.isAccountHidden, isTrue);
+      expect(hidden.status, TeacherProfileStatus.verified);
+      // موثّق لكنه مخفي: لا يظهر في البحث ولا في شريط المميزين.
+      expect(hidden.isVisibleToStudents, isFalse);
+
+      final TeacherProfile restored = hidden.copyWith(isAccountHidden: false);
+      expect(restored.isVisibleToStudents, isTrue);
+    });
+
+    test('غياب accountHidden يعني ملفًا ظاهرًا (مستندات ما قبل P17)', () {
+      final TeacherProfile profile = teacherProfileFromMap(
+        't1',
+        <String, Object?>{'displayName': 'أ. منى', 'status': 'verified'},
+      )!;
+
+      expect(profile.isAccountHidden, isFalse);
+      expect(profile.isVisibleToStudents, isTrue);
+    });
+
     test('مستند بلا اسم غير قابل للعرض', () {
       expect(teacherProfileFromMap('t1', <String, Object?>{}), isNull);
       expect(

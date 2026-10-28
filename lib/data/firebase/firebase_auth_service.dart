@@ -220,8 +220,10 @@ class FirebaseAuthService implements AuthService {
       final DocumentReference<Map<String, dynamic>> teacherProfile =
           _firestore.collection(teacherProfilesCollection).doc(uid);
       if ((await teacherProfile.get()).exists) {
+        // `false` لا حذفًا للحقل: الاستعلام يفلتر `accountHidden == false`،
+        // فمستند بلا الحقل لا يعود في نتائج الاكتشاف.
         batch.update(teacherProfile, <String, Object?>{
-          accountHiddenField: FieldValue.delete(),
+          accountHiddenField: false,
         });
       }
 
@@ -326,6 +328,9 @@ class FirebaseAuthService implements AuthService {
       'ownerId': uid,
       'displayName': displayName,
       'status': 'pendingReview',
+      // (P17) الحقل موجود منذ الإنشاء: استعلامات الاكتشاف تفلتر عليه، ومستند
+      // بلا الحقل لا يظهر في `where(accountHidden == false)`.
+      accountHiddenField: false,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }

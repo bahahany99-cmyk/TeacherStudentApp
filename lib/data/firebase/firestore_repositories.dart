@@ -145,6 +145,9 @@ class FirestoreTeacherRepository implements TeacherRepository {
     return _guard(() async {
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
           .where('status', isEqualTo: 'verified')
+          // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه هو ما يستبعد الملفات
+          // المخفية بحذف الحساب، فلا تعتمد على رفض القاعدة للملف.
+          .where('accountHidden', isEqualTo: false)
           .get();
       return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
     });
@@ -158,6 +161,7 @@ class FirestoreTeacherRepository implements TeacherRepository {
       // الوضع التجريبي، فلا يختلف الشريط بين البيئتين (P15).
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
           .where('status', isEqualTo: 'verified')
+          .where('accountHidden', isEqualTo: false)
           .where('isFeatured', isEqualTo: true)
           .get();
       return TeacherDiscoveryRules.featured(
@@ -171,10 +175,9 @@ class FirestoreTeacherRepository implements TeacherRepository {
     return _guard(() async {
       // شروط الخادم وحدها هنا؛ النص/المادة/المرحلة في العميل. كل شرط مساواة
       // على حقل واحد، فتكفي الفهارس الأحادية المرتّبة تلقائيًا.
-      Query<Map<String, dynamic>> query = _profiles.where(
-        'status',
-        isEqualTo: 'verified',
-      );
+      Query<Map<String, dynamic>> query = _profiles
+          .where('status', isEqualTo: 'verified')
+          .where('accountHidden', isEqualTo: false);
       switch (filter.delivery) {
         case TeacherDeliveryFilter.any:
           break;

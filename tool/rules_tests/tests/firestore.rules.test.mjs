@@ -3580,6 +3580,8 @@ const discoverDoc = (uid, overrides = {}) =>
     isOnline: false,
     governorate: 'القاهرة',
     district: 'المعادي',
+    // (P17) الحقل يُكتب منذ الإنشاء، وفلتر الاكتشاف عليه مساواة `false`.
+    accountHidden: false,
     ...overrides,
   });
 
@@ -4187,6 +4189,7 @@ describe('P17 — الملف المخفي بحذف الحساب يخرج من ا
   it('صاحب الملف يخفيه فيختفي عن الطلاب والزوار ويبقى له وللمسؤول', async () => {
     await seed([
       { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+      { path: 'teacherProfiles/teacher-2', data: discoverDoc('teacher-2') },
     ]);
 
     await assertSucceeds(
@@ -4200,21 +4203,16 @@ describe('P17 — الملف المخفي بحذف الحساب يخرج من ا
     await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
     await assertSucceeds(getDoc(doc(asAdmin(), 'teacherProfiles/teacher-1')));
 
-    // الاستعلام لا يعرضه. مع شرط على المستند نفسه، إمّا يُستبعد أو يُرفض
-    // الاستعلام كاملًا — وكلاهما يعني «غير قابل للاكتشاف».
-    let visible = [];
-    try {
-      const snapshot = await getDocs(
-        query(
-          collection(asStudent(), 'teacherProfiles'),
-          where('status', '==', 'verified'),
-        ),
-      );
-      visible = snapshot.docs.map((item) => item.id);
-    } catch (error) {
-      visible = [];
-    }
-    assert.deepEqual(visible, []);
+    // الاستعلام الذي يستخدمه التطبيق يفلتر العلم صريحًا (القواعد ليست فلترًا)،
+    // فيعود الملف المرئي وحده.
+    const snapshot = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.deepEqual(snapshot.docs.map((item) => item.id), ['teacher-2']);
   });
 
   it('الاستعادة تُعيد الملف للاكتشاف فورًا', async () => {
@@ -4229,7 +4227,7 @@ describe('P17 — الملف المخفي بحذف الحساب يخرج من ا
 
     await assertSucceeds(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        accountHidden: deleteField(),
+        accountHidden: false,
       }),
     );
 
