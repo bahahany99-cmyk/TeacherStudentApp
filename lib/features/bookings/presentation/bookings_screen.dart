@@ -59,7 +59,7 @@ class BookingsScreen extends StatelessWidget {
               SectionHeader(
                 title: isTeacher ? 'طلبات واردة' : 'طلباتي',
                 subtitle: isTeacher
-                    ? 'الموافقة/الرفض غير مفعّلة في هذه المرحلة'
+                    ? 'افتح الطلب للقبول أو الرفض أو اقتراح وقت بديل'
                     : 'كل طلب يظل بانتظار موافقة المدرس (C-08)',
               ),
               AsyncView<List<BookingRequest>>(
@@ -70,7 +70,7 @@ class BookingsScreen extends StatelessWidget {
                       icon: Icons.event_note_outlined,
                       title: 'لا توجد طلبات بعد',
                       message:
-                          'إنشاء طلبات الحجز وربطها بالخادم في مرحلة لاحقة.',
+                          'اطلب حصة من صفحة المدرس، وسيظهر الطلب هنا بحالته.',
                     );
                   }
                   return Column(

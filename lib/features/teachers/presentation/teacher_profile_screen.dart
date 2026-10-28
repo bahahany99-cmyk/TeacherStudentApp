@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
-import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
@@ -17,6 +15,7 @@ import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/features/bookings/presentation/booking_request_sheet.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
 
 /// ملف مدرس واحد — الصفحة التي يفتحها الطالب من قائمة المدرسين.
@@ -208,14 +207,11 @@ class _TeacherProfileBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.sectionGap),
         SizedBox(
           width: double.infinity,
-          child: OutlinedButton(
-            // الحجز غير منفّذ بعد؛ نعرض رسالة صريحة بدل زر يوهم بالعمل.
-            onPressed: () => AppSnackBar.show(
-              context,
-              '${AppStrings.comingSoon}: طلب الحجز يُضاف مع قسم الحجوزات.',
-              type: AppMessageType.info,
-            ),
-            child: const Text('طلب حجز'),
+          child: OutlinedButton.icon(
+            // طلب حجز فعلي (P10): يفتح ورقة الموعد ويكتب للمستودع.
+            onPressed: () => showBookingRequestSheet(context, teacher: teacher),
+            icon: const Icon(Icons.event_available_outlined, size: 18),
+            label: const Text('طلب حجز'),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
