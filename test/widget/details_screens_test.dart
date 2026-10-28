@@ -167,6 +167,16 @@ void main() {
       await tester.enterText(find.byType(TextFormField).first, '');
       await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
 
+      // الرسالة العامة تظهر بجوار زر الحفظ، فهي دليل أن التحقق جرى فعلًا.
+      expect(find.text('راجع الحقول المطلوبة قبل الحفظ.'), findsOneWidget);
+
+      // النموذج صار أطول من الشاشة (P15)، وقد يكون الحقل الأول خارج العرض
+      // بعد التمرير إلى «حفظ» — نصعد إليه لقراءة خطئه.
+      await tester.dragUntilVisible(
+        find.text('الاسم مطلوب'),
+        find.byType(ListView).first,
+        const Offset(0, 300),
+      );
       expect(find.text('الاسم مطلوب'), findsOneWidget);
     });
 
