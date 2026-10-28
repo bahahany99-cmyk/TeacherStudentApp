@@ -46,3 +46,7 @@ ui-debug.log
 *.iws
 .DS_Store
 Thumbs.db
+
+# ===== Python (أدوات CI) =====
+__pycache__/
+*.pyc

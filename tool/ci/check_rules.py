@@ -420,6 +420,13 @@ def main() -> int:
     if code.count('teacherVerified(request.auth.uid)') < 6:
         problems.append('P14: مسار قبول مدرس غير مشروط بالتوثيق')
 
+    # 15) P16: لا طلب حجز عند مدرس غير موثّق، والمهلة/الرسائل العربية موثّقة
+    bookings_block = block_starting_at(code, 'match /bookingRequests/{bookingId}')
+    if not bookings_block:
+        problems.append('bookingRequests: تعذّر تحديد كتلة القاعدة')
+    elif 'teacherVerified(request.resource.data.teacherId)' not in bookings_block:
+        problems.append('P16: طلب حجز لمدرس غير موثّق غير ممنوع')
+
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:
         print(f'مشاكل: {len(problems)}')

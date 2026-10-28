@@ -767,9 +767,13 @@ service cloud.firestore {
              || request.auth.uid == resource.data.teacherId
            ));
 
-      // الإنشاء: الطالب لنفسه، لمدرس آخر، بحالة pending وموعد صالح.
+      // الإنشاء: الطالب لنفسه، لمدرس **موثّق** آخر، بحالة pending وموعد صالح.
+      // (P16) شرط التوثيق هنا لا في الواجهة: الملف غير الموثّق لا يُقرأ للطلاب،
+      // وطلب حجز عليه يفتح باب إزعاج بلا حصة ممكنة. المدرس غير الموثّق يستطيع
+      // قراءة طلباته لكنه لا يستطيع قبولها (P14)، فلا معنى لوصول الطلب أصلًا.
       allow create: if signedIn()
         && request.resource.data.studentId == request.auth.uid
+        && teacherVerified(request.resource.data.teacherId)
         && request.resource.data.teacherId is string
         && request.resource.data.teacherId != request.auth.uid
         && request.resource.data.status == 'pending'

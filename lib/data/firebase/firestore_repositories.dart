@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:teacher_student_app/core/errors/app_exception.dart';
+import 'package:teacher_student_app/core/errors/request_timeout.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
@@ -100,11 +101,28 @@ abstract final class FirestoreCollections {
 ///
 /// نلتقط `FirebaseException` فقط؛ أي خطأ آخر يبقى كما هو ليُصنَّف «غير متوقع»
 /// في `toAppException` بدل أن نُخفيه كخطأ شبكة.
+/// ينفّذ طلب Firestore ويترجم أخطاءه إلى [AppException] عربية.
+///
+/// (P16) كل طلب محكوم بمهلة ([withRequestTimeout]): انقطاع الشبكة عند Firestore
+/// لا يعني فشلًا سريعًا بل إعادة محاولة صامتة، فتظل الشاشة «تحميل» بلا نهاية.
+/// بعد المهلة يصل للمستخدم خطأ شبكي مفهوم مع «إعادة المحاولة».
+///
+/// الأخطاء غير المتوقعة تُغلَّف أيضًا: الواجهة تعرض [AppException] فقط، فلا
+/// يصل نصّ استثناء إنجليزي إلى المستخدم ولا ينهار التطبيق.
 Future<T> _guard<T>(Future<T> Function() action) async {
   try {
-    return await action();
+    return await withRequestTimeout(action);
   } on FirebaseException catch (error) {
     throw firebaseCodeToException(error.code, debugMessage: error.message);
+  } on AppException {
+    rethrow;
+  } catch (error) {
+    throw AppException(
+      AppErrorKind.network,
+      debugMessage: error.toString(),
+      overrideMessage:
+          'تعذّر إتمام الطلب. تحقّق من الاتصال ثم أعد المحاولة.',
+    );
   }
 }
 
@@ -1715,6 +1733,9 @@ class FirestoreBookingRepository implements BookingRepository {
   CollectionReference<Map<String, dynamic>> get _calendar =>
       _firestore.collection(FirestoreCollections.teacherCalendar);
 
+  CollectionReference<Map<String, dynamic>> get _teacherProfiles =>
+      _firestore.collection(FirestoreCollections.teacherProfiles);
+
   DocumentReference<Map<String, dynamic>> _calendarDoc(
     String teacherId,
     String dateKey,
@@ -1762,6 +1783,19 @@ class FirestoreBookingRepository implements BookingRepository {
       ) async {
         // الطلب الجديد معلّق لا يشغل وقتًا، لكن نفحص التقويم حتى لا نرسل طلبًا
         // مصيره الرفض. الفحص النهائي عند القبول.
+        // (P16) لا طلب حجز لمدرس غير موثّق: الملف غير الموثّق غير قابل للقراءة
+        // للطلاب أصلًا، وطلب حجز عليه يفتح باب إزعاج بلا حصة ممكنة. القواعد
+        // تفرض الشرط نفسه (`teacherVerified`) فلا يُتجاوَز من عميل آخر.
+        final DocumentSnapshot<Map<String, dynamic>> profile = await transaction
+            .get(_teacherProfiles.doc(teacherId));
+        if ((profile.data() ?? const <String, dynamic>{})['status'] !=
+            'verified') {
+          throw const AppException.permission(
+            overrideMessage: 'لا يمكن إرسال طلب حجز لمدرس لم يُوثّق بعد.',
+            debugMessage: 'teacher not verified',
+          );
+        }
+
         final DocumentSnapshot<Map<String, dynamic>> calendar = await transaction
             .get(_calendarDoc(teacherId, dateKey));
         final Map<String, Map<String, int>> busy = _readBusy(calendar.data());

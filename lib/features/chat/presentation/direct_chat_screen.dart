@@ -14,6 +14,8 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/core/errors/app_exception.dart';
+import 'package:teacher_student_app/core/widgets/error_state.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
@@ -63,28 +65,41 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     // نلتقط المستودعين قبل أي `await` حتى لا نستخدم `context` بعده.
     final AppServices services = AppServicesScope.of(context);
     final DirectChatRepository repo = services.chats;
-    final bool allow = await repo.allowDirectMessages(chat.teacherId);
-    bool rejected = false;
-    final String? bookingId = chat.bookingId;
-    if (bookingId != null) {
-      final BookingRequest? booking = await services.bookings.findById(
-        bookingId,
-      );
-      rejected = booking?.status == BookingStatus.rejected;
+    try {
+      final bool allow = await repo.allowDirectMessages(chat.teacherId);
+      bool rejected = false;
+      final String? bookingId = chat.bookingId;
+      if (bookingId != null) {
+        final BookingRequest? booking = await services.bookings.findById(
+          bookingId,
+        );
+        rejected = booking?.status == BookingStatus.rejected;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resolvingAccess = false;
+        _blockedReason = DirectChatRules.sendBlockedReason(
+          chat: chat,
+          viewerId: viewerId,
+          allowDirectMessages: allow,
+          bookingRejected: rejected,
+        );
+        _accessResolved = true;
+      });
+    } catch (error) {
+      // (P16) فشل الشبكة أثناء التحقق: نفشل **مغلقين** — لا نرسل بلا معرفة
+      // الإعداد، ونقول للمستخدم ما حدث بدل تركه أمام زر لا يعمل بلا سبب.
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resolvingAccess = false;
+        _accessResolved = true;
+        _blockedReason = toAppException(error).message;
+      });
     }
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _resolvingAccess = false;
-      _blockedReason = DirectChatRules.sendBlockedReason(
-        chat: chat,
-        viewerId: viewerId,
-        allowDirectMessages: allow,
-        bookingRejected: rejected,
-      );
-      _accessResolved = true;
-    });
   }
 
   Future<void> _markRead(DirectChat chat, String viewerId) async {
@@ -92,11 +107,16 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
       return;
     }
     _markedReadFor = chat.id;
-    await AppServicesScope.of(context).chats.markRead(
-      chatId: chat.id,
-      viewerId: viewerId,
-      at: DateTime.now(),
-    );
+    try {
+      await AppServicesScope.of(context).chats.markRead(
+        chatId: chat.id,
+        viewerId: viewerId,
+        at: DateTime.now(),
+      );
+    } catch (_) {
+      // أفضل جهد: علامة القراءة ليست شرطًا لعرض الرسائل، وفقدانها بسبب شبكة
+      // متعثرة لا يستحق إزعاج المستخدم برسالة خطأ.
+    }
   }
 
   Future<void> _send(DirectChat chat, String viewerId, String viewerName) async {
@@ -143,6 +163,16 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         error.overrideMessage ?? error.message,
         type: AppMessageType.error,
       );
+    } catch (error) {
+      // (P16) أي استثناء غير متوقع يُترجم ولا يصل كسطر تقني.
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        toAppException(error).message,
+        type: AppMessageType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -179,6 +209,15 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     return const Padding(
                       padding: EdgeInsets.only(top: AppSpacing.xl),
                       child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  // (P16) انقطاع البثّ لا يعني «محادثة غير متاحة»: نعرض سببًا
+                  // حقيقيًا وزر إعادة محاولة يعيد الاشتراك.
+                  if (snapshot.hasError) {
+                    return ErrorState(
+                      error: snapshot.error!,
+                      onRetry: () => setState(() {}),
                     );
                   }
 
@@ -301,6 +340,12 @@ class _ChatBody extends StatelessWidget {
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       !snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return ErrorState(
+                      error: snapshot.error!,
+                      onRetry: () => setState(() {}),
+                    );
                   }
                   final List<DirectChatMessage> messages =
                       snapshot.data ?? const <DirectChatMessage>[];

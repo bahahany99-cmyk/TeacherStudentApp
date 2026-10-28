@@ -3810,3 +3810,188 @@ describe('P15 — التمييز إداري وحده', () => {
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P16 — الأمان والحدود: السيناريوهات الواقعية والتزامن
+
+/** طلب حجز صالح للموعد الافتراضي (2026-11-01، 10:00 صباحًا، ساعة). */
+const slotDateKey = '2026-11-01';
+const slotStart = 600;
+
+const newBooking = (overrides = {}) => ({
+  ...bookingDoc('student-1', 'teacher-1'),
+  dateKey: slotDateKey,
+  startMinutes: slotStart,
+  durationMinutes: 60,
+  ...overrides,
+});
+
+describe('P16 — الطالب لا يطلب حجزًا عند مدرس غير موثّق', () => {
+  it('ملف غير موثّق ⇒ الطلب مرفوض قبل أن يصل', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+    ]);
+
+    await assertFails(
+      setDoc(doc(asStudent(), 'bookingRequests/b9'), newBooking()),
+    );
+  });
+
+  it('غياب الملف نهائيًا = غير موثّق (لا طلب إلى مجهول)', async () => {
+    await testEnv.clearFirestore();
+
+    await assertFails(
+      setDoc(doc(asStudent(), 'bookingRequests/b9'), newBooking()),
+    );
+  });
+
+  it('ملف موثّق ⇒ الطلب يمرّ، والموعد غير الصالح يبقى مرفوضًا', async () => {
+    await assertSucceeds(
+      setDoc(doc(asStudent(), 'bookingRequests/b9'), newBooking()),
+    );
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'bookingRequests/b10'),
+        newBooking({ durationMinutes: 7 }),
+      ),
+    );
+  });
+});
+
+describe('P16 — التزامن: قبولان متزامنان على الموعد نفسه', () => {
+  /**
+   * نفس ما يفعله المستودع: قراءة التقويم اليومي وكتابة القبول في **معاملة
+   * واحدة**، فالطلب الثاني يُعاد تشغيله ثم يرى الفترة مشغولة فيفشل.
+   */
+  const acceptWithCalendar = (bookingId) => {
+    const db = asTeacher();
+    return runTransaction(db, async (transaction) => {
+      const calendarRef = doc(db, `teacherCalendar/teacher-1_${slotDateKey}`);
+      const calendar = await transaction.get(calendarRef);
+      const busy = calendar.exists() ? (calendar.data().busy ?? {}) : {};
+      const clash = Object.keys(busy).some((key) => {
+        const otherStart = Number(key);
+        const otherEnd = otherStart + Number(busy[key]);
+        return otherStart < slotStart + 60 && slotStart < otherEnd;
+      });
+      if (clash) {
+        throw new Error('CONFLICT');
+      }
+      transaction.set(calendarRef, {
+        teacherId: 'teacher-1',
+        dateKey: slotDateKey,
+        busy: { ...busy, [String(slotStart)]: 60 },
+      });
+      transaction.update(doc(db, `bookingRequests/${bookingId}`), {
+        status: 'accepted',
+        decidedBy: 'teacher-1',
+        decidedAt: now(),
+      });
+    });
+  };
+
+  it('طلبان يتنافسان على نفس الوقت: قبول واحد فقط', async () => {
+    await seed([
+      { path: 'bookingRequests/b1', data: newBooking() },
+      {
+        path: 'bookingRequests/b2',
+        data: newBooking({ studentId: 'student-2' }),
+      },
+    ]);
+
+    const results = await Promise.allSettled([
+      acceptWithCalendar('b1'),
+      acceptWithCalendar('b2'),
+    ]);
+    const accepted = results.filter(
+      (result) => result.status === 'fulfilled',
+    ).length;
+
+    assert.equal(accepted, 1, 'لا يجوز قبول طلبين على الفترة نفسها');
+
+    const b1 = await readAsAdmin('bookingRequests/b1');
+    const b2 = await readAsAdmin('bookingRequests/b2');
+    const statuses = [b1.status, b2.status].sort();
+    assert.deepEqual(statuses, ['accepted', 'pending']);
+
+    // والتقويم فيه فترة واحدة لا فترتان.
+    const calendar = await readAsAdmin(
+      `teacherCalendar/teacher-1_${slotDateKey}`,
+    );
+    assert.equal(Object.keys(calendar.busy).length, 1);
+  });
+});
+
+describe('P16 — التزامن: تقييمان متزامنان لنفس الحصة', () => {
+  it('إرسالان متزامنان: تقييم واحد فقط يُكتب', async () => {
+    await seedCompletedBooking();
+
+    const submit = () =>
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-1', 'teacher-1'),
+      );
+
+    const results = await Promise.allSettled([submit(), submit()]);
+    const written = results.filter(
+      (result) => result.status === 'fulfilled',
+    ).length;
+
+    // الثاني إعادة كتابة على مستند قائم ⇒ القواعد ترفض التعديل (A-84).
+    assert.equal(written, 1, 'التقييم يُكتب مرة واحدة');
+
+    const stored = await readAsAdmin(reviewPath('b1'));
+    assert.equal(stored.rating, 5);
+  });
+});
+
+describe('P16 — حدود حقول الإدارة: الحالة والتمييز', () => {
+  it('صاحب الملف لا يرقّي نفسه إلى verified', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'verified',
+      }),
+    );
+  });
+
+  it('المسؤول وحده يصدر قرار التوثيق', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), {
+        status: 'verified',
+      }),
+    );
+
+    const stored = await readAsAdmin('teacherProfiles/teacher-1');
+    assert.equal(stored.status, 'verified');
+  });
+
+  it('الطالب لا يكتب التمييز ولا الترتيب', async () => {
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1,
+      }),
+    );
+  });
+});

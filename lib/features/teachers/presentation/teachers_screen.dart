@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
-import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
@@ -53,8 +52,10 @@ class _TeachersScreenState extends State<TeachersScreen> {
       if (mounted) {
         setState(() => _universe = teachers);
       }
-    } on AppException {
-      // لا نُفشل الشاشة بسبب خيارات الفلترة: البحث نفسه يعرض خطأه.
+    } catch (_) {
+      // (P16) لا نُفشل الشاشة بسبب خيارات الفلترة: البحث نفسه يعرض خطأه.
+      // والالتقاط عام: خطأ غير متوقع في هذا التحميل الثانوي لا يجوز أن يصل
+      // كاستثناء غير معالَج ويسقط الشاشة.
       _universe = const <TeacherProfile>[];
     }
   }

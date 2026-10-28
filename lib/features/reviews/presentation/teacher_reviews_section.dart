@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
@@ -42,6 +43,18 @@ class _TeacherReviewsSectionState extends State<TeacherReviewsSection> {
     _reviews = services.reviews.watchForTeacher(widget.teacherId);
   }
 
+  /// يعيد الاشتراك في التدفّقين بعد انقطاعهما (زر «إعادة المحاولة»).
+  ///
+  /// التدفّق المُنهى بالخطأ لا يُعاد تشغيله تلقائيًا؛ إنشاء تدفّق جديد هو
+  /// الطريقة الوحيدة لمعرفة أن الشبكة عادت.
+  void _resubscribe() {
+    final AppServices services = AppServicesScope.of(context);
+    setState(() {
+      _ratings = services.reviews.watchRating(widget.teacherId);
+      _reviews = services.reviews.watchForTeacher(widget.teacherId);
+    });
+  }
+
   String _dateLabel(DateTime value) {
     final String day = value.day.toString().padLeft(2, '0');
     final String month = value.month.toString().padLeft(2, '0');
@@ -62,6 +75,12 @@ class _TeacherReviewsSectionState extends State<TeacherReviewsSection> {
                 BuildContext context,
                 AsyncSnapshot<TeacherRating> snapshot,
               ) {
+                if (snapshot.hasError) {
+                  return _StreamErrorCard(
+                    error: snapshot.error!,
+                    onRetry: _resubscribe,
+                  );
+                }
                 final TeacherRating rating =
                     snapshot.data ?? TeacherRating.empty(widget.teacherId);
                 if (rating.isEmpty) {
@@ -121,6 +140,14 @@ class _TeacherReviewsSectionState extends State<TeacherReviewsSection> {
                 BuildContext context,
                 AsyncSnapshot<List<TeacherReview>> snapshot,
               ) {
+                if (snapshot.hasError) {
+                  // (P16) «لا توجد تقييمات» و«تعذّر تحميل التقييمات» ليسا
+                  // الشيء نفسه: الأول حكم على المدرس، والثاني حكم على الشبكة.
+                  return _StreamErrorCard(
+                    error: snapshot.error!,
+                    onRetry: _resubscribe,
+                  );
+                }
                 final List<TeacherReview> reviews =
                     snapshot.data ?? const <TeacherReview>[];
                 if (reviews.isEmpty) {
@@ -195,6 +222,47 @@ class _TeacherReviewsSectionState extends State<TeacherReviewsSection> {
               },
         ),
       ],
+    );
+  }
+}
+
+/// بطاقة خطأ لتدفّق منقطع داخل قسم التقييمات.
+///
+/// صغيرة عن قصد: القسم جزء من ملف المدرس، فلا يصحّ أن يغطّي انقطاع التقييمات
+/// الملف كله. تحمل الزر الذي يعيد الاشتراك.
+class _StreamErrorCard extends StatelessWidget {
+  const _StreamErrorCard({required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppException failure = toAppException(error);
+    final ThemeData theme = Theme.of(context);
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(failure.title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            failure.message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: onRetry,
+              child: const Text('إعادة المحاولة'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

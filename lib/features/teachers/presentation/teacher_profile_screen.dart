@@ -282,6 +282,15 @@ class _RatingSummaryRow extends StatelessWidget {
     return StreamBuilder<TeacherRating>(
       stream: AppServicesScope.of(context).reviews.watchRating(teacher.id),
       builder: (BuildContext context, AsyncSnapshot<TeacherRating> snapshot) {
+        // (P16) انقطاع البثّ يُقال صراحةً، فلا يُعرض رقم قديم أو «لا توجد
+        // تقييمات» كأنها حقيقة.
+        if (snapshot.hasError) {
+          return const DetailRow(
+            icon: Icons.star_rounded,
+            label: 'التقييم',
+            value: 'تعذّر تحميل التقييم الآن',
+          );
+        }
         final TeacherRating? rating = snapshot.data;
         return DetailRow(
           icon: Icons.star_rounded,
