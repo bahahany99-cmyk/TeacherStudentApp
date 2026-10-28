@@ -1,7 +1,9 @@
 # توقيع الإصدار (Release signing)
 
-> **الحالة:** مفتاح تجريبي أُنشئ محليًا في بيئة العمل (خارج المستودع)، ولم
-> يُرفع إلى Git ولا إلى أي خدمة. لم يُستخدم بعد في بناء فعلي.
+> **الحالة (P17):** مفتاح إصدار **دائم** أُنشئ في بيئة العمل بمفتاح RSA 2048
+> وشهادة SHA-256 صالحة 30 سنة، ومخزّن **خارج المستودع**. لم تُرفع أسراره إلى
+> GitHub Secrets بعد (الرفع يحتاج صلاحية `Secrets: write` غير متاحة للوكيل —
+> انظر §4)،所以在 CI ما زال البناء موقّعًا بمفتاح debug حتى ترفعها.
 
 ---
 
@@ -28,7 +30,9 @@
 | الصلاحية | 30 سنة (حتى 2056-10-19) |
 | alias | `darsly` |
 | storeType | `PKCS12` |
-| SHA-256 | `B6:C6:E8:5B:…:10:AE` (كاملًا في `CREDENTIALS.txt`) |
+| SHA-1 | `47:48:68:E2:9D:D9:AD:49:B2:FC:08:4F:CA:10:D5:46:84:8B:E8:6F` |
+| SHA-256 | `0B:5B:2E:67:1B:76:0D:5C:10:03:6B:79:EC:98:67:D4:67:26:B6:0C:9B:87:99:62:E8:54:1C:EC:C8:16:F5:7E` |
+| الصلاحية | حتى **2056-10-20** |
 
 ### لماذا PKCS12 وليس JKS؟
 
@@ -96,3 +100,32 @@ SHA-1: 32:41:37:29:48:46:D0:EB:E8:F6:5E:29:21:75:24:3E:05:FB:03:62
    (مدير كلمات مرور أو مخزن أسرار).
 4. المفتاح الحالي **تجريبي**. قبل أول نشر حقيقي، قرار صريح: استخدامه أو إنشاء
    مفتاح إنتاج منفصل.
+
+
+---
+
+## 4) رفع الأسرار إلى GitHub (خطوة يدوية واحدة — مطلوبة)
+
+حاول الوكيل رفعها آليًا فرفض GitHub:
+`HTTP 403: Resource not accessible by integration` على
+`/actions/secrets/public-key` — رمز التكامل لا يملك صلاحية `Secrets: write`
+(نفس العائق الذي يمنع `workflow_dispatch`).
+
+الطريقة الأسرع (سطر أوامر، على جهازك بعد نسخ مجلد `signing/` إلى جوار المستودع):
+
+```bash
+cd TeacherStudentApp
+bash ../signing/upload-secrets.sh
+# أو يدويًا:
+gh secret set DARSLY_KEYSTORE_BASE64 --repo bahahany99-cmyk/TeacherStudentApp < ../signing/darsly-release.p12.b64
+gh secret set DARSLY_STORE_PASSWORD  --repo bahahany99-cmyk/TeacherStudentApp   # ثم الصق الكلمة
+gh secret set DARSLY_KEY_ALIAS       --repo bahahany99-cmyk/TeacherStudentApp --body darsly
+gh secret set DARSLY_KEY_PASSWORD    --repo bahahany99-cmyk/TeacherStudentApp   # نفس كلمة المرور
+```
+
+أو من المتصفح: **Settings ← Secrets and variables ← Actions ← New repository
+secret** لأربعة أسماء أعلاه (القيم في `signing/CREDENTIALS.txt`).
+
+**التحقق بعد الرفع:** أي دفعة تحمل `[build-release]` ستطبع في صفحة التشغيل
+`::notice title=المفتاح::مفتاح إصدار من الأسرار (release)` ثم
+`SHA-1 <apk> = 47:48:68:E2:…` — أي مطابقة البصمة أعلاه. هذا هو دليل نجاح الربط.

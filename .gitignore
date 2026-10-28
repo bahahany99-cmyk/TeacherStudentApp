@@ -4,10 +4,15 @@
 *.pem
 *.key
 *.p12
+*.p12.b64
 *.jks
 *.keystore
+*.key
 key.properties
 secrets/
+# (P17) مجلد مفاتيح التوقيع وملف بياناته — يبقى خارج Git دائمًا.
+signing/
+CREDENTIALS.txt
 # إعداد Firebase المحلي (يُولَّد بأمر flutterfire configure — غير مُرفوع)
 google-services.json
 GoogleService-Info.plist
