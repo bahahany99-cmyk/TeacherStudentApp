@@ -395,41 +395,74 @@ jobs:
               print(f'::notice title=APK signing::{msg}')
           PYEOF
 
-      # بصمة الشهادة التي وُقّع بها الـAPK فعلًا.
+      # بصمة الشهادة **من داخل الـAPK نفسه**.
       #
-      # ⚠️ `keytool -printcert -jarfile` لا يقرأ إلا توقيع **v1 (JAR)**، والبناء
-      # هنا يخرج بتوقيعي v2/v3 فقط (minSdk 23)، فيفشل بلا سبب. البديل الصحيح:
-      # نقرأ **الـkeystore الذي استُخدم** — إما مفتاح الإصدار من الأسرار (عبر
-      # key.properties) أو مفتاح debug الذي يُنشئه Gradle — ونطبع بصمته.
-      - name: Report signing certificate fingerprints (SHA-1 / SHA-256)
+      # لماذا لا `keytool -printcert -jarfile`؟ لأنه يقرأ توقيع **v1 (JAR)** فقط،
+      # وبناءنا يخرج بتوقيعي v2/v3 (minSdk 23) فيفشل بلا شهادة. ولماذا لا نقرأ
+      # `~/.android/debug.keystore`؟ لأن مكانه يختلف حسب `ANDROID_SDK_HOME`
+      # (سقط هذا في أول محاولة). الحل: نقرأ كتلة توقيع APK مباشرة — أدقّ مصدر،
+      # وهو ما يُسجَّل حرفيًا في Firebase Console.
+      - name: Report APK certificate SHA-1 / SHA-256
         if: success()
         run: |
-          set -euo pipefail
-          if [ -f android/key.properties ]; then
-            STORE=$(grep '^storeFile=' android/key.properties | cut -d= -f2-)
-            ALIAS=$(grep '^keyAlias=' android/key.properties | cut -d= -f2-)
-            PASS=$(grep '^storePassword=' android/key.properties | cut -d= -f2-)
-            KEYPASS=$(grep '^keyPassword=' android/key.properties | cut -d= -f2- || true)
-            KEYPASS="${KEYPASS:-$PASS}"
-            KEYSTORE="android/app/$STORE"
-            echo "::notice title=المفتاح::مفتاح إصدار من الأسرار (release)"
-          else
-            KEYSTORE="$HOME/.android/debug.keystore"
-            ALIAS="androiddebugkey"
-            PASS="android"
-            KEYPASS="android"
-            echo "::warning title=المفتاح::لم تُضبط أسرار keystore — الـAPK موقّع بمفتاح debug مُولَّد على هذا الـrunner، وبصمته تتغيّر في كل بناء ولا تصحّ لـGoogle Sign-In على جهازك."
-          fi
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "::warning title=fingerprints::لم أجد $KEYSTORE"
-            exit 0
-          fi
-          OUT=$(keytool -list -v -keystore "$KEYSTORE" -alias "$ALIAS" \
-                  -storepass "$PASS" -keypass "$KEYPASS" 2>/dev/null)
-          SHA1=$(printf '%s\n' "$OUT" | grep -m1 'SHA1:' | sed 's/.*SHA1: *//')
-          SHA256=$(printf '%s\n' "$OUT" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
-          echo "::notice title=SHA-1::$SHA1"
-          echo "::notice title=SHA-256::$SHA256"
+          python3 - <<'PYEOF'
+          import glob, hashlib, os, struct
+
+          MAGIC = b'APK Sig Block 42'
+          V2, V3 = 0x7109871A, 0xF05368C0
+
+
+          def first_cert(der_bytes):
+              """يستخرج أول شهادة X.509 (DER) من كتلة توقيع v2/v3."""
+              eocd = der_bytes.rfind(b'PK\x05\x06')
+              if eocd < 0:
+                  return None
+              cd_off = struct.unpack_from('<I', der_bytes, eocd + 16)[0]
+              if der_bytes[cd_off - 16:cd_off] != MAGIC:
+                  return None
+              size = struct.unpack_from('<Q', der_bytes, cd_off - 24)[0]
+              pos, end = cd_off - size, cd_off - 24
+              blocks = {}
+              while pos < end:
+                  pair_len = struct.unpack_from('<Q', der_bytes, pos)[0]
+                  pair_id = struct.unpack_from('<I', der_bytes, pos + 8)[0]
+                  blocks[pair_id] = der_bytes[pos + 12:pos + 8 + pair_len]
+                  pos += 8 + pair_len
+              for scheme in (V2, V3):
+                  value = blocks.get(scheme)
+                  if not value:
+                      continue
+                  off = 4                                   # طول قائمة الموقّعين
+                  off += 4                                  # طول الموقّع الأول
+                  off += 4                                  # طول signed data
+                  digests_len = struct.unpack_from('<I', value, off)[0]
+                  off += 4 + digests_len                    # تجاوز البصمات
+                  off += 4                                  # طول قائمة الشهادات
+                  cert_len = struct.unpack_from('<I', value, off)[0]
+                  off += 4
+                  return value[off:off + cert_len]
+              return None
+
+
+          def colon(hexdigest):
+              h = hexdigest.upper()
+              return ':'.join(h[i:i + 2] for i in range(0, len(h), 2))
+
+
+          apks = sorted(glob.glob('build/app/outputs/flutter-apk/*.apk'))
+          if not apks:
+              print('::error title=fingerprints::لا يوجد APK')
+              raise SystemExit(1)
+          for apk in apks:
+              name = os.path.basename(apk)
+              with open(apk, 'rb') as handle:
+                  cert = first_cert(handle.read())
+              if cert is None:
+                  print(f'::warning title=fingerprints::{name}: تعذّر قراءة كتلة التوقيع')
+                  continue
+              print(f'::notice title=SHA-1 ({name})::{colon(hashlib.sha1(cert).hexdigest())}')
+              print(f'::notice title=SHA-256 ({name})::{colon(hashlib.sha256(cert).hexdigest())}')
+          PYEOF
 
       - name: Upload APK artifact
         if: success()
