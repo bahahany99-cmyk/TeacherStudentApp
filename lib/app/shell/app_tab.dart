@@ -6,7 +6,18 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 ///
 /// نستخدم تعدادًا بدل أرقام، حتى يكون التنقل مكتوبًا بالاسم
 /// (`AppTab.groups`) ولا يعتمد على ترتيب القائمة.
-enum AppTab { home, teachers, groups, bookings, profile }
+enum AppTab {
+  home,
+  teachers,
+  groups,
+  bookings,
+  profile,
+
+  /// (P14) أقسام الإدارة — لا تظهر لأي دور آخر.
+  adminHome,
+  adminVerification,
+  adminModeration,
+}
 
 /// وصف قسم: التسمية والأيقونات.
 class AppTabSpec {
@@ -101,8 +112,34 @@ abstract final class AppTabs {
     profile,
   ];
 
-  /// أقسام الدور الإداري (لوحة الإدارة لم تُنفَّذ بعد — P14).
-  static const List<AppTabSpec> admin = <AppTabSpec>[profile];
+  static const AppTabSpec adminHome = AppTabSpec(
+    tab: AppTab.adminHome,
+    label: 'الإدارة',
+    icon: Icons.space_dashboard_outlined,
+    selectedIcon: Icons.space_dashboard_rounded,
+  );
+
+  static const AppTabSpec adminVerification = AppTabSpec(
+    tab: AppTab.adminVerification,
+    label: 'التوثيق',
+    icon: Icons.verified_user_outlined,
+    selectedIcon: Icons.verified_user_rounded,
+  );
+
+  static const AppTabSpec adminModeration = AppTabSpec(
+    tab: AppTab.adminModeration,
+    label: 'المراجعة',
+    icon: Icons.flag_outlined,
+    selectedIcon: Icons.flag_rounded,
+  );
+
+  /// أقسام الدور الإداري (P14): لوحة، طابور توثيق، مراجعة، حساب.
+  static const List<AppTabSpec> admin = <AppTabSpec>[
+    adminHome,
+    adminVerification,
+    adminModeration,
+    profile,
+  ];
 
   static List<AppTabSpec> forRole(UserRole role) {
     return switch (role) {

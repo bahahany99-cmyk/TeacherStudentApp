@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/features/admin/domain/admin_roles.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -57,8 +58,18 @@ class SessionController extends ChangeNotifier {
 
   bool get isDemoSession => _user?.isDemoAccount ?? false;
 
-  /// دور المستخدم الحالي؛ يُستخدم لاختيار واجهة (طالب/مدرس) فقط.
+  /// دور المستخدم الحالي؛ يُستخدم لاختيار واجهة (طالب/مدرس/إدارة) فقط.
   UserRole? get role => _user?.role;
+
+  /// قيمة الادعاء الإداري كما قرأها الخادم (`request.auth.token.admin`).
+  bool get hasAdminClaim => _user?.hasAdminClaim ?? false;
+
+  /// هل الجلسة الحالية مسؤولة؟ (P14)
+  ///
+  /// ⚠️ **للعرض والحراسة فقط.** كل كتابة إدارية تُفحص في `firestore.rules`
+  /// عبر `request.auth.token.admin == true`، فلا قيمة أمنية لهذه القيمة هنا.
+  bool get isAdmin =>
+      AdminRoles.isAdmin(role: role, hasAdminClaim: hasAdminClaim);
 
   /// استرجاع الجلسة عند الإقلاع.
   Future<void> restore() async {
@@ -120,18 +131,25 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// بدء جلسة معاينة محلية بدور محدد.
+  /// بدء جلسة معاينة محلية بدور محدد (طالب/مدرس/إدارة).
   ///
   /// هذه ليست مصادقة ولا تُنشئ حسابًا؛ معطّلة عندما تعمل المصادقة الحقيقية.
+  ///
+  /// جلسة الإدارة (P14) **معاينة فقط**: تُعلَّم بأنها تجريبية وتحمل
+  /// `hasAdminClaim == true` محليًا حتى تُعرض لوحة الإدارة في الاختبارات
+  /// والمعاينة. لا تمنح أي صلاحية على خادم حقيقي — القواعد تقرأ رمز الهوية،
+  /// لا حالة الجلسة هنا.
   void startDemoSession(UserRole role) {
-    assert(role.isEndUser, 'لا يمكن بدء جلسة معاينة بدور إداري.');
     _user = AppUser(
       id: 'demo-${role.name}',
-      displayName: role == UserRole.teacher
-          ? DemoData.teacherName
-          : DemoData.studentName,
+      displayName: switch (role) {
+        UserRole.teacher => DemoData.teacherName,
+        UserRole.admin => DemoData.adminName,
+        UserRole.student => DemoData.studentName,
+      },
       role: role,
       isDemoAccount: true,
+      hasAdminClaim: role == UserRole.admin,
     );
     _pendingRole = null;
     _status = SessionStatus.signedIn;

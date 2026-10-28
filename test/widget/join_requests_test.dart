@@ -18,6 +18,7 @@ import '../helpers/test_app.dart';
 /// حزمة تجريبية بمستودع مجموعات مشترك (حتى نقرأ أثر القبول في الاختبار).
 AppServices _services(DemoGroupRepository groups) {
   return AppServices(
+    admin: DemoAdminRepository(),
     auth: const DemoAuthService(),
     teachers: DemoTeacherRepository(),
     groups: groups,

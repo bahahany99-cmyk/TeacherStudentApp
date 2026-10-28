@@ -24,6 +24,7 @@ AppServices _services({List<AppNotification>? notifications}) {
     source: notifications,
   );
   return AppServices(
+    admin: DemoAdminRepository(),
     auth: const DemoAuthService(),
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(notifications: repo),

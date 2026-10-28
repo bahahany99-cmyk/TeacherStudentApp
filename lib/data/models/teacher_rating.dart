@@ -48,6 +48,19 @@ class TeacherRating {
     ratingSum: ratingSum + rating,
   );
 
+  /// نسخة بعد **إزالة** تقييم (حذف إداري لمحتوى مخالف، P14).
+  ///
+  /// لا ينزل تحت الصفر: مستند بلا تقييمات يُحذف بدل أن يحمل عدًّا سالبًا.
+  TeacherRating minus(int rating) {
+    final int total = totalReviews > 0 ? totalReviews - 1 : 0;
+    final int sum = ratingSum > rating ? ratingSum - rating : 0;
+    return TeacherRating(
+      teacherId: teacherId,
+      totalReviews: total,
+      ratingSum: total == 0 ? 0 : sum,
+    );
+  }
+
   /// صيغة عربية سليمة للعدد (مثنى/جمع) بدل «1 تقييمات».
   static String _reviewsLabel(int count) {
     if (count == 1) {

@@ -154,7 +154,7 @@ void main() {
       );
 
       _expectTitle('ملفي التعريفي');
-      expect(find.text('معتمد'), findsOneWidget);
+      expect(find.text('موثّق'), findsOneWidget);
       expect(find.text('المعلومات الظاهرة للطلاب'), findsOneWidget);
       expect(find.text('تعديل المعلومات'), findsOneWidget);
     });

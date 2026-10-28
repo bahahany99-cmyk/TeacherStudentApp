@@ -164,6 +164,8 @@ class LoginScreen extends StatelessWidget {
                           _openDemoShell(context, UserRole.student),
                       onTeacherTap: () =>
                           _openDemoShell(context, UserRole.teacher),
+                      onAdminTap: () =>
+                          _openDemoShell(context, UserRole.admin),
                     ),
                   const SizedBox(height: AppSpacing.lg),
                 ],
@@ -205,10 +207,12 @@ class _DemoAccessCard extends StatelessWidget {
   const _DemoAccessCard({
     required this.onStudentTap,
     required this.onTeacherTap,
+    required this.onAdminTap,
   });
 
   final VoidCallback onStudentTap;
   final VoidCallback onTeacherTap;
+  final VoidCallback onAdminTap;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +287,18 @@ class _DemoAccessCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          // (P14) معاينة لوحة الإدارة: جلسة تجريبية فقط، ولا تمنح ادعاءً على
+          // الخادم — القواعد تقرأ رمز الهوية لا حالة الواجهة.
+          OutlinedButton.icon(
+            onPressed: onAdminTap,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+              textStyle: theme.textTheme.labelMedium,
+            ),
+            icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+            label: const Text('لوحة الإدارة (معاينة)'),
           ),
         ],
       ),

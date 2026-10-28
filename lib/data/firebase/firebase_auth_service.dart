@@ -28,11 +28,11 @@ import 'package:teacher_student_app/data/services/auth_service.dart';
 /// {
 ///   ownerId: uid,
 ///   displayName: String,
-///   status: 'pendingReview',   // لا يصبح 'approved' إلا من الإدارة
+///   status: 'pendingReview',   // لا يصبح 'verified' إلا بقرار إداري
 ///   createdAt: Timestamp,
 /// }
 /// ```
-/// ⚠️ الحقول أعلاه هي **كل** ما يكتبه التطبيق. لا يكتب `approved` ولا
+/// ⚠️ الحقول أعلاه هي **كل** ما يكتبه التطبيق. لا يكتب `verified` ولا
 /// `isFeatured` ولا `isAdmin`؛ تغيير الحالة الإدارية خارج التطبيق تمامًا.
 class FirebaseAuthService implements AuthService {
   FirebaseAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
@@ -267,8 +267,29 @@ class FirebaseAuthService implements AuthService {
         displayName: displayName,
         role: role,
         email: user.email,
+        hasAdminClaim: await _readAdminClaim(user),
       ),
     );
+  }
+
+  /// يقرأ الادعاء الإداري من رمز الهوية (P14).
+  ///
+  /// `getIdTokenResult()` يحدّث الرمز إن لزم، وقد يفشل بلا شبكة؛ في هذه الحالة
+  /// نعيد `false` بدل إفشال تسجيل الدخول: أسوأ ما يحدث أن تُخفى لوحة الإدارة
+  /// حتى إعادة المحاولة، والقواعد تبقى الحكم النهائي على الخادم.
+  Future<bool> _readAdminClaim(User user) async {
+    try {
+      final IdTokenResult token = await user.getIdTokenResult();
+      // `claims` نوعها يختلف بين إصدارات firebase_auth (قابلة للعدم أو لا)،
+      // فنقرؤها كـ`Object?` ثم نضيّقها — بلا `?.` ولا تحذير ثابت.
+      final Object? claims = token.claims;
+      if (claims is Map) {
+        return claims['admin'] == true;
+      }
+      return false;
+    } on Object {
+      return false;
+    }
   }
 
   UserRole? _roleFrom(Object? raw) {

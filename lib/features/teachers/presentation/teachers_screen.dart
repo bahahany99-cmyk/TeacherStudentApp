@@ -85,7 +85,7 @@ class TeachersScreen extends StatelessWidget {
                 subtitle: 'الملفات المعتمدة فقط',
               ),
               AsyncView<List<TeacherProfile>>(
-                load: () => AppServicesScope.of(context).teachers.listApproved(),
+                load: () => AppServicesScope.of(context).teachers.listVerified(),
                 builder: (BuildContext context, List<TeacherProfile> teachers) {
                   if (teachers.isEmpty) {
                     return const EmptyState(

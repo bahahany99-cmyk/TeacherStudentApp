@@ -5,10 +5,16 @@ rules_version = '2';
 //
 // السياسة المعتمدة (A-42، 2026-10-27):
 //   1. users/{uid}: قراءة/كتابة لصاحبه فقط، والدور لا يتغيّر بعد الكتابة الأولى.
-//   2. teacherProfiles/{uid}: القراءة العامة للملفات المعتمدة فقط؛ صاحبه يرى
-//      ملفه بكل حالاته ولا يستطيع تغيير status.
-//   3. لا وصول إداري من التطبيق: الاعتماد والتمييز بأدوات إدارية خارجية
-//      (Firebase Console أو سكربت بمفتاح خدمة لا يصل للتطبيق).
+//   2. teacherProfiles/{uid}: القراءة العامة للملفات **الموثّقة** فقط؛ صاحبه
+//      يرى ملفه بكل حالاته ولا يستطيع تغيير status.
+//   3. الإدارة (P14): لا وصول إداري بلا Custom Claim `admin` يُضبط بمفتاح خدمة
+//      خارج التطبيق. القرار (توثيق/رفض) وحسم البلاغات وحذف المحتوى المخالف
+//      كلها مشروطة بـ`request.auth.token.admin == true`، وقرار التوثيق مقيّد
+//      بقائمة حقول معلنة (لا يكتب المسؤول أي حقل آخر).
+//  14. الحجب قبل التوثيق (P14): المدرس غير الموثّق **لا يقبل** حجزًا ولا طلب
+//      انضمام ولا يرقّي منتظرًا (`teacherVerified()`)، ولا يظهر في البحث أصلًا.
+//      الفحص يقرأ ملفه من `teacherProfiles` في نفس المعاملة، فلا ينفع إخفاء
+//      الحالة في الواجهة.
 //   4. المجموعات (P7) وصاحبها فقط يكتب، والطلبات (P8) لكل طالب طلبه الواحد،
 //      وحجز المقعد زيادة واحدة ذرّية يقبلها الخادم لا الواجهة.
 //   5. الجدول والمحادثة (P9): يقرأهما صاحب المجموعة والأعضاء المقبولون فقط
@@ -65,6 +71,15 @@ service cloud.firestore {
       return signedIn() && request.auth.token.admin == true;
     }
 
+    // هل هذا المدرس **موثّق**؟ (P14)
+    //
+    // قراءة مستند واحد بمسار معروف، فتصلح داخل المعاملات أيضًا. الملف الغائب
+    // أو غير الموثّق = غير مخوّل: لا «موافقة ضمنية» لمدرس لم يُراجع.
+    function teacherVerified(uid) {
+      return exists(/databases/$(database)/documents/teacherProfiles/$(uid))
+        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.status == 'verified';
+    }
+
     // ── 1) users/{uid} ───────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isSelf(uid) || isAdmin();
@@ -95,7 +110,7 @@ service cloud.firestore {
     match /teacherProfiles/{uid} {
       // القراءة: الملف المعتمد للجميع، وصاحبه يرى ملفه بأي حالة.
       allow read: if isAdmin()
-        || resource.data.status == 'approved'
+        || resource.data.status == 'verified'
         || isSelf(uid);
 
       // الإنشاء: صاحبه فقط، وبداية دورة المراجعة إجبارية.
@@ -109,11 +124,36 @@ service cloud.firestore {
         && request.resource.data.displayName.size() > 0
         && request.resource.data.displayName.size() <= 80;
 
-      // التحديث: صاحبه يعدّل حقوله الوصفية فقط.
-      // - status و ownerId ثابتان (يُضبطان إداريًا أو عند الإنشاء).
+      // قائمة حقول المسؤول: كل الحقول الوصفية **زائد** حقول القرار الأربعة.
+      // `isFeatured` و`rating`/`reviewsCount` خارجها: التمييز قرار منتج لم
+      // يُحسم (Q-01..Q-03)، والتقييم يُحسب من `teacherRatings` لا يُكتب يدويًا.
+      function adminDecisionKeys() {
+        return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
+                'stage', 'area', 'bio', 'priceHint', 'reviewNote',
+                'reviewedAt', 'reviewedBy'];
+      }
+
+      // قرار إداري (P14): توثيق/رفض. لا يغيّر المالك، والحالة من المجموعة
+      // المعلنة، وسبب الرفض — إن وُجد — بنفس حدود `AdminRules.reasonProblem`.
+      function validAdminDecision() {
+        return request.resource.data.keys().hasOnly(adminDecisionKeys())
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.status in
+               ['draft', 'pendingReview', 'verified', 'rejected']
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 80
+          && (!('reviewNote' in request.resource.data.keys())
+              || (request.resource.data.reviewNote is string
+                  && request.resource.data.reviewNote.size() >= 5
+                  && request.resource.data.reviewNote.size() <= 200));
+      }
+
+      // التحديث: صاحبه يعدّل حقوله الوصفية فقط، والمسؤول يصدر قرارًا مقيّدًا.
+      // - status و ownerId ثابتان لصاحب الملف (يُضبطان إداريًا أو عند الإنشاء).
       // - isFeatured و rating و reviewsCount غير مذكورة في hasOnly ⇒ لا يكتبها
-      //   التطبيق إطلاقًا.
-      allow update: if isAdmin() || (
+      //   التطبيق إطلاقًا — ولا المسؤول كذلك.
+      allow update: if (isAdmin() && validAdminDecision()) || (
         isSelf(uid)
         && request.resource.data.status == resource.data.status
         && request.resource.data.ownerId == resource.data.ownerId
@@ -441,8 +481,10 @@ service cloud.firestore {
         && request.resource.data.teacherId != request.auth.uid;
 
       // (أ) قرار المدرس: pending ← accepted/rejected، وبلا لمس أي حقل آخر.
+      // «حجز مقعد في مجموعة» قرار مدرس ⇒ يتطلب توثيقًا (P14).
       allow update: if signedIn()
         && resource.data.teacherId == request.auth.uid
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'pending'
         && request.resource.data.status in ['accepted', 'rejected']
         && request.resource.data.decidedBy == request.auth.uid
@@ -536,8 +578,10 @@ service cloud.firestore {
 
       // (أ) المدرس يقبل منتظرًا: waiting ← promoted، وبلا لمس أي حقل آخر.
       // زيادة المقعد تحدث بتعديل منفصل على المجموعة تقبله القاعدة (ب).
+      // ترقية منتظر = قبول عضو جديد ⇒ تتطلب توثيقًا (P14).
       allow update: if signedIn()
         && resource.data.teacherId == request.auth.uid
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'waiting'
         && request.resource.data.status == 'promoted'
         && request.resource.data.decidedBy == request.auth.uid
@@ -667,7 +711,9 @@ service cloud.firestore {
 
       // (أ) ردّ المدرس على اقتراح وقت بديل: قبول (يصبح الوقت المقترح هو
       // الموعد — نتحقق أنه هو نفسه) أو رفض (يُنهي الطلب).
+      // القبول/الرفض قرار مدرس ⇒ يتطلب توثيقًا (P14).
       allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'rescheduleProposed'
         && request.resource.data.status in ['accepted', 'rejected']
         && request.resource.data.decidedBy == request.auth.uid
@@ -698,7 +744,9 @@ service cloud.firestore {
            );
 
       // (ب) المدرس يقبل طلبًا معلّقًا بلا اقتراح (الحقول الأساسية كما هي).
+      // **قبل التوثيق لا يوجد قبول** (P14): الطالب ينتظر، والملف يُراجع.
       allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'pending'
         && request.resource.data.status == 'accepted'
         && request.resource.data.decidedBy == request.auth.uid
@@ -707,6 +755,7 @@ service cloud.firestore {
 
       // (ج) المدرس يرفض طلبًا معلّقًا — بلا أي تغيير في الموعد المطلوب.
       allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'pending'
         && request.resource.data.status == 'rejected'
         && request.resource.data.decidedBy == request.auth.uid
@@ -732,6 +781,7 @@ service cloud.firestore {
 
       // (و) إعلان التنفيذ: المدرس وحده، ولموعد مؤكد.
       allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
         && resource.data.status == 'accepted'
         && request.resource.data.status == 'completed'
         && request.resource.data.decidedBy == request.auth.uid
@@ -1191,6 +1241,19 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
         && reviewOfAggregate().teacherId == teacherId
         && reviewOfAggregate().studentId == request.auth.uid;
+
+      // حذف إداري لتقييم مخالف (P14): **نقصان فقط**، بمقدار بين 1 و5، وبعدد
+      // تقييمات ينقص واحدًا بالضبط. المسؤول لا يستطيع نفخ المتوسط ولا حذف
+      // تقييمين بحذف واحد، والقرار يُسجَّل في `contentReports`.
+      allow update: if isAdmin()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.totalReviews == resource.data.totalReviews - 1
+        && resource.data.ratingSum - request.resource.data.ratingSum >= 1
+        && resource.data.ratingSum - request.resource.data.ratingSum <= 5;
+
+      // لا تقييمات متبقية ⇒ المستند يُحذف (لا يبقى صفر مضلّل).
+      allow delete: if isAdmin();
     }
 
     // ── 12) favorites/{favoriteId} — مفضلة الطالب (P13) ──────────────────────
@@ -1217,7 +1280,7 @@ service cloud.firestore {
         && favoriteId == request.resource.data.studentId + '_' + request.resource.data.kind + '_' + request.resource.data.targetId
         && (
              (request.resource.data.kind == 'teacher'
-              && get(/databases/$(database)/documents/teacherProfiles/$(request.resource.data.targetId)).data.status == 'approved')
+              && get(/databases/$(database)/documents/teacherProfiles/$(request.resource.data.targetId)).data.status == 'verified')
              || (request.resource.data.kind == 'group'
                  && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data.isActive == true)
            );
@@ -1225,7 +1288,71 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.studentId));
     }
 
-    // ── 13) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
+    // ── 14) contentReports/{reportId} — بلاغات المحتوى (P14) ─────────────────
+    // المستخدم يُبلغ عن محتوى قائم، والإدارة تحسم البلاغ. **لا يُحذف البلاغ**:
+    // سجل «استُبعد» و«حُسم» جزء من المساءلة، ومن حُذف تقييمه يبقى البلاغ دليلًا.
+    match /contentReports/{reportId} {
+      function reportKeys() {
+        return ['targetType', 'targetId', 'targetLabel', 'reporterId', 'reason',
+                'details', 'status', 'createdAt', 'resolvedAt',
+                'resolutionNote', 'resolvedBy'];
+      }
+
+      // الهدف يجب أن يكون **قائمًا** فعلًا: لا بلاغ عن معرّف مخترع.
+      function targetExists(type, id) {
+        return (type == 'review'
+                 && exists(/databases/$(database)/documents/reviews/$(id)))
+          || (type == 'teacher'
+                 && exists(/databases/$(database)/documents/teacherProfiles/$(id)))
+          || (type == 'group'
+                 && exists(/databases/$(database)/documents/studyGroups/$(id)));
+      }
+
+      // البلاغ يقرأه صاحبه والإدارة فقط: لا يرى الطلاب بلاغات بعضهم.
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == resource.data.reporterId);
+
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'open'
+        && request.resource.data.targetType in ['review', 'teacher', 'group']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && targetExists(
+             request.resource.data.targetType,
+             request.resource.data.targetId
+           )
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 80
+        && (!('details' in request.resource.data.keys())
+            || (request.resource.data.details is string
+                && request.resource.data.details.size() <= 400))
+        && (!('targetLabel' in request.resource.data.keys())
+            || (request.resource.data.targetLabel is string
+                && request.resource.data.targetLabel.size() <= 120))
+        && request.resource.data.keys().hasOnly(reportKeys());
+
+      // الحسم إداري: من open إلى resolved/dismissed، والهدف لا يتغيّر (فلا
+      // يُعاد توجيه بلاغ حُسم إلى محتوى آخر).
+      allow update: if isAdmin()
+        && resource.data.status == 'open'
+        && request.resource.data.status in ['resolved', 'dismissed']
+        && request.resource.data.reporterId == resource.data.reporterId
+        && request.resource.data.targetType == resource.data.targetType
+        && request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.keys().hasOnly(reportKeys())
+        && request.resource.data.resolvedAt is timestamp
+        && (!('resolutionNote' in request.resource.data.keys())
+            || (request.resource.data.resolutionNote is string
+                && request.resource.data.resolutionNote.size() <= 200));
+
+      allow delete: if false;
+    }
+
+    // ── 15) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

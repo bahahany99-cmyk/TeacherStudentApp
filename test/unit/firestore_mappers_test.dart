@@ -55,7 +55,7 @@ void main() {
           'stage': 'الثانوية العامة',
           'area': 'المعادي',
           'bio': 'شرح مبسّط',
-          'status': 'approved',
+          'status': 'verified',
           'isFeatured': true,
           'rating': 4.8,
           'reviewsCount': 126,
@@ -65,7 +65,7 @@ void main() {
 
       expect(profile, isNotNull);
       expect(profile!.displayName, 'أ. سارة الخطيب');
-      expect(profile.status, TeacherProfileStatus.approved);
+      expect(profile.status, TeacherProfileStatus.verified);
       expect(profile.isVisibleToStudents, isTrue);
       expect(profile.isFeatured, isTrue);
       expect(profile.rating, 4.8);

@@ -1,5 +1,6 @@
 import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
@@ -111,7 +112,10 @@ DateTime? readDate(Object? value) {
 /// يبقى الملف مخفيًا حتى تُراجع الإدارة بياناته، لا أن يظهر للطلاب بالخطأ.
 TeacherProfileStatus parseTeacherStatus(Object? raw) {
   return switch (readString(raw)) {
-    'approved' => TeacherProfileStatus.approved,
+    'verified' => TeacherProfileStatus.verified,
+    // توافق خلفي: القيمة القديمة `approved` تعني الشيء نفسه في مستندات
+    // أُنشئت قبل P14؛ تُقرأ كما هي ولا تُكتب بعد اليوم.
+    'approved' => TeacherProfileStatus.verified,
     'rejected' => TeacherProfileStatus.rejected,
     'draft' => TeacherProfileStatus.draft,
     'pendingReview' => TeacherProfileStatus.pendingReview,
@@ -158,6 +162,7 @@ TeacherProfile? teacherProfileFromMap(String id, Map<String, Object?> data) {
     rating: readDouble(data['rating']),
     reviewsCount: readInt(data['reviewsCount']),
     priceHint: readString(data['priceHint']),
+    reviewNote: readString(data['reviewNote']),
   );
 }
 
@@ -492,6 +497,35 @@ TeacherReview? teacherReviewFromMap(String id, Map<String, Object?> data) {
     createdAt:
         readDate(data['createdAt']) ??
         DateTime.fromMillisecondsSinceEpoch(0),
+  );
+}
+
+/// `contentReports/{reportId}` → [ContentReport] (P14).
+///
+/// يعيد `null` لنوع هدف غير معروف: بلاغ لا نعرف نوعه لا يمكن عرضه ولا حسمه،
+/// وإظهاره بزر «حذف المحتوى» قد يحذف المستند الخطأ.
+ContentReport? contentReportFromMap(String id, Map<String, Object?> data) {
+  final ReportTargetType? targetType = ReportTargetType.parse(
+    data['targetType'],
+  );
+  final String? targetId = readString(data['targetId']);
+  if (targetType == null || targetId == null) {
+    return null;
+  }
+
+  return ContentReport(
+    id: id,
+    targetType: targetType,
+    targetId: targetId,
+    targetLabel: readString(data['targetLabel']),
+    reporterId: readString(data['reporterId']),
+    reason: readString(data['reason']),
+    details: readString(data['details']),
+    status: ReportStatus.parse(data['status']),
+    createdAt:
+        readDate(data['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    resolvedAt: readDate(data['resolvedAt']),
+    resolutionNote: readString(data['resolutionNote']),
   );
 }
 

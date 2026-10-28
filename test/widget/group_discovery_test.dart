@@ -15,6 +15,7 @@ import '../helpers/test_app.dart';
 
 AppServices _services() {
   return AppServices(
+    admin: DemoAdminRepository(),
     auth: const DemoAuthService(),
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(),

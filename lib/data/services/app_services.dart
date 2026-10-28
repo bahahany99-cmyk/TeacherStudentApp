@@ -1,8 +1,12 @@
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
+import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
+import 'package:teacher_student_app/data/services/admin_repository.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/favorite_repository.dart';
@@ -29,6 +33,7 @@ class AppServices {
     required this.notifications,
     required this.reviews,
     required this.favorites,
+    required this.admin,
   });
 
   final AuthService auth;
@@ -53,6 +58,12 @@ class AppServices {
 
   /// مفضلة الطالب: مدرسون ومجموعات (P13).
   final FavoriteRepository favorites;
+
+  /// لوحة الإدارة: طابور التوثيق والمراجعة (P14).
+  ///
+  /// وجوده في الحاوية لا يمنح صلاحية: كل دالة فيه مشروطة في القواعد بـ
+  /// `request.auth.token.admin == true`، والواجهة تُخفي الشاشات عن غير المسؤول.
+  final AdminRepository admin;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -85,6 +96,7 @@ class AppServices {
       notifications: notifications,
       reviews: FirestoreReviewRepository(),
       favorites: FirestoreFavoriteRepository(),
+      admin: FirestoreAdminRepository(),
     );
   }
 
@@ -100,9 +112,13 @@ class AppServices {
     final DemoGroupRepository groups = DemoGroupRepository(
       notifications: notifications,
     );
+    // (P14) الإدارة والتقييمات والبحث تتقاسم **نفس القوائم**: قرار التوثيق
+    // يظهر في البحث فورًا، وحذف تقييم يغيّر المتوسط المعروض.
+    final List<TeacherProfile> profiles = <TeacherProfile>[...DemoData.teachers];
+    final List<TeacherReview> reviews = <TeacherReview>[...DemoData.reviews];
     return AppServices(
       auth: const DemoAuthService(),
-      teachers: DemoTeacherRepository(),
+      teachers: DemoTeacherRepository(source: profiles),
       groups: groups,
       bookings: bookings,
       schedules: DemoScheduleRepository(),
@@ -114,8 +130,12 @@ class AppServices {
       ),
       notifications: notifications,
       // التقييم يقرأ الحجز طازجًا من نفس المستودع، فلا يُقيَّم حجز لم يُنفَّذ.
-      reviews: DemoReviewRepository(findBooking: bookings.findById),
+      reviews: DemoReviewRepository(
+        findBooking: bookings.findById,
+        source: reviews,
+      ),
       favorites: DemoFavoriteRepository(),
+      admin: DemoAdminRepository(profiles: profiles, reviews: reviews),
     );
   }
 }

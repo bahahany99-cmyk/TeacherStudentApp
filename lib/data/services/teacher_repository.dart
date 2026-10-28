@@ -5,8 +5,8 @@ import 'package:teacher_student_app/data/models/teacher_profile.dart';
 /// التنفيذ الحقيقي (Phase 5–6) سيستعلم Firestore بشرطين: الملف معتمد،
 /// والاستعلام مقسّم إلى صفحات (pagination) مع فهارس مناسبة.
 abstract interface class TeacherRepository {
-  /// المدرسون المعتمدون فقط.
-  Future<List<TeacherProfile>> listApproved();
+  /// المدرسون **الموثّقون** فقط (P14: التوثيق بديل «الاعتماد» القديم).
+  Future<List<TeacherProfile>> listVerified();
 
   /// المدرسون المميزون (قسم مستقل عن نتائج البحث العادي — C-14).
   ///

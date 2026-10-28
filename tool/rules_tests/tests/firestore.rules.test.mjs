@@ -186,6 +186,16 @@ before(async () => {
 
 beforeEach(async () => {
   await testEnv.clearFirestore();
+  // (P14) أساس ثابت: `teacher-1` ملف **موثّق**. القبول/الرفض/ترقية المنتظر
+  // صارت مشروطة بالتوثيق، فكل اختبار يحتاج مدرسًا موثّقًا ليقيس ما يقيسه
+  // (الصلاحية على المستند) لا غياب ملفه. الاختبارات التي تريد مدرسًا غير
+  // موثّق تكتب حالته صريحة، وتلك التي تختبر الإنشاء تمسح هذا الأساس.
+  await seed([
+    {
+      path: 'teacherProfiles/teacher-1',
+      data: teacherDoc('teacher-1', { status: 'verified' }),
+    },
+  ]);
 });
 
 after(async () => {
@@ -256,7 +266,7 @@ describe('users/{uid} — صاحب الحساب فقط والدور ثابت', (
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
+describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
   it('الملف غير المعتمد مخفي عن الطلاب والزوار', async () => {
     await seed([
       { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
@@ -266,11 +276,11 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
     await assertFails(getDoc(doc(asGuest(), 'teacherProfiles/teacher-1')));
   });
 
-  it('الملف المعتمد مقروء للجميع (بحث الطلاب)', async () => {
+  it('الملف الموثّق مقروء للجميع (بحث الطلاب)', async () => {
     await seed([
       {
         path: 'teacherProfiles/teacher-1',
-        data: teacherDoc('teacher-1', { status: 'approved' }),
+        data: teacherDoc('teacher-1', { status: 'verified' }),
       },
     ]);
 
@@ -279,7 +289,7 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
       getDocs(
         query(
           collection(asStudent(), 'teacherProfiles'),
-          where('status', '==', 'approved'),
+          where('status', '==', 'verified'),
         ),
       ),
     );
@@ -297,6 +307,10 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
   });
 
   it('الإنشاء يبدأ دائمًا بـpendingReview', async () => {
+    // نمسح أساس المحاكي: هذا الاختبار يخص **الإنشاء**، ووجود مستند سابق
+    // يحوّل الكتابة إلى تحديث.
+    await testEnv.clearFirestore();
+
     await assertSucceeds(
       setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), teacherDoc('teacher-1')),
     );
@@ -304,7 +318,7 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
     await assertFails(
       setDoc(
         doc(asTeacher(), 'teacherProfiles/teacher-1'),
-        teacherDoc('teacher-1', { status: 'approved' }),
+        teacherDoc('teacher-1', { status: 'verified' }),
       ),
     );
   });
@@ -339,7 +353,7 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
 
     await assertFails(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        status: 'approved',
+        status: 'verified',
       }),
     );
   });
@@ -348,7 +362,7 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
     await seed([
       {
         path: 'teacherProfiles/teacher-1',
-        data: teacherDoc('teacher-1', { status: 'approved' }),
+        data: teacherDoc('teacher-1', { status: 'verified' }),
       },
     ]);
 
@@ -361,14 +375,73 @@ describe('teacherProfiles/{uid} — الظهور للمعتمد فقط', () => {
     await assertFails(deleteDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
   });
 
-  it('الإدارة تعتمد الملف (خارج التطبيق)', async () => {
+  it('الإدارة توثّق الملف عبر الادعاء (P14)', async () => {
     await seed([
       { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
     ]);
 
     await assertSucceeds(
-      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), { status: 'approved' }),
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), { status: 'verified' }),
     );
+  });
+
+  it('غير المسؤول لا يوثّق ولا يرفض (P14)', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+      }),
+    );
+    // حتى صاحب الملف: لا يوثّق نفسه.
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'rejected',
+      }),
+    );
+  });
+
+  it('قرار المسؤول مقيّد بحقول معلنة وسبب رفض واضح', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+    ]);
+
+    // سبب قصير جدًا مرفوض.
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-2'), {
+        status: 'rejected',
+        reviewNote: 'لا',
+      }),
+    );
+
+    // حقول الإدارة (التقييم/التمييز) خارج قرار التوثيق حتى للمسؤول.
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+        isFeatured: true,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-2'), { rating: 5 }),
+    );
+
+    // رفض بسبب صالح يمر.
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-2'), {
+        status: 'rejected',
+        reviewNote: 'بيانات تواصل داخل النبذة.',
+      }),
+    );
+    const stored = await readAsAdmin('teacherProfiles/teacher-2');
+    assert.equal(stored.status, 'rejected');
+    assert.equal(stored.reviewNote, 'بيانات تواصل داخل النبذة.');
   });
 });
 
@@ -3084,7 +3157,7 @@ describe('P13 — المفضلة: خاصة بصاحبها ومعرّفها مش�
     await seed([
       {
         path: 'teacherProfiles/teacher-1',
-        data: teacherDoc('teacher-1', { status: 'approved' }),
+        data: teacherDoc('teacher-1', { status: 'verified' }),
       },
       { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 0 }) },
     ]);
@@ -3245,5 +3318,249 @@ describe('سلامة المحاكي نفسه (حماية من اختبارات �
       const snapshot = await getDoc(doc(context.firestore(), 'users/student-1'));
       assert.equal(snapshot.exists(), true);
     });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P14 — لوحة الإدارة والتوثيق
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** بلاغ محتوى (P14): يُنشأ مفتوحًا دائمًا، والهدف موجود. */
+const reportDoc = (overrides = {}) =>
+  clean({
+    targetType: 'review',
+    targetId: 'b1',
+    targetLabel: 'تقييم على أ. سارة',
+    reporterId: 'student-1',
+    reason: 'ألفاظ غير لائقة',
+    status: 'open',
+    createdAt: now(),
+    ...overrides,
+  });
+
+const reportPath = (id) => `contentReports/${id}`;
+
+/** قبول حجز معلّق كما يفعل المستودع (قرار مدرس فقط). */
+const acceptBooking = (db, bookingId = 'b1') =>
+  updateDoc(doc(db, `bookingRequests/${bookingId}`), {
+    status: 'accepted',
+    decidedBy: 'teacher-1',
+    decidedAt: now(),
+  });
+
+describe('P14 — المدرس غير الموثّق لا يقبل حجزًا', () => {
+  it('قبول حجز لمدرس غير موثّق مرفوض', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+      { path: 'bookingRequests/b1', data: bookingDoc('student-1', 'teacher-1') },
+    ]);
+
+    await assertFails(acceptBooking(asTeacher()));
+  });
+
+  it('غياب الملف نهائيًا = غير موثّق (لا قبول ضمني)', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      { path: 'bookingRequests/b1', data: bookingDoc('student-1', 'teacher-1') },
+    ]);
+
+    await assertFails(acceptBooking(asTeacher()));
+  });
+
+  it('قبول حجز لمدرس موثّق يمرّ، ورفضه كذلك', async () => {
+    await seed([
+      { path: 'bookingRequests/b1', data: bookingDoc('student-1', 'teacher-1') },
+      { path: 'bookingRequests/b2', data: bookingDoc('student-1', 'teacher-1') },
+    ]);
+
+    await assertSucceeds(acceptBooking(asTeacher(), 'b1'));
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'bookingRequests/b2'), {
+        status: 'rejected',
+        decidedBy: 'teacher-1',
+        decidedAt: now(),
+      }),
+    );
+  });
+
+  it('غير الموثّق لا يقبل طلب انضمام لمجموعته', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'draft' }),
+      },
+      { path: joinPath('g1', 'student-1'), data: joinRequestDoc('g1', 'student-1') },
+    ]);
+
+    const decision = {
+      status: 'accepted',
+      decidedBy: 'teacher-1',
+      decidedAt: now(),
+    };
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), joinPath('g1', 'student-1')), decision),
+    );
+
+    // بعد التوثيق يمرّ نفس القرار.
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'verified' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), joinPath('g1', 'student-1')), decision),
+    );
+  });
+
+  it('غير الموثّق لا يرقّي منتظرًا في قائمته', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+      {
+        path: waitlistPath('g1', 'student-1'),
+        data: waitlistDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), waitlistPath('g1', 'student-1')), {
+        status: 'promoted',
+        decidedBy: 'teacher-1',
+        decidedAt: now(),
+      }),
+    );
+  });
+});
+
+describe('P14 — البلاغات: تُنشأ مفتوحة وتُحسم إداريًا فقط', () => {
+  it('طالب يُبلغ عن تقييم قائم', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      setDoc(doc(asStudent(), reportPath('r1')), reportDoc()),
+    );
+  });
+
+  it('بلاغ عن هدف غير موجود مرفوض', async () => {
+    await assertFails(
+      setDoc(
+        doc(asStudent(), reportPath('r2')),
+        reportDoc({ targetId: 'ghost' }),
+      ),
+    );
+  });
+
+  it('لا يُنشئ الطالب بلاغًا محسومًا ولا باسم غيره', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1') },
+    ]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), reportPath('r3')),
+        reportDoc({ status: 'resolved' }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asOther(), reportPath('r4')),
+        reportDoc({ reporterId: 'student-1' }),
+      ),
+    );
+  });
+
+  it('لا يقرأ الطالب بلاغ غيره، والإدارة تقرأ الكل', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1') },
+      { path: reportPath('r1'), data: reportDoc() },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), reportPath('r1'))));
+    await assertFails(getDoc(doc(asOther(), reportPath('r1'))));
+    await assertSucceeds(getDoc(doc(asAdmin(), reportPath('r1'))));
+  });
+
+  it('الحسم إداري فقط، والبلاغ لا يُحذف', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1') },
+      { path: reportPath('r1'), data: reportDoc() },
+    ]);
+
+    const resolution = {
+      status: 'resolved',
+      resolvedAt: now(),
+      resolutionNote: 'حُذف التقييم المخالف.',
+    };
+
+    await assertFails(
+      updateDoc(doc(asStudent(), reportPath('r1')), resolution),
+    );
+    await assertSucceeds(updateDoc(doc(asAdmin(), reportPath('r1')), resolution));
+
+    const stored = await readAsAdmin(reportPath('r1'));
+    assert.equal(stored.status, 'resolved');
+
+    // لا حذف — ولا للمسؤول: السجل يبقى.
+    await assertFails(deleteDoc(doc(asAdmin(), reportPath('r1'))));
+  });
+});
+
+describe('P14 — حذف تقييم مخالف: إدارة فقط والمجموع ينقص', () => {
+  it('غير المسؤول لا يحذف التقييم ولا يمسّ المتوسط', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1') },
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b1') },
+    ]);
+
+    await assertFails(deleteDoc(doc(asStudent(), 'reviews/b1')));
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherRatings/teacher-1'), {
+        ...ratingDoc('teacher-1', 2, 7, 'b1'),
+      }),
+    );
+  });
+
+  it('المسؤول يحذف التقييم ويُنقص المجموع في معاملة واحدة', async () => {
+    await seed([
+      { path: 'reviews/b1', data: reviewDoc('b1', 'student-1', 'teacher-1', { rating: 5 }) },
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b1') },
+    ]);
+
+    await assertSucceeds(
+      runTransaction(asAdmin(), async (tx) => {
+        const reviewRef = doc(asAdmin(), 'reviews/b1');
+        const ratingRef = doc(asAdmin(), 'teacherRatings/teacher-1');
+        const review = await tx.get(reviewRef);
+        tx.delete(reviewRef);
+        tx.set(ratingRef, ratingDoc('teacher-1', 2, 12 - review.data().rating, 'b1'));
+      }),
+    );
+
+    assert.equal(await readAsAdmin('reviews/b1'), null);
+    const rating = await readAsAdmin('teacherRatings/teacher-1');
+    assert.equal(rating.totalReviews, 2);
+    assert.equal(rating.ratingSum, 7);
+  });
+
+  it('المسؤول لا يستطيع زيادة المتوسط بحذف تقييم', async () => {
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherRatings/teacher-1'), {
+        ...ratingDoc('teacher-1', 4, 17, 'b1'),
+      }),
+    );
   });
 });

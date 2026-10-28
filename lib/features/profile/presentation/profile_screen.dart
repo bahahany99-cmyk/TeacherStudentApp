@@ -119,6 +119,18 @@ class ProfileScreen extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: <Widget>[
+                    // (P14) الإدارة فقط: مدخل اللوحة. القرار الحقيقي في القواعد،
+                    // و`AdminGuard` يمنع الوصول لو فُتح المسار من حساب آخر.
+                    if (session.isAdmin) ...<Widget>[
+                      _ProfileTile(
+                        icon: Icons.admin_panel_settings_outlined,
+                        label: 'لوحة الإدارة',
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pushNamed(RoutePaths.adminDashboard),
+                      ),
+                      const Divider(height: 1),
+                    ],
                     if (user?.role == UserRole.teacher) ...<Widget>[
                       _ProfileTile(
                         icon: Icons.badge_outlined,
@@ -196,6 +208,11 @@ class ProfileScreen extends StatelessWidget {
                         onPressed: () =>
                             _switchRole(context, UserRole.teacher),
                         child: const Text('واجهة المدرس'),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      OutlinedButton(
+                        onPressed: () => _switchRole(context, UserRole.admin),
+                        child: const Text('لوحة الإدارة'),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       OutlinedButton(

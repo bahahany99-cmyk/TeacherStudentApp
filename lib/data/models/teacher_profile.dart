@@ -4,15 +4,31 @@
 enum TeacherProfileStatus {
   draft,
   pendingReview,
-  approved,
+  verified,
   rejected;
 
   String get label => switch (this) {
     TeacherProfileStatus.draft => 'مسودة',
     TeacherProfileStatus.pendingReview => 'قيد المراجعة',
-    TeacherProfileStatus.approved => 'معتمد',
+    TeacherProfileStatus.verified => 'موثّق',
     TeacherProfileStatus.rejected => 'مرفوض',
   };
+
+  /// القيم النصية المخزّنة في Firestore — **مصدر الحقيقة الوحيد** للكتابة.
+  ///
+  /// القواعد (`firestore.rules`) تقارن النص حرفيًا، فالقيمة هنا وهذا الاسم
+  /// يجب أن يبقيا متطابقين (P14: `approved` → `verified`).
+  String get wireValue => switch (this) {
+    TeacherProfileStatus.draft => 'draft',
+    TeacherProfileStatus.pendingReview => 'pendingReview',
+    TeacherProfileStatus.verified => 'verified',
+    TeacherProfileStatus.rejected => 'rejected',
+  };
+
+  /// هل الملف في انتظار قرار الإدارة؟ (يظهر في طابور التوثيق)
+  bool get awaitsReview =>
+      this == TeacherProfileStatus.draft ||
+      this == TeacherProfileStatus.pendingReview;
 }
 
 /// ملف مدرس (نموذج عرض فقط في المرحلة 2).
@@ -29,6 +45,7 @@ class TeacherProfile {
     this.rating = 0,
     this.reviewsCount = 0,
     this.priceHint,
+    this.reviewNote,
   });
 
   final String id;
@@ -56,8 +73,13 @@ class TeacherProfile {
   /// سعر استرشادي نصي (الدفع يتم خارج التطبيق).
   final String? priceHint;
 
+  /// سبب القرار الإداري عند الرفض (يكتبه المسؤول وحده في القواعد).
+  ///
+  /// وجوده لا يمنح شيئًا: الملف المرفوض مخفي عن الطلاب في كل الأحوال.
+  final String? reviewNote;
+
   /// هل يظهر للطلاب؟ القاعدة الحقيقية تُفرض في قواعد Firestore.
-  bool get isVisibleToStudents => status == TeacherProfileStatus.approved;
+  bool get isVisibleToStudents => status == TeacherProfileStatus.verified;
 
   String get initials {
     final String trimmed = displayName.trim();

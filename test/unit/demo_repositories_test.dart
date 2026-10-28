@@ -11,12 +11,12 @@ void main() {
   group('DemoTeacherRepository', () {
     test('يعيد الملفات المعتمدة فقط', () async {
       final DemoTeacherRepository repository = DemoTeacherRepository();
-      final List<TeacherProfile> teachers = await repository.listApproved();
+      final List<TeacherProfile> teachers = await repository.listVerified();
 
       expect(teachers, isNotEmpty);
       expect(
         teachers.every(
-          (TeacherProfile t) => t.status == TeacherProfileStatus.approved,
+          (TeacherProfile t) => t.status == TeacherProfileStatus.verified,
         ),
         isTrue,
         reason: 'ملف قيد المراجعة يجب ألا يظهر في قائمة المدرسين',
@@ -35,7 +35,7 @@ void main() {
       expect(
         featured.every(
           (TeacherProfile t) =>
-              t.isFeatured && t.status == TeacherProfileStatus.approved,
+              t.isFeatured && t.status == TeacherProfileStatus.verified,
         ),
         isTrue,
       );
@@ -46,7 +46,7 @@ void main() {
     test('ملف مدرس معتمد يُعاد، وغير المعتمد لا يُكشف', () async {
       final DemoTeacherRepository repository = DemoTeacherRepository();
 
-      final TeacherProfile? approved = await repository.findById(
+      final TeacherProfile? verified = await repository.findById(
         'demo-teacher-1',
       );
       final TeacherProfile? pending = await repository.findById(
@@ -54,7 +54,7 @@ void main() {
       );
       final TeacherProfile? missing = await repository.findById('غير-موجود');
 
-      expect(approved?.displayName, 'أ. سارة الخطيب');
+      expect(verified?.displayName, 'أ. سارة الخطيب');
       expect(pending, isNull, reason: 'الملف قيد المراجعة لا يظهر للطلاب');
       expect(missing, isNull);
     });

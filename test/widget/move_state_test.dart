@@ -27,6 +27,7 @@ class _Harness {
   final DemoGroupRepository groups = DemoGroupRepository();
 
   AppServices get services => AppServices(
+    admin: DemoAdminRepository(),
     auth: const DemoAuthService(),
     teachers: DemoTeacherRepository(),
     groups: groups,

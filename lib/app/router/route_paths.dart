@@ -63,6 +63,15 @@ abstract final class RoutePaths {
   /// تعديل معلومات الملف (واجهة المدرس — نموذج عرض لا يحفظ).
   static const String editTeacherProfile = '/me/teacher-profile/edit';
 
+  /// لوحة الإدارة (P14) — محمية بـ[AdminGuard] وتُخفي عن غير المسؤول.
+  static const String adminDashboard = '/admin';
+
+  /// طابور توثيق ملفات المدرسين (P14).
+  static const String adminVerification = '/admin/teachers';
+
+  /// مراجعة البلاغات والتقييمات (P14).
+  static const String adminModeration = '/admin/moderation';
+
   /// معرض المكونات — شاشة تطوير للمراجعة البصرية فقط (P1).
   static const String designGallery = '/dev/design-gallery';
 }

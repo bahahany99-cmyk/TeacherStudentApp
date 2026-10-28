@@ -5,6 +5,10 @@ import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/features/auth/presentation/email_auth_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/admin_guard.dart';
+import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/role_selection_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
@@ -110,6 +114,30 @@ abstract final class AppRouter {
           return _page(const UnknownRouteScreen(), settings);
         }
         return _page(DirectChatScreen(chatId: chatId), settings);
+      // ── لوحة الإدارة (P14) ────────────────────────────────────────────────
+      // كل مسار إداري يمرّ من [AdminGuard]: الطالب/المدرس يرى «لا تملك صلاحية»
+      // لا شاشة فارغة. الحماية النهائية في `firestore.rules`.
+      case RoutePaths.adminDashboard:
+        return _page(
+          const AdminGuard(child: AdminDashboardScreen()),
+          settings,
+        );
+      case RoutePaths.adminVerification:
+        return _page(
+          const AdminGuard(
+            title: 'طابور التوثيق',
+            child: TeacherVerificationScreen(),
+          ),
+          settings,
+        );
+      case RoutePaths.adminModeration:
+        return _page(
+          const AdminGuard(
+            title: 'المراجعة والبلاغات',
+            child: ModerationScreen(),
+          ),
+          settings,
+        );
       case RoutePaths.myTeacherProfile:
         return _page(const MyTeacherProfileScreen(), settings);
       case RoutePaths.editTeacherProfile:

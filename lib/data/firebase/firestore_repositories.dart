@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
@@ -23,6 +24,7 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
+import 'package:teacher_student_app/data/services/admin_repository.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/notification_repository.dart';
@@ -32,6 +34,7 @@ import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/admin_rules.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/review_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
@@ -81,6 +84,9 @@ abstract final class FirestoreCollections {
 
   /// مفضلة الطلاب (P13) — معرّف مشتق: `{studentId}_{kind}_{targetId}`.
   static const String favorites = 'favorites';
+
+  /// بلاغات المحتوى (P14) — ينشئها المستخدم بحالة `open`، وتحسمها الإدارة.
+  static const String contentReports = 'contentReports';
 }
 
 /// زوج (معرّف، بيانات) لخرائط التحويل في `firestore_mappers`.
@@ -102,7 +108,7 @@ Future<T> _guard<T>(Future<T> Function() action) async {
 
 /// قراءة ملفات المدرسين من `teacherProfiles`.
 ///
-/// ⚠️ الفلترة على `status == 'approved'` مكرّرة هنا **وعلى الخادم** (قواعد
+/// ⚠️ الفلترة على `status == 'verified'` مكرّرة هنا **وعلى الخادم** (قواعد
 /// Firestore + فهارس). تكرارها في التطبيق ليس إجراءً أمنيًا؛ هو فقط يمنع إرسال
 /// بيانات غير لازمة إلى الواجهة، ويجعل الاستعلام قابلاً للفهرسة.
 class FirestoreTeacherRepository implements TeacherRepository {
@@ -115,10 +121,10 @@ class FirestoreTeacherRepository implements TeacherRepository {
       _firestore.collection(FirestoreCollections.teacherProfiles);
 
   @override
-  Future<List<TeacherProfile>> listApproved() {
+  Future<List<TeacherProfile>> listVerified() {
     return _guard(() async {
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
-          .where('status', isEqualTo: 'approved')
+          .where('status', isEqualTo: 'verified')
           .get();
       return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
     });
@@ -130,7 +136,7 @@ class FirestoreTeacherRepository implements TeacherRepository {
       // ⚠️ لا ترتيب هنا: آلية اختيار/ترتيب المميزين لم تُحسم (Q-01..Q-03)،
       // فإضافة `orderBy` كانت ستُثبّت قرارًا غير معتمد.
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
-          .where('status', isEqualTo: 'approved')
+          .where('status', isEqualTo: 'verified')
           .where('isFeatured', isEqualTo: true)
           .get();
       return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
@@ -3192,5 +3198,213 @@ class FirestoreFavoriteRepository implements FavoriteRepository {
       return byDate != 0 ? byDate : a.targetId.compareTo(b.targetId);
     });
     return List<Favorite>.unmodifiable(sorted);
+  }
+}
+
+/// لوحة الإدارة على Firestore (P14).
+///
+/// كل كتابة هنا شرطها `request.auth.token.admin == true` في `firestore.rules`
+/// (ودور المستخدم في `users/{uid}` لا يمنح شيئًا إضافيًا). أي استدعاء من حساب
+/// عادي يعود بـ`permission-denied` ويُترجم إلى رسالة عربية عبر [_guard].
+class FirestoreAdminRepository implements AdminRepository {
+  FirestoreAdminRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = auth ?? FirebaseAuth.instance;
+
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+
+  CollectionReference<Map<String, dynamic>> get _profiles =>
+      _firestore.collection(FirestoreCollections.teacherProfiles);
+
+  CollectionReference<Map<String, dynamic>> get _reports =>
+      _firestore.collection(FirestoreCollections.contentReports);
+
+  CollectionReference<Map<String, dynamic>> get _reviews =>
+      _firestore.collection(FirestoreCollections.reviews);
+
+  CollectionReference<Map<String, dynamic>> get _ratings =>
+      _firestore.collection(FirestoreCollections.teacherRatings);
+
+  String? get _adminUid => _auth.currentUser?.uid;
+
+  @override
+  Future<List<TeacherProfile>> listVerificationQueue() {
+    return _guard(() async {
+      // شرط واحد على حقل واحد (أحاديّ الفهرسة) ثم ترتيب في العميل.
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
+          .where('status', whereIn: <String>['draft', 'pendingReview'])
+          .get();
+      return AdminRules.verificationQueue(
+        mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<List<TeacherProfile>> listAllProfiles() {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
+          .limit(200)
+          .get();
+      return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
+    });
+  }
+
+  @override
+  Future<void> verifyTeacher(String teacherId) {
+    return _decide(
+      teacherId: teacherId,
+      status: TeacherProfileStatus.verified,
+    );
+  }
+
+  @override
+  Future<void> rejectTeacher({
+    required String teacherId,
+    required String reason,
+  }) {
+    final String? problem = AdminRules.reasonProblem(reason);
+    if (problem != null) {
+      return Future<void>.error(
+        AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: problem,
+          debugMessage: 'admin rejection without reason',
+        ),
+      );
+    }
+    return _decide(
+      teacherId: teacherId,
+      status: TeacherProfileStatus.rejected,
+      note: reason.trim(),
+    );
+  }
+
+  /// كتابة القرار: الحالة + وقت المراجعة + هوية المراجع + السبب.
+  ///
+  /// `reviewNote` تُحذف عند الاعتماد (`FieldValue.delete`) حتى لا يبقى سبب
+  /// رفض قديم معلّقًا على ملف صار موثّقًا.
+  Future<void> _decide({
+    required String teacherId,
+    required TeacherProfileStatus status,
+    String? note,
+  }) {
+    return _guard(() async {
+      if (teacherId.trim().isEmpty) {
+        throw const AppException.invalidInput(
+          debugMessage: 'admin decision without teacher id',
+          overrideMessage: 'ملف غير معروف.',
+        );
+      }
+      await _profiles.doc(teacherId).update(<String, Object?>{
+        'status': status.wireValue,
+        'reviewNote': note == null ? FieldValue.delete() : note,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        if (_adminUid != null) 'reviewedBy': _adminUid,
+      });
+    });
+  }
+
+  @override
+  Future<List<ContentReport>> listOpenReports() {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _reports
+          .where('status', isEqualTo: ReportStatus.open.wireValue)
+          .limit(50)
+          .get();
+      return AdminRules.newestReportsFirst(
+        mapDocuments(snapshot.docs.map(_entry), contentReportFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<List<TeacherReview>> listRecentReviews({int limit = 30}) {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _reviews
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .get();
+      return ReviewRules.newestFirst(
+        mapDocuments(snapshot.docs.map(_entry), teacherReviewFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<void> resolveReport({
+    required String reportId,
+    required ReportResolution resolution,
+    String? note,
+  }) {
+    return _guard(() async {
+      await _reports.doc(reportId).update(<String, Object?>{
+        'status': resolution.wireValue,
+        'resolvedAt': FieldValue.serverTimestamp(),
+        'resolutionNote': note == null || note.trim().isEmpty
+            ? FieldValue.delete()
+            : note.trim(),
+        if (_adminUid != null) 'resolvedBy': _adminUid,
+      });
+    });
+  }
+
+  @override
+  Future<void> deleteReview(String reviewId) {
+    return _guard(() async {
+      // حذف التقييم وتصحيح المجموع في معاملة واحدة: متوسط يقيس تقييمًا
+      // محذوفًا أسوأ من عدم وجود تقييم (A-90).
+      await _firestore.runTransaction<void>((Transaction tx) async {
+        final DocumentReference<Map<String, dynamic>> reviewRef = _reviews.doc(
+          reviewId,
+        );
+        final DocumentSnapshot<Map<String, dynamic>> reviewSnap = await tx.get(
+          reviewRef,
+        );
+        final Map<String, Object?>? reviewData = reviewSnap.data();
+        if (reviewData == null) {
+          throw const AppException.notFound(
+            debugMessage: 'review missing for admin delete',
+            overrideMessage: 'التقييم غير موجود أصلًا — حدّث القائمة.',
+          );
+        }
+        final int rating = readInt(reviewData['rating']);
+        final String teacherId = readString(reviewData['teacherId']) ?? '';
+        if (teacherId.isEmpty) {
+          // تقييم بلا مدرس = مستند تالف؛ نحذفه وحده بلا تجميع (لا مسار صالح).
+          tx.delete(reviewRef);
+          return;
+        }
+
+        final DocumentReference<Map<String, dynamic>> ratingRef = _ratings.doc(
+          teacherId,
+        );
+        final DocumentSnapshot<Map<String, dynamic>> ratingSnap = await tx.get(
+          ratingRef,
+        );
+        final Map<String, Object?>? ratingData = ratingSnap.data();
+
+        tx.delete(reviewRef);
+        if (ratingData == null) {
+          return;
+        }
+        final TeacherRating current = teacherRatingFromMap(teacherId, ratingData);
+        final TeacherRating next = current.minus(rating);
+        if (next.totalReviews <= 0) {
+          // لا تقييمات متبقية: المستند نفسه يُحذف فلا يبقى صفر مضلّل.
+          tx.delete(ratingRef);
+          return;
+        }
+        tx.set(
+          ratingRef,
+          next.toMap(
+            // نبقي شاهد آخر تقييم كما هو: الحذف لا ينشئ تقييمًا جديدًا.
+            lastReviewId: readString(ratingData['lastReviewId']) ?? reviewId,
+            updatedAt: DateTime.now(),
+          ),
+        );
+      });
+    });
   }
 }

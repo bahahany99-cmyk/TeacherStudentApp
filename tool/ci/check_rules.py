@@ -18,6 +18,9 @@
 10. أن المحادثات المباشرة (P11) مشدودة بمعرّف مشتق من الطرفين، وأن كل أصل
     (حجز/مجموعة/استفسار) مفحوص، وأن الكتابة على المحادثة محدودة بحقل القارئ
     أو بملخّص رسالة يكتبها مرسلها.
+14. أن كل إجراء إداري (P14) مشروط بـ`isAdmin()` ومقيّد بحقول معلنة، وأن
+    المدرس غير الموثّق لا يقبل حجزًا ولا طلب انضمام ولا ترقية منتظر، وأن
+    البلاغ يُنشأ مفتوحًا ولا يُحذف، وأن الحالة المخزّنة صارت `verified`.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -46,6 +49,7 @@ REQUIRED_MATCHES = (
     'match /reviews/{reviewId}',
     'match /teacherRatings/{teacherId}',
     'match /favorites/{favoriteId}',
+    'match /contentReports/{reportId}',
     'match /directChats/{chatId}',
     'match /messages/{messageId}',
 )
@@ -315,6 +319,40 @@ def main() -> int:
         problems.append('favorites: القراءة/الحذف غير مقيّدين بصاحب المفضلة')
     if 'resource == null' not in favorites_block:
         problems.append('favorites: قراءة مستند غير موجود تُرفض (يكسر أول إضافة)')
+    # 14) P14: الإدارة والتوثيق — كل قرار إداري مشروط بالادعاء ومقيّد الحقول
+    if 'isAdmin() && validAdminDecision()' not in code:
+        problems.append('teacherProfiles: قرار الإدارة غير مقيّد بحقول معلنة')
+    if "'draft', 'pendingReview', 'verified', 'rejected'" not in code:
+        problems.append('teacherProfiles: الحالة الإدارية غير مقيّدة بمجموعة معلنة')
+    if 'reviewNote' not in code:
+        problems.append('teacherProfiles: حقل سبب الرفض (reviewNote) غير موجود')
+    elif 'request.resource.data.reviewNote.size() >= 5' not in code:
+        problems.append('teacherProfiles: سبب الرفض غير مقيّد بطول أدنى')
+    # كل مسار قبول مدرس يجب أن يشترط التوثيق: 4 قرارات حجز + طلب انضمام +
+    # ترقية منتظر. العدد أقل من ذلك يعني مسارًا نُسي.
+    if code.count('teacherVerified(request.auth.uid)') < 6:
+        problems.append(
+            'P14: مسار قبول مدرس غير مشروط بالتوثيق (teacherVerified)'
+        )
+    if "'approved'" in code:
+        problems.append('P14: بقيت القيمة القديمة approved في القواعد')
+    reports_block = match_block(code, 'match /contentReports/{reportId}') or ''
+    if len(reports_block) == 0:
+        problems.append('contentReports: تعذّر تحديد كتلة القاعدة')
+    else:
+        if "request.resource.data.status == 'open'" not in reports_block:
+            problems.append('contentReports: الإنشاء غير مقيّد بحالة مفتوحة')
+        if 'targetExists(' not in reports_block:
+            problems.append('contentReports: الهدف غير مفحوص الوجود')
+        if 'allow update: if isAdmin()' not in reports_block:
+            problems.append('contentReports: الحسم غير مقيّد بالإدارة')
+        if 'allow delete: if false;' not in reports_block:
+            problems.append('contentReports: البلاغ قابل للحذف من التطبيق')
+        if 'isSelf(resource.data.reporterId)' in reports_block or 'request.auth.uid == resource.data.reporterId' not in reports_block:
+            problems.append('contentReports: القراءة غير مقيّدة بصاحب البلاغ')
+    if 'request.resource.data.totalReviews == resource.data.totalReviews - 1' not in code:
+        problems.append('teacherRatings: لا قاعدة للنقصان الإداري عند حذف تقييم')
+
     direct_block = match_block(code, 'match /directChats/{chatId}') or ''
     if 'resource == null' not in direct_block:
         problems.append('directChats: قراءة محادثة غير موجودة تُرفض (يكسر بدء المحادثة)')

@@ -1,5 +1,6 @@
 import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
@@ -21,6 +22,9 @@ abstract final class DemoData {
 
   static const String teacherName = 'مدرس تجريبي';
 
+  /// اسم حساب الإدارة في وضع المعاينة (P14) — معاينة واجهات فقط.
+  static const String adminName = 'مسؤول تجريبي';
+
   /// معرف حساب المدرس المستخدم في وضع المعاينة (يطابق أول مدرس تجريبي).
   static const String demoTeacherId = 'demo-teacher-1';
 
@@ -36,7 +40,7 @@ abstract final class DemoData {
       stage: 'الثانوية العامة',
       area: 'المعادي — القاهرة',
       bio: 'شرح مبسّط للجبر والتفاضل مع تدريبات محلولة بعد كل حصة.',
-      status: TeacherProfileStatus.approved,
+      status: TeacherProfileStatus.verified,
       isFeatured: true,
       rating: 4.8,
       reviewsCount: 126,
@@ -49,7 +53,7 @@ abstract final class DemoData {
       stage: 'الثانوية العامة',
       area: 'سموحة — الإسكندرية',
       bio: 'متابعة أسبوعية وتقارير مستوى لولي الأمر.',
-      status: TeacherProfileStatus.approved,
+      status: TeacherProfileStatus.verified,
       isFeatured: true,
       rating: 4.7,
       reviewsCount: 98,
@@ -62,7 +66,7 @@ abstract final class DemoData {
       stage: 'الإعدادية',
       area: 'طنطا — الغربية',
       bio: 'تأسيس في النحو والقراءة، ومتابعة فروض المدرسة.',
-      status: TeacherProfileStatus.approved,
+      status: TeacherProfileStatus.verified,
       rating: 4.6,
       reviewsCount: 64,
       priceHint: 'سعر استرشادي: 100 ج.م / حصة',
@@ -74,7 +78,7 @@ abstract final class DemoData {
       stage: 'الابتدائية',
       area: 'المنصورة — الدقهلية',
       bio: 'تأسيس قراءة وكتابة للأطفال، وأنشطة محادثة بسيطة.',
-      status: TeacherProfileStatus.approved,
+      status: TeacherProfileStatus.verified,
       rating: 4.5,
       reviewsCount: 41,
       priceHint: 'سعر استرشادي: 90 ج.م / حصة',
@@ -86,7 +90,7 @@ abstract final class DemoData {
       stage: 'الثانوية العامة',
       area: 'أسيوط',
       bio: 'مراجعات نهائية وبنك أسئلة إلكتروني.',
-      status: TeacherProfileStatus.approved,
+      status: TeacherProfileStatus.verified,
       rating: 4.4,
       reviewsCount: 33,
     ),
@@ -102,6 +106,26 @@ abstract final class DemoData {
       status: TeacherProfileStatus.pendingReview,
       rating: 0,
       reviewsCount: 0,
+    ),
+    // (P14) ملفات طابور التوثيق: مسودة لم تُرسل، ومرفوض بسبب مكتوب.
+    TeacherProfile(
+      id: 'demo-teacher-7-draft',
+      displayName: 'أ. منال عادل',
+      subject: 'العلوم',
+      stage: 'الإعدادية',
+      area: 'المنيا',
+      bio: 'مسودة ملف لم تُرسل للمراجعة بعد.',
+      status: TeacherProfileStatus.draft,
+    ),
+    TeacherProfile(
+      id: 'demo-teacher-8-rejected',
+      displayName: 'أ. عمرو سعيد',
+      subject: 'الرياضيات',
+      stage: 'الابتدائية',
+      area: 'سوهاج',
+      bio: 'ملف مرفوض لبيانات تواصل داخل النبذة.',
+      status: TeacherProfileStatus.rejected,
+      reviewNote: 'بيانات تواصل داخل النبذة — تُكتب في الحقول المخصّصة فقط.',
     ),
   ];
 
@@ -525,6 +549,30 @@ abstract final class DemoData {
       rating: 5,
       comment: 'أسلوب هادئ ومنظّم في النحو.',
       createdAt: DateTime(2026, 10, 5, 19, 45),
+    ),
+  ];
+
+  /// بلاغات مفتوحة (P14) — تظهر في شاشة المراجعة للمسؤول التجريبي.
+  static final List<ContentReport> reports = <ContentReport>[
+    ContentReport(
+      id: 'demo-report-1',
+      targetType: ReportTargetType.review,
+      targetId: 'demo-review-2',
+      targetLabel: 'تقييم على أ. أحمد الشناوي',
+      reporterId: 'demo-student-5',
+      reason: 'ألفاظ غير لائقة',
+      details: 'التعليق يستهزئ بأداء المدرس أمام بقية الطلاب.',
+      createdAt: DateTime(2026, 10, 20, 14, 10),
+    ),
+    ContentReport(
+      id: 'demo-report-2',
+      targetType: ReportTargetType.teacher,
+      targetId: 'demo-teacher-3',
+      targetLabel: 'ملف أ. منى عبد الرحمن',
+      reporterId: 'demo-student-6',
+      reason: 'بيانات تواصل خارج التطبيق',
+      details: 'رقم هاتف مكتوب داخل النبذة التعريفية.',
+      createdAt: DateTime(2026, 10, 21, 9, 30),
     ),
   ];
 }

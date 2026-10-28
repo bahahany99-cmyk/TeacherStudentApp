@@ -11,6 +11,7 @@ class AppUser {
     required this.role,
     this.email,
     this.isDemoAccount = false,
+    this.hasAdminClaim = false,
   });
 
   final String id;
@@ -22,6 +23,12 @@ class AppUser {
   ///
   /// تُستخدم لعرض شريط "وضع تجريبي" ومنع أي كود من التعامل معه كحساب حقيقي.
   final bool isDemoAccount;
+
+  /// قيمة الادعاء الإداري (`admin`) المقروءة من رمز الهوية (P14).
+  ///
+  /// تُقرأ من Firebase Auth مرة واحدة عند الدخول/الاسترجاع، ولا يكتبها
+  /// التطبيق. `false` تعني «ليس مسؤولًا» — لا تعني «طُرد».
+  final bool hasAdminClaim;
 
   String get initials {
     final String trimmed = displayName.trim();

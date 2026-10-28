@@ -7,6 +7,7 @@ import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
@@ -22,6 +23,7 @@ import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/data/services/admin_repository.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
@@ -32,6 +34,7 @@ import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/review_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
+import 'package:teacher_student_app/data/validation/admin_rules.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
@@ -95,29 +98,21 @@ class DemoTeacherRepository implements TeacherRepository {
   DemoTeacherRepository({List<TeacherProfile>? source})
     : _source = source ?? DemoData.teachers;
 
+  /// **نفس القائمة** التي تعدّلها لوحة الإدارة (P14)، ولذلك لا نُخزّن نتيجة
+  /// استعلام مؤقتًا: اعتماد ملف يجب أن يظهر في البحث فورًا في الوضع التجريبي.
   final List<TeacherProfile> _source;
 
-  late final Future<List<TeacherProfile>> _approvedCache =
-      Future<List<TeacherProfile>>.value(
-        _source
-            .where((TeacherProfile t) => t.isVisibleToStudents)
-            .toList(growable: false),
-      );
-
-  late final Future<List<TeacherProfile>> _featuredCache =
-      Future<List<TeacherProfile>>.value(
-        _source
-            .where(
-              (TeacherProfile t) => t.isVisibleToStudents && t.isFeatured,
-            )
-            .toList(growable: false),
-      );
+  @override
+  Future<List<TeacherProfile>> listVerified() async => _visible();
 
   @override
-  Future<List<TeacherProfile>> listApproved() => _approvedCache;
+  Future<List<TeacherProfile>> listFeatured() async => _visible()
+      .where((TeacherProfile teacher) => teacher.isFeatured)
+      .toList(growable: false);
 
-  @override
-  Future<List<TeacherProfile>> listFeatured() => _featuredCache;
+  List<TeacherProfile> _visible() => _source
+      .where((TeacherProfile t) => t.isVisibleToStudents)
+      .toList(growable: false);
 
   @override
   Future<TeacherProfile?> findById(String id) {
@@ -2567,5 +2562,147 @@ class DemoFavoriteRepository implements FavoriteRepository {
     );
     _publish(studentId);
     return true;
+  }
+}
+
+/// لوحة الإدارة في الوضع التجريبي (P14) — تعمل على **نفس** قوائم البيانات
+/// التي تستخدمها بقية المستودعات، فقرار الاعتماد يظهر في البحث فورًا.
+///
+/// الحماية الحقيقية على الخادم: كل دالة هنا تقابل كتابة مشروطة بـ
+/// `request.auth.token.admin == true` في `firestore.rules`. الوضع التجريبي لا
+/// يُثبت ذلك، لكنه يحاكي **الأثر** لا الصلاحية.
+class DemoAdminRepository implements AdminRepository {
+  DemoAdminRepository({
+    List<TeacherProfile>? profiles,
+    List<TeacherReview>? reviews,
+    List<ContentReport>? reports,
+  }) : _profiles = profiles ?? <TeacherProfile>[...DemoData.teachers],
+       _reviews = reviews ?? <TeacherReview>[...DemoData.reviews],
+       _reports = <ContentReport>[...(reports ?? DemoData.reports)];
+
+  final List<TeacherProfile> _profiles;
+  final List<TeacherReview> _reviews;
+  final List<ContentReport> _reports;
+
+  int _profileIndex(String teacherId) =>
+      _profiles.indexWhere((TeacherProfile profile) => profile.id == teacherId);
+
+  @override
+  Future<List<TeacherProfile>> listVerificationQueue() async =>
+      AdminRules.verificationQueue(_profiles);
+
+  @override
+  Future<List<TeacherProfile>> listAllProfiles() async =>
+      List<TeacherProfile>.unmodifiable(_profiles);
+
+  @override
+  Future<void> verifyTeacher(String teacherId) async {
+    _applyDecision(teacherId: teacherId, status: TeacherProfileStatus.verified);
+  }
+
+  @override
+  Future<void> rejectTeacher({
+    required String teacherId,
+    required String reason,
+  }) async {
+    final String? problem = AdminRules.reasonProblem(reason);
+    if (problem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: problem,
+        debugMessage: 'admin rejection without reason (demo)',
+      );
+    }
+    _applyDecision(
+      teacherId: teacherId,
+      status: TeacherProfileStatus.rejected,
+      reviewNote: reason.trim(),
+    );
+  }
+
+  void _applyDecision({
+    required String teacherId,
+    required TeacherProfileStatus status,
+    String? reviewNote,
+  }) {
+    final int index = _profileIndex(teacherId);
+    if (index < 0) {
+      throw const AppException.notFound(
+        debugMessage: 'teacher profile missing (demo admin)',
+        overrideMessage: 'لم يعد هذا الملف موجودًا — حدّث الطابور.',
+      );
+    }
+    final TeacherProfile current = _profiles[index];
+    _profiles[index] = TeacherProfile(
+      id: current.id,
+      displayName: current.displayName,
+      subject: current.subject,
+      stage: current.stage,
+      area: current.area,
+      bio: current.bio,
+      status: status,
+      isFeatured: current.isFeatured,
+      rating: current.rating,
+      reviewsCount: current.reviewsCount,
+      priceHint: current.priceHint,
+      reviewNote: reviewNote,
+    );
+  }
+
+  @override
+  Future<List<ContentReport>> listOpenReports() async =>
+      AdminRules.newestReportsFirst(_reports);
+
+  @override
+  Future<List<TeacherReview>> listRecentReviews({int limit = 30}) async {
+    final List<TeacherReview> items = <TeacherReview>[..._reviews]
+      ..sort((TeacherReview a, TeacherReview b) =>
+          b.createdAt.compareTo(a.createdAt));
+    return List<TeacherReview>.unmodifiable(items.take(limit));
+  }
+
+  @override
+  Future<void> resolveReport({
+    required String reportId,
+    required ReportResolution resolution,
+    String? note,
+  }) async {
+    final int index = _reports.indexWhere(
+      (ContentReport report) => report.id == reportId,
+    );
+    if (index < 0) {
+      throw const AppException.notFound(
+        debugMessage: 'report missing (demo admin)',
+        overrideMessage: 'لم يعد هذا البلاغ موجودًا — حدّث القائمة.',
+      );
+    }
+    final ContentReport current = _reports[index];
+    _reports[index] = ContentReport(
+      id: current.id,
+      targetType: current.targetType,
+      targetId: current.targetId,
+      targetLabel: current.targetLabel,
+      reporterId: current.reporterId,
+      reason: current.reason,
+      details: current.details,
+      status: ReportStatus.parse(resolution.wireValue),
+      createdAt: current.createdAt,
+      resolvedAt: DateTime.now(),
+      resolutionNote: note,
+    );
+  }
+
+  @override
+  Future<void> deleteReview(String reviewId) async {
+    final int index = _reviews.indexWhere(
+      (TeacherReview review) => review.bookingId == reviewId,
+    );
+    if (index < 0) {
+      throw const AppException.notFound(
+        debugMessage: 'review missing (demo admin)',
+        overrideMessage: 'التقييم غير موجود أصلًا.',
+      );
+    }
+    _reviews.removeAt(index);
   }
 }

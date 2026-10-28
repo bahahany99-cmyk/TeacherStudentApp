@@ -17,6 +17,9 @@ import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
 import 'package:teacher_student_app/features/profile/presentation/profile_screen.dart';
@@ -66,7 +69,12 @@ class _AppShellState extends State<AppShell> {
       return const _RoleChoiceRequiredScreen();
     }
 
-    if (!session.isSignedIn || role == null || !role.isEndUser) {
+    // (P14) الدور الإداري مسموح **فقط** لجلسة تحمل صلاحية إدارية حقيقية؛
+    // وإلا فدور غير معروف = جلسة غير صالحة لهذا الهيكل.
+    final bool adminAllowed = role == UserRole.admin && session.isAdmin;
+    if (!session.isSignedIn ||
+        role == null ||
+        (!role.isEndUser && !adminAllowed)) {
       return const _SessionRequiredScreen();
     }
 
@@ -89,9 +97,12 @@ class _AppShellState extends State<AppShell> {
           );
           final AppTabSpec currentSpec = specs[index < 0 ? 0 : index];
 
-          final String viewerId = role == UserRole.teacher
-              ? CurrentTeacher.idOf(session)
-              : CurrentStudent.idOf(session);
+          final String viewerId = switch (role) {
+            UserRole.teacher => CurrentTeacher.idOf(session),
+            UserRole.student => CurrentStudent.idOf(session),
+            // جرس الإدارة يقرأ إشعارات حساب المسؤول نفسه إن وُجدت.
+            UserRole.admin => session.user?.id ?? '',
+          };
 
           return PopScope(
             // نعترض الرجوع دائمًا لتنفيذ سلوك واحد واضح:
@@ -217,6 +228,16 @@ class _AppShellState extends State<AppShell> {
       AppTab.bookings => BookingsScreen(
         key: const ValueKey<String>('tab-bookings'),
         viewerRole: role,
+      ),
+      // (P14) أقسام الإدارة: نفس الشاشات التي تفتحها المسارات المحمية.
+      AppTab.adminHome => const AdminDashboardScreen(
+        key: ValueKey<String>('tab-admin-home'),
+      ),
+      AppTab.adminVerification => const TeacherVerificationScreen(
+        key: ValueKey<String>('tab-admin-verification'),
+      ),
+      AppTab.adminModeration => const ModerationScreen(
+        key: ValueKey<String>('tab-admin-moderation'),
       ),
       AppTab.profile => const ProfileScreen(key: ValueKey<String>('tab-profile')),
     };

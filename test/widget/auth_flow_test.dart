@@ -67,6 +67,7 @@ Future<SessionController> _pumpApp(
 ) async {
   usePhoneSurface(tester);
   final AppServices services = AppServices(
+    admin: DemoAdminRepository(),
     auth: auth,
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(),

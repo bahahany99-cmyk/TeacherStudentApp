@@ -17,7 +17,7 @@ import 'package:teacher_student_app/core/widgets/loading_state.dart';
 /// مثال:
 /// ```dart
 /// AsyncView<List<TeacherProfile>>(
-///   load: () => AppServicesScope.of(context).teachers.listApproved(),
+///   load: () => AppServicesScope.of(context).teachers.listVerified(),
 ///   builder: (BuildContext context, List<TeacherProfile> data) => ...,
 ///   isEmpty: (List<TeacherProfile> data) => data.isEmpty,
 /// )
