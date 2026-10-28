@@ -76,33 +76,38 @@ class _TeacherReviewsSectionState extends State<TeacherReviewsSection> {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              for (
-                                int star = 1;
-                                star <= TeacherRating.maxStars;
-                                star++
-                              )
-                                Icon(
-                                  star <= rating.average.round()
-                                      ? Icons.star_rounded
-                                      : Icons.star_outline_rounded,
-                                  size: 16,
-                                  color: const Color(0xFFB26A00),
-                                ),
-                            ],
-                          ),
-                          Text(
-                            rating.averageLabel,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                      const SizedBox(width: AppSpacing.sm),
+                      // النص داخل Expanded: العرض 360dp لا يحتمل صفًا غير
+                      // مرن مع أرقام عربية ونجوم.
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                for (
+                                  int star = 1;
+                                  star <= TeacherRating.maxStars;
+                                  star++
+                                )
+                                  Icon(
+                                    star <= rating.average.round()
+                                        ? Icons.star_rounded
+                                        : Icons.star_outline_rounded,
+                                    size: 16,
+                                    color: const Color(0xFFB26A00),
+                                  ),
+                              ],
                             ),
-                          ),
-                        ],
+                            Text(
+                              rating.averageLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

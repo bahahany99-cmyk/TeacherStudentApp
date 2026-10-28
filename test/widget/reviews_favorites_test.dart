@@ -138,8 +138,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
-      await tapVisible(tester, find.byIcon(Icons.favorite_border));
+      // نجمة الرأس أول نجمة في الشاشة (ثم تليها نجوم بطاقات المجموعات).
+      expect(find.byIcon(Icons.favorite_border), findsWidgets);
+      await tapVisible(tester, find.byIcon(Icons.favorite_border).first);
 
       final List<Favorite> mine = await services.favorites.listForStudent(
         _studentId,
@@ -297,7 +298,11 @@ void main() {
       usePhoneSurface(tester);
       final AppServices services = _services();
 
-      await tester.pumpWidget(_host(services, const GroupsScreen.discover()));
+      // الشاشة تُعرض عادة داخل هيكل التطبيق (فيه Scaffold)؛ نغلّفها هنا
+      // لأن الشريط السفلي للحفظ يحتاج ScaffoldMessenger صالحًا.
+      await tester.pumpWidget(
+        _host(services, const Scaffold(body: GroupsScreen.discover())),
+      );
       await tester.pumpAndSettle();
 
       final Finder star = find.descendant(
