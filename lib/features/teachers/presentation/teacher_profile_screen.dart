@@ -16,6 +16,7 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_request_sheet.dart';
+import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
 
 /// ملف مدرس واحد — الصفحة التي يفتحها الطالب من قائمة المدرسين.
@@ -215,10 +216,24 @@ class _TeacherProfileBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
+        // محادثة مباشرة (P11): تُحترم خصوصية المدرس — إن لم يكن بينكما حجز
+        // ولم يفعّل استقبال الرسائل، تظهر رسالة تشرح السبب بدل خطأ خادم.
+        ChatActionButton(
+          label: 'محادثة',
+          filled: true,
+          onPressed: (BuildContext context) => openChatWithTeacher(
+            context,
+            teacherId: teacher.id,
+            teacherName: teacher.displayName,
+            subject: teacher.subject,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         const InfoNote(
           text:
-              'البيانات أعلاه تجريبية من الذاكرة المحلية، وليست من Firebase. '
-              'الدفع والاتفاق على السعر يتمان خارج التطبيق (C-15).',
+              'المحادثة مرتبطة بسبب موثّق: حجز قائم أو عضوية مجموعة، وإلا فهي '
+              'استفسار لا يُسمح به إلا إن فعّله المدرس. الدفع والاتفاق على '
+              'السعر يتمان خارج التطبيق (C-15).',
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

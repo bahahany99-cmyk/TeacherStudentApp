@@ -22,6 +22,7 @@ class _Harness {
     teachers: DemoTeacherRepository(),
     groups: groups,
     bookings: DemoBookingRepository(),
+    chats: DemoDirectChatRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
   );
@@ -215,6 +216,7 @@ void main() {
         teachers: DemoTeacherRepository(),
         groups: repo,
         bookings: DemoBookingRepository(),
+        chats: DemoDirectChatRepository(),
         schedules: DemoScheduleRepository(),
         messages: DemoMessageRepository(),
       );

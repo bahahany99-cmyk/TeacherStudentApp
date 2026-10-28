@@ -1975,6 +1975,457 @@ describe('P9 — تنظيف صفوف الطلبات والانتظار عند ن
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// P11 — المحادثات المباشرة وخصوصية المدرس
+// ═════════════════════════════════════════════════════════════════════════════
+
+const settingsDoc = (allow) => ({
+  allowDirectMessages: allow,
+  updatedAt: now(),
+});
+
+/**
+ * يحذف الحقول `undefined` قبل الكتابة: Firebase يرفض قيمة `undefined`، ونحن
+ * نستعملها لقول «هذا الحقل غائب» (خيط بلا `bookingId` مثلًا).
+ */
+const clean = (data) =>
+  Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+
+/** خيط محادثة: المعرّف مشتق من الطرفين في كل اختبار. */
+const directChatDoc = (teacherId, studentId, overrides = {}) => clean({
+  teacherId,
+  teacherName: 'أ. سارة الخطيب',
+  studentId,
+  studentName: 'طالب',
+  subject: 'الرياضيات',
+  origin: 'booking',
+  bookingId: 'b1',
+  createdAt: now(),
+  ...overrides,
+});
+
+const chatPath = (teacherId, studentId) => `directChats/${teacherId}_${studentId}`;
+
+const directMessageDoc = (teacherId, studentId, senderId, overrides = {}) => clean({
+  chatId: `${teacherId}_${studentId}`,
+  senderId,
+  senderName: senderId === teacherId ? 'أ. سارة الخطيب' : 'طالب',
+  senderRole: senderId === teacherId ? 'teacher' : 'student',
+  text: 'مرحبًا، هل الموعد مناسب؟',
+  sentAt: now(),
+  ...overrides,
+});
+
+describe('P11 — teacherSettings: الخيار لصاحبه فقط والقراءة للطلاب', () => {
+  it('المدرس يكتب خياره، وغيره لا', async () => {
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'teacherSettings/teacher-1'), settingsDoc(true)),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), 'teacherSettings/teacher-1'), settingsDoc(true)),
+    );
+    await assertFails(
+      setDoc(doc(asOther(), 'teacherSettings/teacher-1'), settingsDoc(true)),
+    );
+  });
+
+  it('الطالب يقرأ الخيار، وغير المسجّل لا', async () => {
+    await seed([
+      { path: 'teacherSettings/teacher-1', data: settingsDoc(true) },
+    ]);
+    await assertSucceeds(
+      getDoc(doc(asStudent(), 'teacherSettings/teacher-1')),
+    );
+    await assertSucceeds(
+      getDoc(doc(asOther(), 'teacherSettings/teacher-1')),
+    );
+    await assertFails(getDoc(doc(asGuest(), 'teacherSettings/teacher-1')));
+  });
+
+  it('لا حقول إضافية ولا نوع خاطئ', async () => {
+    await assertFails(
+      setDoc(doc(asTeacher(), 'teacherSettings/teacher-1'), {
+        ...settingsDoc(true),
+        isFeatured: true,
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asTeacher(), 'teacherSettings/teacher-1'), {
+        allowDirectMessages: 'yes',
+        updatedAt: now(),
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asTeacher(), 'teacherSettings/teacher-1'), {
+        allowDirectMessages: true,
+        updatedAt: 'اليوم',
+      }),
+    );
+  });
+});
+
+describe('P11 — إنشاء المحادثة: أصل موثّق إجباري', () => {
+  it('استفسار بلا سماح المدرس مرفوض (غياب الإعداد = رفض)', async () => {
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1', {
+          origin: 'inquiry',
+          bookingId: undefined,
+        }),
+      ),
+    );
+
+    await seed([
+      { path: 'teacherSettings/teacher-1', data: settingsDoc(false) },
+    ]);
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1', {
+          origin: 'inquiry',
+          bookingId: undefined,
+        }),
+      ),
+    );
+
+    await seed([
+      { path: 'teacherSettings/teacher-1', data: settingsDoc(true) },
+    ]);
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1', {
+          origin: 'inquiry',
+          bookingId: undefined,
+        }),
+      ),
+    );
+  });
+
+  it('خيط مرتبط بحجز: الطالب صاحب الحجز فقط', async () => {
+    await seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-1', 'teacher-1', { status: 'pending' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1'),
+      ),
+    );
+
+    // طالب آخر يحاول استخدام حجز غيره.
+    await assertFails(
+      setDoc(
+        doc(asOther(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1', { studentId: 'student-1' }),
+      ),
+    );
+  });
+
+  it('خيط مرتبط بحجز مرفوض ممنوع', async () => {
+    await seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-1', 'teacher-1', { status: 'rejected' }),
+      },
+    ]);
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1'),
+      ),
+    );
+  });
+
+  it('خيط المجموعة: للأعضاء فقط', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 1 }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: {
+          studentId: 'student-1',
+          groupId: 'g1',
+          name: 'طالب',
+          joinedAt: now(),
+          status: 'active',
+        },
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        directChatDoc('teacher-1', 'student-1', {
+          origin: 'group',
+          groupId: 'g1',
+          bookingId: undefined,
+        }),
+      ),
+    );
+
+    // غير عضو في نفس المجموعة.
+    await assertFails(
+      setDoc(
+        doc(asOther(), chatPath('teacher-1', 'stranger-9')),
+        directChatDoc('teacher-1', 'stranger-9', {
+          origin: 'group',
+          groupId: 'g1',
+          studentName: 'غريب',
+          bookingId: undefined,
+        }),
+      ),
+    );
+  });
+
+  it('المعرّف يجب أن يساوي الطرفين، ولا انتحال طرف', async () => {
+    await seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-2', 'teacher-1', { status: 'accepted' }),
+      },
+    ]);
+
+    // المعرّف لا يطابق الطرفين.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'directChats/خيط-مزيّف'),
+        directChatDoc('teacher-1', 'student-1'),
+      ),
+    );
+
+    // الطالب ينشئ خيطًا باسم طالب آخر.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-2')),
+        directChatDoc('teacher-1', 'student-2'),
+      ),
+    );
+
+    // المدرس ينشئ خيطًا مع طالب آخر بلا حجز يجمعهما.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), chatPath('teacher-1', 'stranger-9')),
+        directChatDoc('teacher-1', 'stranger-9', { studentName: 'غريب' }),
+      ),
+    );
+  });
+});
+
+describe('P11 — قراءة المحادثة وحالة القراءة', () => {
+  const seedChat = () =>
+    seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-1', 'teacher-1', { status: 'accepted' }),
+      },
+      { path: chatPath('teacher-1', 'student-1'), data: directChatDoc('teacher-1', 'student-1') },
+    ]);
+
+  it('الطرفان يقرآن، والغريب والمجهول لا', async () => {
+    await seedChat();
+
+    await assertSucceeds(
+      getDoc(doc(asStudent(), chatPath('teacher-1', 'student-1'))),
+    );
+    await assertSucceeds(
+      getDoc(doc(asTeacher(), chatPath('teacher-1', 'student-1'))),
+    );
+    await assertFails(
+      getDoc(doc(asOther(), chatPath('teacher-1', 'student-1'))),
+    );
+    await assertFails(
+      getDoc(doc(asGuest(), chatPath('teacher-1', 'student-1'))),
+    );
+  });
+
+  it('كل طرف يعلّم قراءته هو فقط', async () => {
+    await seedChat();
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        studentLastReadAt: now(),
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), chatPath('teacher-1', 'student-1')), {
+        teacherLastReadAt: now(),
+      }),
+    );
+    // الطالب لا يكتب قراءة المدرس، ولا يغيّر حقولًا أخرى.
+    await assertFails(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        teacherLastReadAt: now(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        studentLastReadAt: now(),
+        origin: 'inquiry',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asOther(), chatPath('teacher-1', 'student-1')), {
+        studentLastReadAt: now(),
+      }),
+    );
+  });
+});
+
+describe('P11 — الرسائل: الطرفان فقط ولا انتحال', () => {
+  const messagePath = 'directChats/teacher-1_student-1/messages/m1';
+
+  const seedChat = (bookingStatus = 'accepted') =>
+    seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-1', 'teacher-1', { status: bookingStatus }),
+      },
+      {
+        path: chatPath('teacher-1', 'student-1'),
+        data: directChatDoc('teacher-1', 'student-1'),
+      },
+    ]);
+
+  it('الطرفان يرسلان، والغريب لا', async () => {
+    await seedChat();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), 'directChats/teacher-1_student-1/messages/m2'),
+        directMessageDoc('teacher-1', 'student-1', 'teacher-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asOther(), 'directChats/teacher-1_student-1/messages/m3'),
+        directMessageDoc('teacher-1', 'student-1', 'stranger-9'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asGuest(), 'directChats/teacher-1_student-1/messages/m4'),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+  });
+
+  it('لا انتحال مرسل ولا خيط مختلف ولا نص فارغ/طويل', async () => {
+    await seedChat();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'teacher-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1', {
+          chatId: 'teacher-1_student-2',
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1', { text: '' }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1', {
+          text: 'ا'.repeat(501),
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1', {
+          hiddenField: true,
+        }),
+      ),
+    );
+  });
+
+  it('الرسائل لا تُعدَّل ولا تُحذف من التطبيق', async () => {
+    await seedChat();
+    await seed([
+      {
+        path: messagePath,
+        data: directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), messagePath), { text: 'نص آخر' }),
+    );
+    await assertFails(deleteDoc(doc(asStudent(), messagePath)));
+    await assertFails(deleteDoc(doc(asTeacher(), messagePath)));
+  });
+
+  it('رفض الحجز يوقف الإرسال الجديد', async () => {
+    await seedChat('rejected');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), 'directChats/teacher-1_student-1/messages/m2'),
+        directMessageDoc('teacher-1', 'student-1', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('إيقاف الاستفسار يوقف الإرسال في خيط الاستفسار', async () => {
+    await seed([
+      { path: 'teacherSettings/teacher-1', data: settingsDoc(true) },
+      {
+        path: chatPath('teacher-1', 'student-1'),
+        data: directChatDoc('teacher-1', 'student-1', {
+          origin: 'inquiry',
+          bookingId: undefined,
+        }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), messagePath),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+
+    await seed([
+      { path: 'teacherSettings/teacher-1', data: settingsDoc(false) },
+    ]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'directChats/teacher-1_student-1/messages/m2'),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 describe('سلامة المحاكي نفسه (حماية من اختبارات وهمية)', () => {
   it('البيانات التجريبية تُكتب فعلًا مع تجاوز القواعد', async () => {
     await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);

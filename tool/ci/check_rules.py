@@ -15,6 +15,9 @@
 8. أن حذف صفوف الطلبات/الانتظار للمالك مقيّد بالصفوف المفتوحة فقط.
 9. أن الحجوزات تبدأ بحالة pending وأن كل انتقال يحدد حقوله، وأن تقويم المدرس
    اليومي لا يزيده غير المالك.
+10. أن المحادثات المباشرة (P11) مشدودة بمعرّف مشتق من الطرفين، وأن كل أصل
+    (حجز/مجموعة/استفسار) مفحوص، وأن الكتابة على المحادثة محدودة بحقل القارئ
+    أو بملخّص رسالة يكتبها مرسلها.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -37,6 +40,10 @@ REQUIRED_MATCHES = (
     'match /groupWaitlist/{entryId}',
     'match /messages/{messageId}',
     'match /bookingRequests/{bookingId}',
+    'match /teacherCalendar/{calendarId}',
+    'match /teacherSettings/{teacherId}',
+    'match /directChats/{chatId}',
+    'match /messages/{messageId}',
 )
 
 FORBIDDEN_PATTERNS = (
@@ -204,6 +211,30 @@ def main() -> int:
         problems.append('لا قواعد لتقويم المدرس اليومي')
     if 'request.resource.data.busy.size() <= resource.data.busy.size()' not in code:
         problems.append('تقويم المدرس: الإزالة من غير المالك غير مقيّدة')
+
+    # 11-ب) P11: المحادثات المباشرة وخصوصية المدرس
+    if "request.resource.data.allowDirectMessages is bool" not in code:
+        problems.append('teacherSettings: الخيار غير مقيّد بنوع منطقي')
+    if "chatId == request.resource.data.teacherId + '_'" not in code:
+        problems.append('directChats: معرّف المحادثة غير مشتق من الطرفين')
+    if "request.resource.data.studentId == request.auth.uid" not in code:
+        problems.append('directChats: الاستفسار غير مقيّد بصاحبه')
+    if 'teacherSettingsDoc().allowDirectMessages == true' not in code:
+        problems.append('directChats: الاستفسار لا يشترط تفعيل المدرس للرسائل')
+    if 'exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)/members/$(request.resource.data.studentId))' not in code:
+        problems.append('directChats: خيط المجموعة لا يفحص العضوية')
+    if 'bookingOfChat().teacherId == request.resource.data.teacherId' not in code:
+        problems.append('directChats: خيط الحجز لا يفحص الطرفين')
+    if "request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentLastReadAt'])" not in code:
+        problems.append('directChats: حالة القراءة قابلة لتعديل غير صاحبها')
+    if "'lastMessageAt', 'lastMessageText', 'lastSenderId'" not in code:
+        problems.append('directChats: حقول ملخّص آخر رسالة غير محددة')
+    if 'channelAllowsSending()' not in code:
+        problems.append('directChats/messages: إيقاف الإرسال غير مفروض')
+    if "request.resource.data.chatId == chatId" not in code:
+        problems.append('directChats/messages: الرسالة قد تُكتب في خيط آخر')
+    if code.count('request.resource.data.senderId == request.auth.uid') < 2:
+        problems.append('directChats/messages: لا يوجد منع لانتحال المرسل')
 
     # 12) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):

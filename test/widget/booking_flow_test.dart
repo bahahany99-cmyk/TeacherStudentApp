@@ -65,6 +65,7 @@ class _Harness {
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(),
     bookings: repo,
+    chats: DemoDirectChatRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
   );

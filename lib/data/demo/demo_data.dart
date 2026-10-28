@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
@@ -307,6 +308,102 @@ abstract final class DemoData {
       studentName: 'كريم طارق',
       status: WaitlistStatus.waiting,
       addedAt: DateTime(2026, 10, 22, 21, 10),
+    ),
+  ];
+
+  // ── P11: المحادثات المباشرة وإعدادات الخصوصية ────────────────────────────
+  //
+  // الخيار الافتراضي في المنتج **مغلق** (A-78). هنا نفعّله للمدرس التجريبي وحده
+  // حتى تُجرَّب مسارات الاستفسار، ونتركه مغلقًا لغيره لإظهار الحالة المتشدّدة.
+  static const Map<String, bool> directMessageSettings = <String, bool>{
+    'demo-teacher-1': true,
+    'demo-teacher-2': false,
+    'demo-teacher-3': true,
+  };
+
+  /// محادثتان تجريبيتان: واحدة مرتبطة بحجز، وأخرى استفسار بدأه المدرس.
+  static final List<DirectChat> directChats = <DirectChat>[
+    DirectChat(
+      id: DirectChat.idFor(teacherId: 'demo-teacher-1', studentId: demoStudentId),
+      teacherId: 'demo-teacher-1',
+      teacherName: 'أ. سارة الخطيب',
+      studentId: demoStudentId,
+      studentName: 'طالب تجريبي',
+      subject: 'الرياضيات — التفاضل',
+      origin: DirectChatOrigin.booking,
+      bookingId: 'demo-booking-1',
+      createdAt: DateTime(2026, 10, 24, 18, 40),
+      lastMessageAt: DateTime(2026, 10, 24, 19, 5),
+      lastMessageText: 'تمام يا أستاذة، أجهّز أسئلة الوحدة الثانية.',
+      lastSenderId: demoStudentId,
+      studentLastReadAt: DateTime(2026, 10, 24, 19, 10),
+      teacherLastReadAt: DateTime(2026, 10, 24, 19, 6),
+    ),
+    DirectChat(
+      id: DirectChat.idFor(teacherId: 'demo-teacher-3', studentId: demoStudentId),
+      teacherId: 'demo-teacher-3',
+      teacherName: 'أ. منى عبد الرحمن',
+      studentId: demoStudentId,
+      studentName: 'طالب تجريبي',
+      subject: 'اللغة العربية — النحو',
+      origin: DirectChatOrigin.inquiry,
+      createdAt: DateTime(2026, 10, 22, 10, 0),
+      lastMessageAt: DateTime(2026, 10, 22, 10, 15),
+      lastMessageText: 'أهلًا بك، اسأل عن أي شيء يخصّ النحو قبل الحجز.',
+      lastSenderId: 'demo-teacher-3',
+      teacherLastReadAt: DateTime(2026, 10, 22, 10, 15),
+    ),
+  ];
+
+  /// رسائل المحادثتين أعلاه — مرتّبة تصاعديًا كما يعيدها المستودع.
+  static final List<DirectChatMessage> directMessages = <DirectChatMessage>[
+    DirectChatMessage(
+      id: 'demo-direct-message-1',
+      chatId: DirectChat.idFor(
+        teacherId: 'demo-teacher-1',
+        studentId: demoStudentId,
+      ),
+      senderId: demoStudentId,
+      senderName: 'طالب تجريبي',
+      senderRole: UserRole.student,
+      text: 'السلام عليكم، أرسلت طلب حجز لمراجعة التفاضل. هل الموعد مناسب؟',
+      sentAt: DateTime(2026, 10, 24, 18, 40),
+    ),
+    DirectChatMessage(
+      id: 'demo-direct-message-2',
+      chatId: DirectChat.idFor(
+        teacherId: 'demo-teacher-1',
+        studentId: demoStudentId,
+      ),
+      senderId: 'demo-teacher-1',
+      senderName: 'أ. سارة الخطيب',
+      senderRole: UserRole.teacher,
+      text: 'وعليكم السلام، نعم مناسب. سأؤكد الطلب خلال ساعة.',
+      sentAt: DateTime(2026, 10, 24, 19, 0),
+    ),
+    DirectChatMessage(
+      id: 'demo-direct-message-3',
+      chatId: DirectChat.idFor(
+        teacherId: 'demo-teacher-1',
+        studentId: demoStudentId,
+      ),
+      senderId: demoStudentId,
+      senderName: 'طالب تجريبي',
+      senderRole: UserRole.student,
+      text: 'تمام يا أستاذة، أجهّز أسئلة الوحدة الثانية.',
+      sentAt: DateTime(2026, 10, 24, 19, 5),
+    ),
+    DirectChatMessage(
+      id: 'demo-direct-message-4',
+      chatId: DirectChat.idFor(
+        teacherId: 'demo-teacher-3',
+        studentId: demoStudentId,
+      ),
+      senderId: 'demo-teacher-3',
+      senderName: 'أ. منى عبد الرحمن',
+      senderRole: UserRole.teacher,
+      text: 'أهلًا بك، اسأل عن أي شيء يخصّ النحو قبل الحجز.',
+      sentAt: DateTime(2026, 10, 22, 10, 15),
     ),
   ];
 

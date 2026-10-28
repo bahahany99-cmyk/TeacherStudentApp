@@ -45,6 +45,12 @@ abstract final class RoutePaths {
   /// تفاصيل طلب حجز. `arguments` = معرّف الطلب.
   static const String bookingDetails = '/booking';
 
+  /// صندوق المحادثات المباشرة (P11).
+  static const String directChats = '/chats';
+
+  /// محادثة مباشرة واحدة. `arguments` = معرّف المحادثة.
+  static const String directChat = '/chat';
+
   /// ملف المدرس الخاص (واجهة المدرس).
   static const String myTeacherProfile = '/me/teacher-profile';
 

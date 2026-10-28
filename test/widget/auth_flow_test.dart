@@ -71,6 +71,7 @@ Future<SessionController> _pumpApp(
     teachers: DemoTeacherRepository(),
     groups: DemoGroupRepository(),
     bookings: DemoBookingRepository(),
+    chats: DemoDirectChatRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
   );

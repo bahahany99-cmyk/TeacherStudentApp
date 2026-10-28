@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
@@ -370,4 +371,65 @@ List<T> mapDocuments<T>(
     }
   }
   return List<T>.unmodifiable(result);
+}
+
+/// `directChats/{chatId}` → [DirectChat] (P11).
+///
+/// يعيد `null` إن غاب أحد الطرفين: خيط بلا طرف لا يمكن عرضه ولا تأمينه.
+DirectChat? directChatFromMap(String id, Map<String, Object?> data) {
+  final String? teacherId = readString(data['teacherId']);
+  final String? studentId = readString(data['studentId']);
+  if (teacherId == null || studentId == null) {
+    return null;
+  }
+
+  return DirectChat(
+    id: id,
+    teacherId: teacherId,
+    teacherName: readString(data['teacherName']) ?? 'مدرس',
+    studentId: studentId,
+    studentName: readString(data['studentName']) ?? 'طالب',
+    subject: readString(data['subject']),
+    origin: DirectChatOrigin.parse(data['origin']),
+    bookingId: readString(data['bookingId']),
+    groupId: readString(data['groupId']),
+    createdAt:
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    lastMessageAt: readDate(data['lastMessageAt']),
+    lastMessageText: readString(data['lastMessageText']),
+    lastSenderId: readString(data['lastSenderId']),
+    studentLastReadAt: readDate(data['studentLastReadAt']),
+    teacherLastReadAt: readDate(data['teacherLastReadAt']),
+  );
+}
+
+/// `directChats/{chatId}/messages/{messageId}` → [DirectChatMessage].
+///
+/// القيمة الافتراضية لـ`chatId` هي مسار الأب: القواعد تفرض التطابق، لكن مستندًا
+/// قديمًا بلا الحقل لا يجب أن يُسقط الخيط كله.
+DirectChatMessage? directChatMessageFromMap(
+  String id,
+  Map<String, Object?> data, {
+  String? chatId,
+}) {
+  final String? senderId = readString(data['senderId']);
+  final String? text = readString(data['text']);
+  final String? parentId = readString(data['chatId']) ?? chatId;
+  if (senderId == null || text == null || parentId == null) {
+    return null;
+  }
+
+  return DirectChatMessage(
+    id: id,
+    chatId: parentId,
+    senderId: senderId,
+    senderName: readString(data['senderName']) ?? 'مستخدم',
+    senderRole: parseSenderRole(data['senderRole']),
+    text: text,
+    sentAt:
+        readDate(data['sentAt']) ??
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+  );
 }

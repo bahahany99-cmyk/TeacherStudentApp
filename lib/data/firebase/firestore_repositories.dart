@@ -8,6 +8,7 @@ import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
@@ -17,11 +18,13 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
+import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
@@ -46,6 +49,15 @@ abstract final class FirestoreCollections {
   /// تقويم يومي لكل مدرس (P10): مستند واحد لكل `teacherId + تاريخ` يحمل فترات
   /// محجوزة، فتصبح المعاملات المتزامنة مسلسلة بلا حاجة إلى استعلام (A-76).
   static const String teacherCalendar = 'teacherCalendar';
+
+  /// إعدادات خصوصية المدرس (P11): مستند لكل مدرس، وأهم حقل فيه
+  /// `allowDirectMessages`. منفصل عن `teacherProfiles` عمدًا: الملف التعريفي
+  /// بيانات عامة يحرّرها صاحبها بقائمة حقول محكمة، والخصوصية قرار مستقل.
+  static const String teacherSettings = 'teacherSettings';
+
+  /// المحادثات المباشرة (P11) — خيط واحد لكل زوج (مدرس، طالب).
+  static const String directChats = 'directChats';
+  static const String directChatMessages = 'messages';
 }
 
 /// أخطاء Firestore → [AppException] عربية.
@@ -2118,6 +2130,343 @@ class FirestoreBookingRepository implements BookingRepository {
       throw const AppException.permission(debugMessage: 'not the student');
     }
     return booking;
+  }
+
+  (String, Map<String, Object?>) _entry(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) => (doc.id, doc.data());
+}
+
+/// المحادثات المباشرة في Firestore (P11).
+///
+/// **المعرّف مشتق** (`ChatId` = `{teacherId}_{studentId}`)، فالعثور على الخيط
+/// قراءة مستند واحد بلا استعلام ولا فهرس.
+///
+/// القواعد هي التي تمنع الخيط غير المصرّح به؛ الواجهة تتحقق محليًا فقط لتشرح
+/// السبب بالعربية قبل محاولة كتابة ستُرفض.
+class FirestoreDirectChatRepository implements DirectChatRepository {
+  FirestoreDirectChatRepository({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    Future<String?> Function()? currentUid,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _currentUid =
+           currentUid ??
+           (() async => (auth ?? FirebaseAuth.instance).currentUser?.uid);
+
+  final FirebaseFirestore _firestore;
+  final Future<String?> Function() _currentUid;
+
+  CollectionReference<Map<String, dynamic>> get _chats =>
+      _firestore.collection(FirestoreCollections.directChats);
+
+  CollectionReference<Map<String, dynamic>> _messages(String chatId) =>
+      _chats.doc(chatId).collection(FirestoreCollections.directChatMessages);
+
+  DocumentReference<Map<String, dynamic>> _settings(String teacherId) =>
+      _firestore
+          .collection(FirestoreCollections.teacherSettings)
+          .doc(teacherId);
+
+  @override
+  Future<DirectChat?> findById(String chatId) {
+    return _guard(() async {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _chats
+          .doc(chatId)
+          .get();
+      final Map<String, Object?>? data = snapshot.data();
+      if (data == null) {
+        return null;
+      }
+      return directChatFromMap(snapshot.id, data);
+    });
+  }
+
+  @override
+  Future<List<DirectChat>> listMine(String viewerId) {
+    return _guard(() async {
+      if (viewerId.isEmpty) {
+        return const <DirectChat>[];
+      }
+
+      // استعلامان متساويان (لا `OR` ولا فهرس مركّب) ثم دمج في العميل.
+      final QuerySnapshot<Map<String, dynamic>> asTeacher = await _chats
+          .where('teacherId', isEqualTo: viewerId)
+          .get();
+      final QuerySnapshot<Map<String, dynamic>> asStudent = await _chats
+          .where('studentId', isEqualTo: viewerId)
+          .get();
+
+      final Map<String, DirectChat> merged = <String, DirectChat>{};
+      for (final DirectChat chat in mapDocuments(
+        <(String, Map<String, Object?>)>[
+          ...asTeacher.docs.map(_entry),
+          ...asStudent.docs.map(_entry),
+        ],
+        directChatFromMap,
+      )) {
+        merged[chat.id] = chat;
+      }
+
+      final List<DirectChat> all = merged.values.toList(growable: false);
+      all.sort((DirectChat a, DirectChat b) {
+        final DateTime left = a.lastMessageAt ?? a.createdAt;
+        final DateTime right = b.lastMessageAt ?? b.createdAt;
+        return right.compareTo(left);
+      });
+      return List<DirectChat>.unmodifiable(all);
+    });
+  }
+
+  @override
+  Stream<List<DirectChatMessage>> watchMessages(String chatId) {
+    // البثّ على نافذة محدودة بدل الاستماع لكل الرسائل: القواعد تحدّ القراءة
+    // بالطرفين، والحدّ هنا حماية من محادثة ضخمة على جهاز محدود الموارد.
+    return _messages(chatId)
+        .orderBy('sentAt')
+        .limitToLast(DirectChatRules.maxMessagesPerLoad)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) =>
+              List<DirectChatMessage>.unmodifiable(
+                mapDocuments(
+                  snapshot.docs.map(_entry),
+                  (String id, Map<String, Object?> data) =>
+                      directChatMessageFromMap(id, data, chatId: chatId),
+                ),
+              ),
+        );
+  }
+
+  @override
+  Stream<DirectChat?> watchChat(String chatId) {
+    return _chats.doc(chatId).snapshots().map((
+      DocumentSnapshot<Map<String, dynamic>> snapshot,
+    ) {
+      final Map<String, Object?>? data = snapshot.data();
+      if (data == null) {
+        return null;
+      }
+      return directChatFromMap(snapshot.id, data);
+    });
+  }
+
+  @override
+  Future<bool> allowDirectMessages(String teacherId) {
+    return _guard(() async {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _settings(
+        teacherId,
+      ).get();
+      final Object? value = snapshot.data()?['allowDirectMessages'];
+      // غياب المستند أو الحقل = القيمة المتشدّدة (A-78)، لا «مسموح».
+      return value is bool ? value : DirectChatRules.defaultAllowDirectMessages;
+    });
+  }
+
+  @override
+  Future<void> setAllowDirectMessages({
+    required String teacherId,
+    required bool allow,
+  }) {
+    return _guard(() async {
+      // `set` مع `merge` حتى لا يمسح حقولًا أخرى إن أُضيفت للإعدادات لاحقًا.
+      await _settings(teacherId).set(<String, Object?>{
+        'allowDirectMessages': allow,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
+  @override
+  Future<DirectChat> openChat({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required DirectChatOrigin origin,
+    String? subject,
+    String? bookingId,
+    String? groupId,
+  }) {
+    return _guard(() async {
+      final String chatId = DirectChat.idFor(
+        teacherId: teacherId,
+        studentId: studentId,
+      );
+
+      final bool allowed = await allowDirectMessages(teacherId);
+      final String? blocked = DirectChatRules.startBlockedReason(
+        viewerId: studentId,
+        hasBooking: origin == DirectChatOrigin.booking,
+        isGroupMember: origin == DirectChatOrigin.group,
+        allowDirectMessages: allowed,
+      );
+      if (origin == DirectChatOrigin.inquiry && blocked != null) {
+        throw AppException(
+          AppErrorKind.permission,
+          overrideMessage: blocked,
+          debugMessage: 'inquiry not allowed',
+        );
+      }
+      if (origin == DirectChatOrigin.booking &&
+          (bookingId == null || bookingId.isEmpty)) {
+        throw const AppException.invalidInput(
+          debugMessage: 'booking-origin chat without bookingId',
+        );
+      }
+      if (origin == DirectChatOrigin.group &&
+          (groupId == null || groupId.isEmpty)) {
+        throw const AppException.invalidInput(
+          debugMessage: 'group-origin chat without groupId',
+        );
+      }
+
+      final DocumentReference<Map<String, dynamic>> ref = _chats.doc(chatId);
+      final Map<String, Object?> payload = <String, Object?>{
+        'teacherId': teacherId,
+        'teacherName': teacherName,
+        'studentId': studentId,
+        'studentName': studentName,
+        if (subject != null && subject.trim().isNotEmpty)
+          'subject': subject.trim(),
+        'origin': origin.name,
+        if (origin == DirectChatOrigin.booking) 'bookingId': bookingId,
+        if (origin == DirectChatOrigin.group) 'groupId': groupId,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      // معاملة: قراءة ثم إنشاء. لو سبقنا أحد إلى نفس الزوج، نُعيد الخيط
+      // القائم بدل مسح آخر رسالة فيه (والقواعد ترفض أي استبدال من العميل).
+      final DirectChat? existing = await _firestore.runTransaction<DirectChat?>(
+        (Transaction transaction) async {
+          final DocumentSnapshot<Map<String, dynamic>> snapshot =
+              await transaction.get(ref);
+          final Map<String, Object?>? data = snapshot.data();
+          if (data != null) {
+            return directChatFromMap(snapshot.id, data);
+          }
+          transaction.set(ref, payload);
+          return null;
+        },
+      );
+      if (existing != null) {
+        return existing;
+      }
+
+      final DirectChat? created = await findById(chatId);
+      if (created == null) {
+        throw const AppException(
+          AppErrorKind.unknown,
+          debugMessage: 'chat missing right after creation',
+        );
+      }
+      return created;
+    });
+  }
+
+  @override
+  Future<DirectChatMessage> sendMessage({
+    required String chatId,
+    required String senderId,
+    required String senderName,
+    required UserRole senderRole,
+    required String text,
+  }) {
+    return _guard(() async {
+      final ValidationResult valid = MessageRules.validate(text);
+      if (!valid.isValid) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: DirectChatRules.normalize(text).isEmpty
+              ? 'لا يمكن إرسال رسالة فارغة.'
+              : 'الرسالة أطول من ${DirectChatRules.maxLength} حرفًا.',
+          debugMessage: 'invalid message',
+        );
+      }
+
+      final DirectChat? chat = await findById(chatId);
+      if (chat == null) {
+        throw const AppException.notFound(
+          debugMessage: 'chat missing',
+          overrideMessage: 'المحادثة غير موجودة.',
+        );
+      }
+
+      final String? blocked = DirectChatRules.sendBlockedReason(
+        chat: chat,
+        viewerId: senderId,
+        allowDirectMessages: await allowDirectMessages(chat.teacherId),
+        bookingRejected: await _bookingRejected(chat),
+      );
+      if (blocked != null) {
+        throw AppException(
+          AppErrorKind.permission,
+          overrideMessage: blocked,
+          debugMessage: 'send blocked',
+        );
+      }
+
+      final String normalized = DirectChatRules.normalize(text);
+      final DocumentReference<Map<String, dynamic>> ref = _messages(
+        chatId,
+      ).doc();
+      final DirectChatMessage message = DirectChatMessage(
+        id: ref.id,
+        chatId: chatId,
+        senderId: senderId,
+        senderName: senderName,
+        senderRole: senderRole,
+        text: normalized,
+        sentAt: DateTime.now(),
+      );
+
+      // دفعة واحدة: الرسالة وملخّص المحادثة. لو كُتبت الرسالة وحدها لظلّ
+      // صندوق المحادثات يعرض نصًا قديمًا بلا إشعار.
+      final WriteBatch batch = _firestore.batch();
+      batch.set(ref, message.toCreateMap());
+      batch.update(_chats.doc(chatId), <String, Object?>{
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastMessageText': normalized,
+        'lastSenderId': senderId,
+      });
+      await batch.commit();
+
+      return message;
+    });
+  }
+
+  @override
+  Future<void> markRead({
+    required String chatId,
+    required String viewerId,
+    required DateTime at,
+  }) {
+    return _guard(() async {
+      final DirectChat? chat = await findById(chatId);
+      if (chat == null || !chat.involves(viewerId)) {
+        return;
+      }
+      final String field = chat.isTeacherViewer(viewerId)
+          ? 'teacherLastReadAt'
+          : 'studentLastReadAt';
+      // حقل واحد فقط — القواعد ترفض أي تعديل آخر من غير المالك.
+      await _chats.doc(chatId).update(<String, Object?>{
+        field: Timestamp.fromDate(at),
+      });
+    });
+  }
+
+  Future<bool> _bookingRejected(DirectChat chat) async {
+    final String? bookingId = chat.bookingId;
+    if (bookingId == null) {
+      return false;
+    }
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await _firestore
+        .collection(FirestoreCollections.bookingRequests)
+        .doc(bookingId)
+        .get();
+    final Map<String, Object?>? data = snapshot.data();
+    return data != null && data['status'] == 'rejected';
   }
 
   (String, Map<String, Object?>) _entry(

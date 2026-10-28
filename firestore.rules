@@ -23,6 +23,9 @@ rules_version = '2';
 //   9. الحجوزات (P10): الطالب ينشئ، والمدرس يقبل/يرفض/يعلن التنفيذ، والطرفان
 //      يلغيان ويقترحان وقتًا بديلًا — كل انتقال بقائمة حقول محددة. وتقويم يومي
 //      لكل مدرس يحوّل «هل الوقت مشغول؟» إلى قراءة مستند واحد داخل المعاملة.
+//  10. المحادثات المباشرة (P11): خيط واحد لكل زوج (مدرس، طالب) بمعرّف مشتق،
+//      ولا خيط بلا أصل: حجز بين الطرفين، أو عضوية مجموعة عند المدرس، أو
+//      استفسار يسمح به المدرس صراحةً. والقراءة والكتابة للطرفين فقط.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -767,7 +770,193 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── 6) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
+    // ── 6) teacherSettings/{teacherId} — خصوصية المدرس (P11) ─────────────────
+    // قرار واحد صريح: هل يستقبل المدرس رسائل قبل الحجز؟ **غياب المستند يعني
+    // الرفض** (A-78): لا نكتب القيمة الافتراضية نيابةً عن المدرس.
+    //
+    // القراءة لكل مسجّل: الطالب يحتاجها قبل أن يبادر، وهي قيمة منطقية واحدة
+    // لا تكشف شيئًا آخر. الكتابة لصاحبها فقط وبحقلين محددين.
+    match /teacherSettings/{teacherId} {
+      allow read: if isAdmin() || signedIn();
+
+      allow create, update: if isSelf(teacherId)
+        && request.resource.data.keys().hasOnly(
+             ['allowDirectMessages', 'updatedAt'])
+        && request.resource.data.allowDirectMessages is bool
+        && request.resource.data.updatedAt is timestamp;
+
+      allow delete: if isAdmin();
+    }
+
+    // ── 7) directChats/{chatId} — محادثات مباشرة (P11) ───────────────────────
+    // **الخيط مشتق من الطرفين:** `chatId == teacherId + '_' + studentId`، فلا
+    // يمكن إنشاء محادثة مزيّفة أو خيط ثانٍ لنفس الزوج.
+    //
+    // الأصل الموثّق إجباري، وواحد فقط:
+    //   - `booking`: يوجد حجز بين الطرفين فعلًا، وحالته ليست الرفض.
+    //   - `group`: الطالب عضو (exists على مستند العضوية) عند هذا المدرس.
+    //   - `inquiry`: المدرس فعّل `allowDirectMessages` (غياب الإعداد = رفض).
+    //
+    // القراءة للطرفين فقط، والرسائل في المجموعة الفرعية تُورَّث بالفحص نفسه.
+    match /directChats/{chatId} {
+      function chatKeys() {
+        return ['teacherId', 'teacherName', 'studentId', 'studentName',
+                'subject', 'origin', 'bookingId', 'groupId', 'createdAt',
+                'lastMessageAt', 'lastMessageText', 'lastSenderId',
+                'studentLastReadAt', 'teacherLastReadAt'];
+      }
+
+      function isParticipant() {
+        return signedIn() && (
+          request.auth.uid == resource.data.teacherId
+          || request.auth.uid == resource.data.studentId
+        );
+      }
+
+      function isCreatorParticipant() {
+        return signedIn() && (
+          request.auth.uid == request.resource.data.teacherId
+          || request.auth.uid == request.resource.data.studentId
+        );
+      }
+
+      function idMatchesParties() {
+        return chatId == request.resource.data.teacherId + '_'
+          + request.resource.data.studentId;
+      }
+
+      function commonPayload() {
+        return signedIn()
+          && isCreatorParticipant()
+          && idMatchesParties()
+          && request.resource.data.teacherId != request.resource.data.studentId
+          && request.resource.data.keys().hasOnly(chatKeys())
+          && request.resource.data.origin is string
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.teacherName is string
+          && request.resource.data.teacherName.size() > 0
+          && request.resource.data.teacherName.size() <= 80
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && (!('subject' in request.resource.data.keys())
+              || (request.resource.data.subject is string
+                  && request.resource.data.subject.size() <= 80));
+      }
+
+      function bookingOfChat() {
+        return get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data;
+      }
+
+      function teacherSettingsDoc() {
+        return get(/databases/$(database)/documents/teacherSettings/$(request.resource.data.teacherId)).data;
+      }
+
+      allow read: if isAdmin() || isParticipant();
+
+      // (أ) خيط مرتبط بحجز: الطالب أو المدرس، والحجز يخصّ الطرفين معًا.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'booking'
+        && request.resource.data.bookingId is string
+        && !('groupId' in request.resource.data.keys())
+        && bookingOfChat().studentId == request.resource.data.studentId
+        && bookingOfChat().teacherId == request.resource.data.teacherId
+        && bookingOfChat().status in ['pending', 'accepted', 'rescheduleProposed',
+                                      'completed', 'cancelled', 'cancelledLate'];
+
+      // (ب) خيط عضو مجموعة: العضوية موجودة، والمجموعة لهذا المدرس نفسه.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'group'
+        && request.resource.data.groupId is string
+        && !('bookingId' in request.resource.data.keys())
+        && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)/members/$(request.resource.data.studentId))
+        && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)).data.teacherId == request.resource.data.teacherId;
+
+      // (ج) استفسار قبل الحجز: الطالب ينشئه، **والمدرس فعّل** الخيار.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'inquiry'
+        && request.resource.data.studentId == request.auth.uid
+        && !('bookingId' in request.resource.data.keys())
+        && !('groupId' in request.resource.data.keys())
+        && teacherSettingsDoc().allowDirectMessages == true;
+
+      // (د) حالة القراءة: كل طرف يكتب حقلَه وحده، ولا يمسّ شيئًا آخر.
+      allow update: if isParticipant()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.studentId == resource.data.studentId
+        && (
+             (request.auth.uid == resource.data.studentId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentLastReadAt'])
+              && request.resource.data.studentLastReadAt is timestamp)
+             ||
+             (request.auth.uid == resource.data.teacherId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacherLastReadAt'])
+              && request.resource.data.teacherLastReadAt is timestamp)
+           );
+
+      // (هـ) ملخّص آخر رسالة: يكتبه مرسل الرسالة نفسه فقط، بعدها في الدفعة
+      // نفسها. لا يغيّر الأطراف ولا الأصل.
+      allow update: if isParticipant()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.origin == resource.data.origin
+        && request.resource.data.lastSenderId == request.auth.uid
+        && request.resource.data.lastMessageAt is timestamp
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessageText.size() > 0
+        && request.resource.data.lastMessageText.size() <= 500
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['lastMessageAt', 'lastMessageText', 'lastSenderId']);
+
+      // لا حذف من التطبيق: المحادثة سجل، والحذف قرار إداري.
+      allow delete: if isAdmin();
+
+      // ── 7-ب) رسائل المحادثة ─────────────────────────────────────────────
+      // القراءة للطرفين فقط، والكتابة لمرسِل يساوي معرّفه `uid`، وبشرط أن
+      // يظل المحتوى مسموحًا: استفسار أُوقف استقباله، أو حجز مرفوض، يمنعان
+      // **الجديد** ولا يمسحان القديم (سجل يُقرأ ولا يُعاد كتابته).
+      match /messages/{messageId} {
+        function parentChat() {
+          return get(/databases/$(database)/documents/directChats/$(chatId)).data;
+        }
+
+        function viewerIsParticipant() {
+          return signedIn() && (
+            request.auth.uid == parentChat().teacherId
+            || request.auth.uid == parentChat().studentId
+          );
+        }
+
+        function channelAllowsSending() {
+          return (parentChat().origin == 'booking'
+                  && get(/databases/$(database)/documents/bookingRequests/$(parentChat().bookingId)).data.status != 'rejected')
+            || parentChat().origin == 'group'
+            || (parentChat().origin == 'inquiry'
+                && get(/databases/$(database)/documents/teacherSettings/$(parentChat().teacherId)).data.allowDirectMessages == true);
+        }
+
+        allow read: if isAdmin() || viewerIsParticipant();
+
+        allow create: if viewerIsParticipant()
+          && channelAllowsSending()
+          && request.resource.data.keys().hasOnly(
+               ['chatId', 'senderId', 'senderName', 'senderRole', 'text', 'sentAt'])
+          && request.resource.data.chatId == chatId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 80
+          && request.resource.data.senderRole in ['student', 'teacher']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.sentAt is timestamp;
+
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ── 8) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

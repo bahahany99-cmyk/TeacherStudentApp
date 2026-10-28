@@ -5,6 +5,7 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
@@ -18,11 +19,13 @@ import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
+import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
@@ -1629,5 +1632,315 @@ class DemoScheduleRepository implements ScheduleRepository {
       ignoreSessionId: null,
     );
     return conflict ?? result.firstMessage;
+  }
+}
+
+/// محادثات مباشرة في وضع الزائر (P11).
+///
+/// تُنفّذ **نفس** شروط القواعد محليًا (الأصل الموثّق، منع غير الطرفين، إيقاف
+/// الإرسال عند رفض الحجز أو إطفاء استقبال الرسائل)، لأن الوضع التجريبي بلا خادم:
+/// لو اكتفينا بالواجهة لاختلف سلوك المعاينة عن الإنتاج.
+///
+/// البثّ: مشغّل لكل محادثة مفتوحة ([watchMessages])، ويُغلق مع التطبيق.
+class DemoDirectChatRepository implements DirectChatRepository {
+  DemoDirectChatRepository({
+    List<DirectChat>? source,
+    List<DirectChatMessage>? messages,
+    Map<String, bool>? settings,
+    Future<BookingRequest?> Function(String id)? findBooking,
+    Future<bool> Function({required String groupId, required String userId})?
+    isMember,
+  }) : _chats = <DirectChat>[...(source ?? DemoData.directChats)],
+       _messages = <DirectChatMessage>[...(messages ?? DemoData.directMessages)],
+       _settings = <String, bool>{
+         ...DemoData.directMessageSettings,
+         ...?settings,
+       },
+       _findBooking = findBooking,
+       _isMember = isMember;
+
+  final List<DirectChat> _chats;
+  final List<DirectChatMessage> _messages;
+  final Map<String, bool> _settings;
+
+  /// ربط اختياري بمستودع الحجوزات: يجعل «الأصل الموثّق» حقيقيًا لا توقيعًا.
+  final Future<BookingRequest?> Function(String id)? _findBooking;
+  final Future<bool> Function({required String groupId, required String userId})?
+  _isMember;
+
+  final Map<String, StreamController<List<DirectChatMessage>>> _streams =
+      <String, StreamController<List<DirectChatMessage>>>{};
+  final Map<String, StreamController<DirectChat?>> _chatStreams =
+      <String, StreamController<DirectChat?>>{};
+  int _nextMessageId = 1;
+
+  StreamController<DirectChat?> _chatStreamFor(String chatId) {
+    return _chatStreams.putIfAbsent(
+      chatId,
+      () => StreamController<DirectChat?>.broadcast(),
+    );
+  }
+
+  void _publishChat(String chatId) {
+    _chatStreamFor(chatId).add(_find(chatId));
+  }
+
+  StreamController<List<DirectChatMessage>> _streamFor(String chatId) {
+    return _streams.putIfAbsent(
+      chatId,
+      () => StreamController<List<DirectChatMessage>>.broadcast(),
+    );
+  }
+
+  List<DirectChatMessage> _messagesOf(String chatId) {
+    final List<DirectChatMessage> mine = _messages
+        .where((DirectChatMessage m) => m.chatId == chatId)
+        .toList(growable: false)
+      ..sort((DirectChatMessage a, DirectChatMessage b) {
+        final int byTime = a.sentAt.compareTo(b.sentAt);
+        return byTime != 0 ? byTime : a.id.compareTo(b.id);
+      });
+    return List<DirectChatMessage>.unmodifiable(mine);
+  }
+
+  DirectChat? _find(String chatId) {
+    for (final DirectChat chat in _chats) {
+      if (chat.id == chatId) {
+        return chat;
+      }
+    }
+    return null;
+  }
+
+  int _indexOf(String chatId) =>
+      _chats.indexWhere((DirectChat chat) => chat.id == chatId);
+
+  void _replace(DirectChat chat) {
+    final int index = _indexOf(chat.id);
+    if (index >= 0) {
+      _chats[index] = chat;
+    }
+  }
+
+  @override
+  Future<DirectChat?> findById(String chatId) async => _find(chatId);
+
+  @override
+  Future<List<DirectChat>> listMine(String viewerId) async {
+    final List<DirectChat> mine = _chats
+        .where((DirectChat chat) => chat.involves(viewerId))
+        .toList(growable: false)
+      ..sort((DirectChat a, DirectChat b) {
+        final DateTime? left = a.lastMessageAt ?? a.createdAt;
+        final DateTime? right = b.lastMessageAt ?? b.createdAt;
+        return right.compareTo(left);
+      });
+    return List<DirectChat>.unmodifiable(mine);
+  }
+
+  @override
+  Stream<List<DirectChatMessage>> watchMessages(String chatId) async* {
+    yield _messagesOf(chatId);
+    yield* _streamFor(chatId).stream;
+  }
+
+  @override
+  Stream<DirectChat?> watchChat(String chatId) async* {
+    yield _find(chatId);
+    yield* _chatStreamFor(chatId).stream;
+  }
+
+  @override
+  Future<bool> allowDirectMessages(String teacherId) async =>
+      _settings[teacherId] ?? DirectChatRules.defaultAllowDirectMessages;
+
+  @override
+  Future<void> setAllowDirectMessages({
+    required String teacherId,
+    required bool allow,
+  }) async {
+    _settings[teacherId] = allow;
+  }
+
+  @override
+  Future<DirectChat> openChat({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required DirectChatOrigin origin,
+    String? subject,
+    String? bookingId,
+    String? groupId,
+  }) async {
+    final String chatId = DirectChat.idFor(
+      teacherId: teacherId,
+      studentId: studentId,
+    );
+    final DirectChat? existing = _find(chatId);
+    if (existing != null) {
+      return existing;
+    }
+
+    switch (origin) {
+      case DirectChatOrigin.booking:
+        if (bookingId == null || bookingId.trim().isEmpty) {
+          throw const AppException.invalidInput(
+            debugMessage: 'booking-origin chat without bookingId',
+            overrideMessage: 'المحادثة المرتبطة بحجز تحتاج رقم الحجز.',
+          );
+        }
+        final BookingRequest? booking = await _findBooking?.call(bookingId);
+        if (_findBooking != null) {
+          if (booking == null) {
+            throw const AppException.notFound(
+              debugMessage: 'booking missing',
+              overrideMessage: 'لا يوجد حجز بهذا الرقم.',
+            );
+          }
+          if (booking.teacherId != teacherId ||
+              booking.studentId != studentId) {
+            throw const AppException.permission(
+              debugMessage: 'booking does not belong to both parties',
+              overrideMessage: 'هذا الحجز لا يخصّكما معًا.',
+            );
+          }
+        }
+      case DirectChatOrigin.group:
+        if (groupId == null || groupId.trim().isEmpty) {
+          throw const AppException.invalidInput(
+            debugMessage: 'group-origin chat without groupId',
+            overrideMessage: 'المحادثة المرتبطة بمجموعة تحتاج رقم المجموعة.',
+          );
+        }
+        final bool member =
+            await _isMember?.call(groupId: groupId, userId: studentId) ?? false;
+        if (_isMember != null && !member) {
+          throw const AppException.permission(
+            debugMessage: 'not a group member',
+            overrideMessage: 'المحادثة متاحة لأعضاء المجموعة فقط.',
+          );
+        }
+      case DirectChatOrigin.inquiry:
+        if (!await allowDirectMessages(teacherId)) {
+          throw AppException(
+            AppErrorKind.permission,
+            overrideMessage: DirectChatRules.startBlockedReason(
+              viewerId: studentId,
+              hasBooking: false,
+              isGroupMember: false,
+              allowDirectMessages: false,
+            ),
+            debugMessage: 'inquiry not allowed',
+          );
+        }
+    }
+
+    final DirectChat chat = DirectChat(
+      id: chatId,
+      teacherId: teacherId,
+      teacherName: teacherName,
+      studentId: studentId,
+      studentName: studentName,
+      subject: subject,
+      origin: origin,
+      bookingId: origin == DirectChatOrigin.booking ? bookingId : null,
+      groupId: origin == DirectChatOrigin.group ? groupId : null,
+      createdAt: DateTime.now(),
+    );
+    _chats.add(chat);
+    _publishChat(chatId);
+    return chat;
+  }
+
+  Future<bool> _bookingRejected(DirectChat chat) async {
+    final String? bookingId = chat.bookingId;
+    if (bookingId == null) {
+      return false;
+    }
+    final BookingRequest? booking = await _findBooking?.call(bookingId);
+    return booking?.status == BookingStatus.rejected;
+  }
+
+  @override
+  Future<DirectChatMessage> sendMessage({
+    required String chatId,
+    required String senderId,
+    required String senderName,
+    required UserRole senderRole,
+    required String text,
+  }) async {
+    final DirectChat? chat = _find(chatId);
+    if (chat == null) {
+      throw const AppException.notFound(
+        debugMessage: 'chat missing',
+        overrideMessage: 'المحادثة غير موجودة.',
+      );
+    }
+
+    final ValidationResult valid = MessageRules.validate(text);
+    if (!valid.isValid) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: valid.problems.first.issue == FieldIssue.tooLong
+            ? 'الرسالة أطول من ${DirectChatRules.maxLength} حرفًا.'
+            : 'لا يمكن إرسال رسالة فارغة.',
+        debugMessage: 'invalid message',
+      );
+    }
+
+    final bool allowed = await allowDirectMessages(chat.teacherId);
+    final String? blocked = DirectChatRules.sendBlockedReason(
+      chat: chat,
+      viewerId: senderId,
+      allowDirectMessages: allowed,
+      bookingRejected: await _bookingRejected(chat),
+    );
+    if (blocked != null) {
+      throw AppException(
+        AppErrorKind.permission,
+        overrideMessage: blocked,
+        debugMessage: 'send blocked',
+      );
+    }
+
+    final DirectChatMessage message = DirectChatMessage(
+      id: 'demo-direct-message-${100 + _nextMessageId++}',
+      chatId: chatId,
+      senderId: senderId,
+      senderName: senderName,
+      senderRole: senderRole,
+      text: MessageRules.normalize(text),
+      sentAt: DateTime.now(),
+    );
+    _messages.add(message);
+    _replace(
+      chat.copyWith(
+        lastMessageAt: message.sentAt,
+        lastMessageText: message.text,
+        lastSenderId: senderId,
+      ),
+    );
+    _streamFor(chatId).add(_messagesOf(chatId));
+    _publishChat(chatId);
+    return message;
+  }
+
+  @override
+  Future<void> markRead({
+    required String chatId,
+    required String viewerId,
+    required DateTime at,
+  }) async {
+    final DirectChat? chat = _find(chatId);
+    if (chat == null || !chat.involves(viewerId)) {
+      return;
+    }
+    _replace(
+      chat.isTeacherViewer(viewerId)
+          ? chat.copyWith(teacherLastReadAt: at)
+          : chat.copyWith(studentLastReadAt: at),
+    );
+    _publishChat(chatId);
   }
 }

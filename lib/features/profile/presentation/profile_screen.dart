@@ -130,6 +130,14 @@ class ProfileScreen extends StatelessWidget {
                       const Divider(height: 1),
                     ],
                     _ProfileTile(
+                      icon: Icons.forum_outlined,
+                      label: 'المحادثات',
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.directChats),
+                    ),
+                    const Divider(height: 1),
+                    _ProfileTile(
                       icon: Icons.person_outline,
                       label: 'بياناتي',
                       onTap: () => _showComingSoon(context),

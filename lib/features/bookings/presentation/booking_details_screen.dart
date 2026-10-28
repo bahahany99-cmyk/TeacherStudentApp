@@ -21,6 +21,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
 import 'package:teacher_student_app/features/bookings/widgets/slot_picker_sheet.dart';
 
 /// تفاصيل طلب حجز + إجراءات الطرفين (P10).
@@ -282,6 +283,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             : 'يمكنك الإلغاء أو اقتراح وقت بديل',
                       ),
                       _actions(booking, viewer, isTeacherView),
+                      const SizedBox(height: AppSpacing.xs),
+                      // المحادثة المباشرة (P11): أصلها هذا الحجز نفسه، فتُفتح
+                      // بلا شرط خصوصية إضافي — العلاقة قائمة بالفعل.
+                      ChatActionButton(
+                        label: 'محادثة بخصوص الطلب',
+                        icon: Icons.forum_outlined,
+                        onPressed: (BuildContext context) =>
+                            openChatForBooking(context, booking),
+                      ),
                       const SizedBox(height: AppSpacing.md),
                       const SectionHeader(
                         title: 'ملاحظة الطالب',

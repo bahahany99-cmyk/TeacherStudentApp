@@ -8,6 +8,8 @@ import 'package:teacher_student_app/features/auth/presentation/email_auth_screen
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/role_selection_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
+import 'package:teacher_student_app/features/chat/presentation/direct_chat_screen.dart';
+import 'package:teacher_student_app/features/chat/presentation/direct_chats_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_chat_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
@@ -94,6 +96,14 @@ abstract final class AppRouter {
           return _page(const UnknownRouteScreen(), settings);
         }
         return _page(BookingDetailsScreen(bookingId: bookingId), settings);
+      case RoutePaths.directChats:
+        return _page(const DirectChatsScreen(), settings);
+      case RoutePaths.directChat:
+        final String? chatId = _idFrom(settings);
+        if (chatId == null) {
+          return _page(const UnknownRouteScreen(), settings);
+        }
+        return _page(DirectChatScreen(chatId: chatId), settings);
       case RoutePaths.myTeacherProfile:
         return _page(const MyTeacherProfileScreen(), settings);
       case RoutePaths.editTeacherProfile:

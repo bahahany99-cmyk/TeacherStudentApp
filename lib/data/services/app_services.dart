@@ -4,6 +4,7 @@ import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
+import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
@@ -21,6 +22,7 @@ class AppServices {
     required this.bookings,
     required this.schedules,
     required this.messages,
+    required this.chats,
   });
 
   final AuthService auth;
@@ -33,6 +35,9 @@ class AppServices {
 
   /// محادثة المجموعة (P9).
   final MessageRepository messages;
+
+  /// المحادثات المباشرة بين الطالب والمدرس (P11).
+  final DirectChatRepository chats;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -57,18 +62,27 @@ class AppServices {
       bookings: FirestoreBookingRepository(),
       schedules: FirestoreScheduleRepository(),
       messages: FirestoreMessageRepository(),
+      chats: FirestoreDirectChatRepository(),
     );
   }
 
   /// حزمة تجريبية كاملة للعمل بلا خادم (الوضع الافتراضي في المرحلة 2).
   factory AppServices.demo() {
+    // المستودعات مترابطة عمدًا: المحادثة تتحقق من «الأصل الموثّق» (حجز قائم أو
+    // عضوية مجموعة) من نفس مصادر البيانات، فلا يمرّ خيط بلا علاقة حقيقية.
+    final DemoBookingRepository bookings = DemoBookingRepository();
+    final DemoGroupRepository groups = DemoGroupRepository();
     return AppServices(
       auth: const DemoAuthService(),
       teachers: DemoTeacherRepository(),
-      groups: DemoGroupRepository(),
-      bookings: DemoBookingRepository(),
+      groups: groups,
+      bookings: bookings,
       schedules: DemoScheduleRepository(),
       messages: DemoMessageRepository(),
+      chats: DemoDirectChatRepository(
+        findBooking: bookings.findById,
+        isMember: groups.isMember,
+      ),
     );
   }
 }
