@@ -26,6 +26,10 @@ rules_version = '2';
 //  10. المحادثات المباشرة (P11): خيط واحد لكل زوج (مدرس، طالب) بمعرّف مشتق،
 //      ولا خيط بلا أصل: حجز بين الطرفين، أو عضوية مجموعة عند المدرس، أو
 //      استفسار يسمح به المدرس صراحةً. والقراءة والكتابة للطرفين فقط.
+//  11. الإشعارات (P12): المستلم وحده يقرأ ويعلّم مقروءًا ويحذف. والإنشاء من
+//      الطرف الذي نفّذ الفعل فعلًا (`actorId == uid`)، بعد التحقق من **علاقة
+//      حقيقية** بينه وبين المستلم: حجز يجمعهما، أو محادثة يشاركان فيها، أو
+//      مجموعة يملكها والمستلم عضو فيها. لا يوجد «أرسل إشعارًا لأي أحد».
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -966,7 +970,129 @@ service cloud.firestore {
       }
     }
 
-    // ── 8) كل ما لم يُذكر: ممنوع ─────────────────────────────────────────────
+    // ── 9) notifications/{notificationId} — إشعارات داخل التطبيق (P12) ───────
+    // **لمن؟** مستند واحد لمستلم واحد. القراءة والتعليم والحذف للمستلم فقط،
+    // والإدارة.
+    //
+    // **الإنشاء:** يكتبه الطرف الذي نفّذ الفعل (`actorId == request.auth.uid`)،
+    // لأن المشروع لا يستخدم Cloud Functions (تحتاج خطة Blaze). القواعد هي
+    // الحارس: تتحقق من علاقة حقيقية بين المُحدِث والمستلم، ومن أن النوع يطابق
+    // حالة الكيان المقصود — فلا يمكن تزوير إشعار «قُبل حجزك» لحجز معلّق، ولا
+    // مراسلة شخص لا توجد بينك وبينه علاقة.
+    //
+    // **حدّ معروف:** العنوان والنص يكتبهما العميل (بالعربية، وبحدود طول)، لأن
+    // ترجمتها في الخادم تحتاج دالة سحابية. ما يهم — النوع والوجهة والمستلم —
+    // مفحوص، والنص للعرض فقط.
+    match /notifications/{notificationId} {
+      function notificationKeys() {
+        return ['recipientId', 'type', 'actorId', 'actorName', 'targetId',
+                'title', 'body', 'createdAt', 'readAt'];
+      }
+
+      function bookingOfNotification() {
+        return get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.targetId)).data;
+      }
+
+      function chatOfNotification() {
+        return get(/databases/$(database)/documents/directChats/$(request.resource.data.targetId)).data;
+      }
+
+      function groupOfNotification() {
+        return get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data;
+      }
+
+      function validText() {
+        return request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.actorName is string
+          && request.resource.data.actorName.size() > 0
+          && request.resource.data.actorName.size() <= 80
+          && (!('body' in request.resource.data.keys())
+              || (request.resource.data.body is string
+                  && request.resource.data.body.size() > 0
+                  && request.resource.data.body.size() <= 200));
+      }
+
+      // نوع الحجز يجب أن يطابق الحالة الفعلية، حتى لا يُزعم «قُبل» أو «رُفض»
+      // قبل حدوثه.
+      function bookingTypeMatchesStatus() {
+        return (request.resource.data.type == 'bookingRequested'
+                && bookingOfNotification().status == 'pending')
+          || (request.resource.data.type == 'bookingAccepted'
+                && bookingOfNotification().status == 'accepted')
+          || (request.resource.data.type == 'bookingRejected'
+                && bookingOfNotification().status == 'rejected')
+          || (request.resource.data.type == 'rescheduleProposed'
+                && bookingOfNotification().status == 'rescheduleProposed');
+      }
+
+      // طرفا الحجز: أحدهما المستلم والآخر المُحدِث (لا إشعار لنفسك).
+      function bookingPartiesMatch() {
+        return request.resource.data.recipientId in [
+                 bookingOfNotification().studentId,
+                 bookingOfNotification().teacherId
+               ]
+          && request.auth.uid in [
+               bookingOfNotification().studentId,
+               bookingOfNotification().teacherId
+             ];
+      }
+
+      // طرفا المحادثة: كلاهما مشارك، أحدهما المستلم والآخر المُحدِث.
+      function chatPartiesMatch() {
+        return request.resource.data.recipientId in [
+                 chatOfNotification().studentId,
+                 chatOfNotification().teacherId
+               ]
+          && request.auth.uid in [
+               chatOfNotification().studentId,
+               chatOfNotification().teacherId
+             ];
+      }
+
+      allow read: if isAdmin() || (signedIn() && isSelf(resource.data.recipientId));
+
+      allow create: if signedIn()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && request.resource.data.createdAt is timestamp
+        && !('readAt' in request.resource.data.keys())
+        && request.resource.data.keys().hasOnly(notificationKeys())
+        && validText()
+        && (
+             // (أ) إشعارات الحجز: النوع يطابق الحالة، والطرفان هما المستلم
+             // والمُحدِث.
+             (request.resource.data.type in ['bookingRequested', 'bookingAccepted',
+                                             'bookingRejected', 'rescheduleProposed']
+              && bookingTypeMatchesStatus()
+              && bookingPartiesMatch())
+             // (ب) رسالة مباشرة: المُحدِث مرسل داخل المحادثة، والمستلم طرفها
+             // الآخر.
+             || (request.resource.data.type == 'directMessage'
+                 && chatPartiesMatch())
+             // (ج) ترقية من قائمة الانتظار: المالك يُشعر عضوًا صار له مقعد.
+             || (request.resource.data.type == 'waitlistPromoted'
+                 && groupOfNotification().teacherId == request.auth.uid
+                 && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)/members/$(request.resource.data.recipientId)))
+           );
+
+      // تعليم مقروء: المستلم وحده، وحقل واحد فقط. `size() > 0` تمنع كتابة
+      // القيمة نفسها (فروق فارغة).
+      allow update: if signedIn()
+        && isSelf(resource.data.recipientId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
+        && request.resource.data.readAt is timestamp;
+
+      allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.recipientId));
+    }
+
+    // ── 10) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

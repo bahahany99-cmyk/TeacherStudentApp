@@ -7,12 +7,15 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/app/shell/app_tab.dart';
 import 'package:teacher_student_app/app/shell/shell_controller.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
+import 'package:teacher_student_app/app/session/current_student.dart';
+import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
@@ -86,6 +89,10 @@ class _AppShellState extends State<AppShell> {
           );
           final AppTabSpec currentSpec = specs[index < 0 ? 0 : index];
 
+          final String viewerId = role == UserRole.teacher
+              ? CurrentTeacher.idOf(session)
+              : CurrentStudent.idOf(session);
+
           return PopScope(
             // نعترض الرجوع دائمًا لتنفيذ سلوك واحد واضح:
             // - من قسم غير الرئيسية → العودة للرئيسية.
@@ -122,6 +129,9 @@ class _AppShellState extends State<AppShell> {
               appBar: AppBar(
                 title: Text(currentSpec.label),
                 actions: <Widget>[
+                  // جرس الإشعارات (P12): عدّاد حيّ من الخادم، والقيمة 0 تُخفي
+                  // الوسم بدل عرض «0».
+                  NotificationBell(viewerId: viewerId),
                   if (effectiveTab != firstTab)
                     IconButton(
                       tooltip: 'الرئيسية',
@@ -265,6 +275,73 @@ class _SessionRequiredScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// جرس الإشعارات مع عدّاد غير المقروء (P12).
+///
+/// **لماذا لا يُبنى داخل الشاشة؟** لأن العدّاد يجب أن يظهر في كل الأقسام،
+/// وتحديثه يجب أن يبقى واحدًا لا نسخة لكل قسم. يستمع إلى عدّاد صغير من
+/// الخادم (`recipientId` + `readAt == null`) ويعرض وسمًا عند وجود جديد.
+class NotificationBell extends StatelessWidget {
+  const NotificationBell({super.key, required this.viewerId});
+
+  final String viewerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return StreamBuilder<int>(
+      stream: AppServicesScope.of(
+        context,
+      ).notifications.watchUnreadCount(viewerId),
+      initialData: 0,
+      builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+        final int count = snapshot.data ?? 0;
+
+        return Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            IconButton(
+              tooltip: count == 0 ? 'الإشعارات' : 'الإشعارات ($count غير مقروء)',
+              onPressed: () => Navigator.of(
+                context,
+              ).pushNamed(RoutePaths.notifications),
+              icon: const Icon(Icons.notifications_none),
+            ),
+            if (count > 0)
+              PositionedDirectional(
+                top: 8,
+                end: 6,
+                child: IgnorePointer(
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.radiusPill,
+                      ),
+                      border: Border.all(color: Colors.white, width: 1.4),
+                    ),
+                    child: Text(
+                      // أكثر من 9 يُعرض «9+» حتى لا يتضخّم الوسم.
+                      count > 9 ? '9+' : '$count',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onPrimary,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

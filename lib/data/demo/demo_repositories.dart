@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
+import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
@@ -20,12 +22,14 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
+import 'package:teacher_student_app/data/services/notification_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
+import 'package:teacher_student_app/data/validation/notification_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
@@ -122,8 +126,14 @@ class DemoTeacherRepository implements TeacherRepository {
 }
 
 class DemoGroupRepository implements GroupRepository {
-  DemoGroupRepository({List<StudyGroup>? source})
-    : _groups = <StudyGroup>[...(source ?? DemoData.groups)];
+  DemoGroupRepository({
+    List<StudyGroup>? source,
+    NotificationRepository? notifications,
+  }) : _groups = <StudyGroup>[...(source ?? DemoData.groups)],
+       _notifications = notifications;
+
+  /// اختياري: كاتب الإشعارات (P12) — يُستدعى بعد نجاح الفعل فقط.
+  final NotificationRepository? _notifications;
 
   /// قائمة **قابلة للتغيير** محليًا: تسمح بتجربة الإنشاء والتعديل في وضع
   /// الزائر بلا خادم. تُفقد عند إغلاق التطبيق — وهذا مقصود ومعلن في الشاشة.
@@ -863,6 +873,17 @@ class DemoGroupRepository implements GroupRepository {
       }
       _acceptedMembers[group.id] = members;
 
+      await _notify(
+        type: NotificationType.waitlistPromoted,
+        recipientId: promoted.studentId,
+        actorId: teacherId,
+        actorName: group.teacherName,
+        targetId: promoted.groupId,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.waitlistPromoted,
+          actorName: group.teacherName,
+        ),
+      );
       return promoted;
     });
   }
@@ -1043,6 +1064,36 @@ class DemoGroupRepository implements GroupRepository {
       return cancelled;
     });
   }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12): فشله لا يُفشل الفعل الأصلي.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        body: body,
+      );
+    } on Object catch (error) {
+      // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
+      log('demo notification push failed', name: 'notifications', error: error);
+    }
+  }
+
+
 }
 
 /// محادثة المجموعة في وضع الزائر (P9): قائمة في الذاكرة تُفقد عند الإغلاق.
@@ -1101,8 +1152,14 @@ class DemoMessageRepository implements MessageRepository {
 }
 
 class DemoBookingRepository implements BookingRepository {
-  DemoBookingRepository({List<BookingRequest>? source})
-    : _bookings = <BookingRequest>[...(source ?? DemoData.bookings)];
+  DemoBookingRepository({
+    List<BookingRequest>? source,
+    NotificationRepository? notifications,
+  }) : _bookings = <BookingRequest>[...(source ?? DemoData.bookings)],
+       _notifications = notifications;
+
+  /// اختياري: كاتب الإشعارات (P12).
+  final NotificationRepository? _notifications;
 
   /// قائمة **قابلة للتغيير** محليًا: تسمح بتجربة الحجز والقبول في وضع الزائر
   /// بلا خادم. تُفقد عند إغلاق التطبيق مثل بقية الوضع التجريبي (P10).
@@ -1270,6 +1327,18 @@ class DemoBookingRepository implements BookingRepository {
         durationMinutes: durationMinutes,
       );
       _bookings.add(request);
+      await _notify(
+        type: NotificationType.bookingRequested,
+        recipientId: teacherId,
+        actorId: studentId,
+        actorName: studentName,
+        targetId: request.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingRequested,
+          actorName: studentName,
+          subject: request.subject,
+        ),
+      );
       return request;
     });
   }
@@ -1307,6 +1376,17 @@ class DemoBookingRepository implements BookingRepository {
           decidedBy: teacherId,
         );
         _replace(rejected);
+        await _notify(
+          type: NotificationType.bookingRejected,
+          recipientId: rejected.studentId ?? '',
+          actorId: teacherId,
+          actorName: rejected.teacherName,
+          targetId: rejected.id,
+          body: NotificationRules.bodyFor(
+            type: NotificationType.bookingRejected,
+            actorName: rejected.teacherName,
+          ),
+        );
         return rejected;
       }
 
@@ -1332,6 +1412,18 @@ class DemoBookingRepository implements BookingRepository {
       );
 
       _replace(accepted);
+      await _notify(
+        type: NotificationType.bookingAccepted,
+        recipientId: accepted.studentId ?? '',
+        actorId: teacherId,
+        actorName: accepted.teacherName,
+        targetId: accepted.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingAccepted,
+          actorName: accepted.teacherName,
+          slotLabel: BookingRules.slotLabel(accepted),
+        ),
+      );
       return accepted;
     });
   }
@@ -1406,6 +1498,20 @@ class DemoBookingRepository implements BookingRepository {
         proposedAt: now,
       );
       _replace(proposed);
+      await _notify(
+        type: NotificationType.rescheduleProposed,
+        recipientId: byTeacher
+            ? (proposed.studentId ?? '')
+            : (proposed.teacherId ?? ''),
+        actorId: actorId,
+        actorName: byTeacher ? proposed.teacherName : proposed.studentName,
+        targetId: proposed.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.rescheduleProposed,
+          actorName: byTeacher ? proposed.teacherName : proposed.studentName,
+          slotLabel: BookingRules.proposalLabel(proposed),
+        ),
+      );
       return proposed;
     });
   }
@@ -1429,6 +1535,19 @@ class DemoBookingRepository implements BookingRepository {
           decidedBy: actorId,
         );
         _replace(rejected);
+        await _notify(
+          type: NotificationType.bookingRejected,
+          recipientId: byTeacher
+              ? (rejected.studentId ?? '')
+              : (rejected.teacherId ?? ''),
+          actorId: actorId,
+          actorName: byTeacher ? rejected.teacherName : rejected.studentName,
+          targetId: rejected.id,
+          body: NotificationRules.bodyFor(
+            type: NotificationType.bookingRejected,
+            actorName: byTeacher ? rejected.teacherName : rejected.studentName,
+          ),
+        );
         return rejected;
       }
 
@@ -1460,6 +1579,20 @@ class DemoBookingRepository implements BookingRepository {
         bookingId: accepted.id,
       );
       _replace(accepted);
+      await _notify(
+        type: NotificationType.bookingAccepted,
+        recipientId: byTeacher
+            ? (accepted.studentId ?? '')
+            : (accepted.teacherId ?? ''),
+        actorId: actorId,
+        actorName: byTeacher ? accepted.teacherName : accepted.studentName,
+        targetId: accepted.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingAccepted,
+          actorName: byTeacher ? accepted.teacherName : accepted.studentName,
+          slotLabel: BookingRules.slotLabel(accepted),
+        ),
+      );
       return accepted;
     });
   }
@@ -1503,6 +1636,36 @@ class DemoBookingRepository implements BookingRepository {
     }
     return booking;
   }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12): فشله لا يُفشل الفعل الأصلي.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        body: body,
+      );
+    } on Object catch (error) {
+      // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
+      log('demo notification push failed', name: 'notifications', error: error);
+    }
+  }
+
+
 }
 
 /// الجدول الأسبوعي في وضع الزائر (P9).
@@ -1647,6 +1810,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
     List<DirectChat>? source,
     List<DirectChatMessage>? messages,
     Map<String, bool>? settings,
+    NotificationRepository? notifications,
     Future<BookingRequest?> Function(String id)? findBooking,
     Future<bool> Function({required String groupId, required String userId})?
     isMember,
@@ -1657,7 +1821,8 @@ class DemoDirectChatRepository implements DirectChatRepository {
          ...?settings,
        },
        _findBooking = findBooking,
-       _isMember = isMember;
+       _isMember = isMember,
+       _notifications = notifications;
 
   final List<DirectChat> _chats;
   final List<DirectChatMessage> _messages;
@@ -1667,6 +1832,9 @@ class DemoDirectChatRepository implements DirectChatRepository {
   final Future<BookingRequest?> Function(String id)? _findBooking;
   final Future<bool> Function({required String groupId, required String userId})?
   _isMember;
+
+  /// اختياري: كاتب الإشعارات (P12) — يُخطر الطرف الآخر بالرسائل.
+  final NotificationRepository? _notifications;
 
   final Map<String, StreamController<List<DirectChatMessage>>> _streams =
       <String, StreamController<List<DirectChatMessage>>>{};
@@ -1923,6 +2091,19 @@ class DemoDirectChatRepository implements DirectChatRepository {
     );
     _streamFor(chatId).add(_messagesOf(chatId));
     _publishChat(chatId);
+    await _notify(
+      type: NotificationType.directMessage,
+      recipientId: chat.isTeacherViewer(senderId)
+          ? chat.studentId
+          : chat.teacherId,
+      actorId: senderId,
+      actorName: senderName,
+      targetId: chatId,
+      body: NotificationRules.bodyFor(
+        type: NotificationType.directMessage,
+        actorName: senderName,
+      ),
+    );
     return message;
   }
 
@@ -1946,5 +2127,191 @@ class DemoDirectChatRepository implements DirectChatRepository {
           : chat.copyWith(studentLastReadAt: at),
     );
     _publishChat(chatId);
+  }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12): فشله لا يُفشل الفعل الأصلي.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        body: body,
+      );
+    } on Object catch (error) {
+      // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
+      log('demo notification push failed', name: 'notifications', error: error);
+    }
+  }
+
+
+}
+
+/// إشعارات داخل التطبيق في وضع الزائر (P12).
+///
+/// تعمل بنفس عقد Firestore: القائمة للمستلم فقط، والتعليم/الحذف لمستلمه،
+/// والعدّاد يُبثّ حيًّا (مشغّل لكل مستلم).
+class DemoNotificationRepository implements NotificationRepository {
+  DemoNotificationRepository({List<AppNotification>? source})
+    : _items = <AppNotification>[...(source ?? DemoData.notifications)];
+
+  final List<AppNotification> _items;
+  final Map<String, StreamController<int>> _streams =
+      <String, StreamController<int>>{};
+  int _nextId = 1;
+
+  StreamController<int> _streamFor(String recipientId) {
+    return _streams.putIfAbsent(
+      recipientId,
+      () => StreamController<int>.broadcast(),
+    );
+  }
+
+  int _unread(String recipientId) => _items
+      .where(
+        (AppNotification item) =>
+            item.recipientId == recipientId && !item.isRead,
+      )
+      .length;
+
+  void _publish(String recipientId) {
+    _streamFor(recipientId).add(_unread(recipientId));
+  }
+
+  @override
+  Future<List<AppNotification>> listMine(String recipientId) async {
+    return NotificationRules.newestFirst(
+      _items
+          .where((AppNotification item) => item.recipientId == recipientId)
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Stream<int> watchUnreadCount(String recipientId) async* {
+    yield _unread(recipientId);
+    yield* _streamFor(recipientId).stream;
+  }
+
+  @override
+  Future<void> markRead({
+    required String notificationId,
+    required String recipientId,
+  }) async {
+    final int index = _items.indexWhere(
+      (AppNotification item) => item.id == notificationId,
+    );
+    if (index < 0) {
+      return;
+    }
+    final AppNotification item = _items[index];
+    if (item.recipientId != recipientId || item.isRead) {
+      return;
+    }
+    _items[index] = item.copyWith(readAt: DateTime.now());
+    _publish(recipientId);
+  }
+
+  @override
+  Future<void> markAllRead(String recipientId) async {
+    final DateTime now = DateTime.now();
+    bool changed = false;
+    for (int i = 0; i < _items.length; i++) {
+      final AppNotification item = _items[i];
+      if (item.recipientId == recipientId && !item.isRead) {
+        _items[i] = item.copyWith(readAt: now);
+        changed = true;
+      }
+    }
+    if (changed) {
+      _publish(recipientId);
+    }
+  }
+
+  @override
+  Future<void> deleteNotification({
+    required String notificationId,
+    required String recipientId,
+  }) async {
+    final int index = _items.indexWhere(
+      (AppNotification item) => item.id == notificationId,
+    );
+    if (index < 0) {
+      return;
+    }
+    if (_items[index].recipientId != recipientId) {
+      throw const AppException.permission(
+        debugMessage: 'delete others notification',
+        overrideMessage: 'لا يمكنك حذف إشعار لا يخصّك.',
+      );
+    }
+    _items.removeAt(index);
+    _publish(recipientId);
+  }
+
+  @override
+  Future<AppNotification> push({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    if (recipientId == actorId) {
+      throw const AppException.permission(
+        debugMessage: 'self notification',
+        overrideMessage: 'لا يمكن إرسال إشعار لنفسك.',
+      );
+    }
+    final String cleanActorName = NotificationRules.normalize(actorName);
+    final String cleanTitle = NotificationRules.normalize(
+      title ?? NotificationRules.titleFor(type: type, actorName: cleanActorName),
+    );
+    final String? cleanBody = body == null
+        ? null
+        : NotificationRules.normalize(body);
+
+    final String? problem = NotificationRules.textProblem(
+      title: cleanTitle,
+      body: cleanBody,
+      actorName: cleanActorName,
+    );
+    if (problem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: problem,
+        debugMessage: 'invalid notification text',
+      );
+    }
+
+    final AppNotification item = AppNotification(
+      id: 'demo-notification-new-${_nextId++}',
+      recipientId: recipientId,
+      type: type,
+      actorId: actorId,
+      actorName: cleanActorName,
+      targetId: targetId,
+      title: cleanTitle,
+      body: cleanBody == null || cleanBody.isEmpty ? null : cleanBody,
+      createdAt: DateTime.now(),
+    );
+    _items.add(item);
+    _publish(recipientId);
+    return item;
   }
 }

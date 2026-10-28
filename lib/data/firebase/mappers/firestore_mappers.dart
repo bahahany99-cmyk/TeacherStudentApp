@@ -1,3 +1,4 @@
+import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
@@ -431,5 +432,35 @@ DirectChatMessage? directChatMessageFromMap(
         readDate(data['sentAt']) ??
         readDate(data['createdAt']) ??
         DateTime.fromMillisecondsSinceEpoch(0),
+  );
+}
+
+/// `notifications/{id}` → [AppNotification] (P12).
+///
+/// يعيد `null` إن غاب المستلم أو الكيان المقصود: إشعار بلا وجهة لا يُفتح ولا
+/// يجوز أن يظهر في القائمة.
+AppNotification? notificationFromMap(String id, Map<String, Object?> data) {
+  final String? recipientId = readString(data['recipientId']);
+  final String? actorId = readString(data['actorId']);
+  final String? targetId = readString(data['targetId']);
+  if (recipientId == null || actorId == null || targetId == null) {
+    return null;
+  }
+
+  final NotificationType type = NotificationType.parse(data['type']);
+
+  return AppNotification(
+    id: id,
+    recipientId: recipientId,
+    type: type,
+    actorId: actorId,
+    actorName: readString(data['actorName']) ?? 'مستخدم',
+    targetId: targetId,
+    title: readString(data['title']) ?? type.label,
+    body: readString(data['body']),
+    createdAt:
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+    readAt: readDate(data['readAt']),
   );
 }

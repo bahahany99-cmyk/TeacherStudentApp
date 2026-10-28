@@ -1,3 +1,4 @@
+import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
@@ -404,6 +405,50 @@ abstract final class DemoData {
       senderRole: UserRole.teacher,
       text: 'أهلًا بك، اسأل عن أي شيء يخصّ النحو قبل الحجز.',
       sentAt: DateTime(2026, 10, 22, 10, 15),
+    ),
+  ];
+
+  // ── P12: إشعارات تجريبية ─────────────────────────────────────────────────
+  //
+  // اثنان للطالب (واحد غير مقروء) وواحد للمدرس غير مقروء، حتى يظهر عدّاد
+  // الجرس في الدورين ويُجرَّب «تعليم الكل مقروء».
+  static final List<AppNotification> notifications = <AppNotification>[
+    AppNotification(
+      id: 'demo-notification-1',
+      recipientId: demoTeacherId,
+      type: NotificationType.bookingRequested,
+      actorId: demoStudentId,
+      actorName: 'طالب تجريبي',
+      targetId: 'demo-booking-1',
+      title: 'طلب حجز جديد من طالب تجريبي',
+      body: 'المادة: الرياضيات — التفاضل. راجع الطلب واقبله أو اقترح وقتًا بديلًا.',
+      createdAt: DateTime(2026, 10, 24, 18, 31),
+    ),
+    AppNotification(
+      id: 'demo-notification-2',
+      recipientId: demoStudentId,
+      type: NotificationType.bookingAccepted,
+      actorId: 'demo-teacher-3',
+      actorName: 'أ. منى عبد الرحمن',
+      targetId: 'demo-booking-2',
+      title: 'قبلت أ. منى عبد الرحمن طلب الحجز',
+      body: 'موعدك أصبح مؤكدًا: الأربعاء 21/10 — 4:00 م.',
+      createdAt: DateTime(2026, 10, 20, 12, 1),
+      readAt: DateTime(2026, 10, 20, 12, 30),
+    ),
+    AppNotification(
+      id: 'demo-notification-3',
+      recipientId: demoStudentId,
+      type: NotificationType.directMessage,
+      actorId: 'demo-teacher-3',
+      actorName: 'أ. منى عبد الرحمن',
+      targetId: DirectChat.idFor(
+        teacherId: 'demo-teacher-3',
+        studentId: demoStudentId,
+      ),
+      title: 'رسالة من أ. منى عبد الرحمن',
+      body: 'أرسل لك أ. منى عبد الرحمن رسالة جديدة.',
+      createdAt: DateTime(2026, 10, 22, 10, 16),
     ),
   ];
 

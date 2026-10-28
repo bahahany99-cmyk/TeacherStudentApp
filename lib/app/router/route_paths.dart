@@ -51,6 +51,9 @@ abstract final class RoutePaths {
   /// محادثة مباشرة واحدة. `arguments` = معرّف المحادثة.
   static const String directChat = '/chat';
 
+  /// الإشعارات داخل التطبيق (P12).
+  static const String notifications = '/notifications';
+
   /// ملف المدرس الخاص (واجهة المدرس).
   static const String myTeacherProfile = '/me/teacher-profile';
 

@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -7,6 +9,7 @@ import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
+import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
@@ -18,12 +21,14 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
+import 'package:teacher_student_app/data/services/notification_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/data/validation/notification_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
@@ -58,6 +63,9 @@ abstract final class FirestoreCollections {
   /// المحادثات المباشرة (P11) — خيط واحد لكل زوج (مدرس، طالب).
   static const String directChats = 'directChats';
   static const String directChatMessages = 'messages';
+
+  /// إشعارات داخل التطبيق (P12) — مستند لكل إشعار لمستلم واحد.
+  static const String notifications = 'notifications';
 }
 
 /// أخطاء Firestore → [AppException] عربية.
@@ -141,10 +149,17 @@ class FirestoreTeacherRepository implements TeacherRepository {
 
 /// قراءة المجموعات وأعضائها.
 class FirestoreGroupRepository implements GroupRepository {
-  FirestoreGroupRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirestoreGroupRepository({
+    FirebaseFirestore? firestore,
+    NotificationRepository? notifications,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _notifications = notifications;
 
   final FirebaseFirestore _firestore;
+
+  /// اختياري: REPOSITORY الإشعارات (P12). غيابه يعني «بلا إشعارات»، وهو وضع
+  /// الاختبارات التي تختبر عملية واحدة بمعزل.
+  final NotificationRepository? _notifications;
 
   CollectionReference<Map<String, dynamic>> get _groups =>
       _firestore.collection(FirestoreCollections.studyGroups);
@@ -1122,7 +1137,10 @@ class FirestoreGroupRepository implements GroupRepository {
           .collection(FirestoreCollections.groupMembers)
           .doc(entry.studentId);
 
-      return _firestore.runTransaction<GroupWaitlistEntry>((
+      // نُخرجه من المعاملة لاستخدامه في الإشعار بعد الالتزام.
+      String groupTeacherName = '';
+
+      final GroupWaitlistEntry promoted = await _firestore.runTransaction<GroupWaitlistEntry>((
         Transaction transaction,
       ) async {
         final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
@@ -1158,6 +1176,7 @@ class FirestoreGroupRepository implements GroupRepository {
         if (group.teacherId != teacherId) {
           throw const AppException.permission(debugMessage: 'not group owner');
         }
+        groupTeacherName = group.teacherName;
 
         final String? reason = WaitlistRules.promoteBlockReason(
           group: group,
@@ -1194,9 +1213,21 @@ class FirestoreGroupRepository implements GroupRepository {
           decidedBy: teacherId,
         );
       });
+
+      await _notify(
+        type: NotificationType.waitlistPromoted,
+        recipientId: promoted.studentId,
+        actorId: teacherId,
+        actorName: groupTeacherName,
+        targetId: promoted.groupId,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.waitlistPromoted,
+          actorName: groupTeacherName,
+        ),
+      );
+      return promoted;
     });
   }
-
   @override
   Future<GroupWaitlistEntry> leaveWaitlist({
     required GroupWaitlistEntry entry,
@@ -1387,6 +1418,38 @@ class FirestoreScheduleRepository implements ScheduleRepository {
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
 
+  /// ينشئ إشعارًا «بأفضل جهد» (P12).
+  ///
+  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
+  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        title: title,
+        body: body,
+      );
+    } on Object catch (error) {
+      log('notification push failed', name: 'notifications', error: error);
+    }
+  }
+
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
@@ -1515,13 +1578,18 @@ class FirestoreBookingRepository implements BookingRepository {
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     Future<String?> Function()? currentUid,
+    NotificationRepository? notifications,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _currentUid =
            currentUid ??
-           (() async => (auth ?? FirebaseAuth.instance).currentUser?.uid);
+           (() async => (auth ?? FirebaseAuth.instance).currentUser?.uid),
+       _notifications = notifications;
 
   final FirebaseFirestore _firestore;
   final Future<String?> Function() _currentUid;
+
+  /// اختياري: كاتب الإشعارات (P12) — يُستدعى بعد نجاح الفعل وبأفضل جهد.
+  final NotificationRepository? _notifications;
 
   CollectionReference<Map<String, dynamic>> get _bookings =>
       _firestore.collection(FirestoreCollections.bookingRequests);
@@ -1629,7 +1697,7 @@ class FirestoreBookingRepository implements BookingRepository {
       final String dateKey = BookingRulesLite.keyOf(startsAt);
       final int startMinutes = BookingRulesLite.minutesOf(startsAt);
 
-      return _firestore.runTransaction<BookingRequest>((
+      final BookingRequest created = await _firestore.runTransaction<BookingRequest>((
         Transaction transaction,
       ) async {
         // الطلب الجديد معلّق لا يشغل وقتًا، لكن نفحص التقويم حتى لا نرسل طلبًا
@@ -1661,9 +1729,22 @@ class FirestoreBookingRepository implements BookingRepository {
         transaction.set(ref, data);
         return bookingFromMap(ref.id, data)!;
       });
+
+      await _notify(
+        type: NotificationType.bookingRequested,
+        recipientId: created.teacherId ?? '',
+        actorId: created.studentId ?? '',
+        actorName: created.studentName,
+        targetId: created.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingRequested,
+          actorName: created.studentName,
+          subject: created.subject,
+        ),
+      );
+      return created;
     });
   }
-
   @override
   Future<BookingRequest> decideRequest({
     required BookingRequest request,
@@ -1675,7 +1756,7 @@ class FirestoreBookingRepository implements BookingRepository {
         request.id,
       );
 
-      return _firestore.runTransaction<BookingRequest>((
+      final BookingRequest decided = await _firestore.runTransaction<BookingRequest>((
         Transaction transaction,
       ) async {
         final BookingRequest current = await _readBooking(
@@ -1716,9 +1797,26 @@ class FirestoreBookingRepository implements BookingRepository {
         await _bookSlot(transaction, accepted);
         return accepted;
       });
+
+      await _notify(
+        type: approved
+            ? NotificationType.bookingAccepted
+            : NotificationType.bookingRejected,
+        recipientId: decided.studentId ?? '',
+        actorId: decided.teacherId ?? '',
+        actorName: decided.teacherName,
+        targetId: decided.id,
+        body: NotificationRules.bodyFor(
+          type: approved
+              ? NotificationType.bookingAccepted
+              : NotificationType.bookingRejected,
+          actorName: decided.teacherName,
+          slotLabel: BookingRules.slotLabel(decided),
+        ),
+      );
+      return decided;
     });
   }
-
   @override
   Future<BookingRequest> cancelRequest({
     required BookingRequest request,
@@ -1787,7 +1885,7 @@ class FirestoreBookingRepository implements BookingRepository {
         request.id,
       );
 
-      return _firestore.runTransaction<BookingRequest>((
+      final BookingRequest proposed = await _firestore.runTransaction<BookingRequest>((
         Transaction transaction,
       ) async {
         final BookingRequest current = await _readBooking(
@@ -1847,9 +1945,24 @@ class FirestoreBookingRepository implements BookingRepository {
           proposedAt: now,
         );
       });
+
+      await _notify(
+        type: NotificationType.rescheduleProposed,
+        recipientId: byTeacher
+            ? (proposed.studentId ?? '')
+            : (proposed.teacherId ?? ''),
+        actorId: actorId,
+        actorName: byTeacher ? proposed.teacherName : proposed.studentName,
+        targetId: proposed.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.rescheduleProposed,
+          actorName: byTeacher ? proposed.teacherName : proposed.studentName,
+          slotLabel: BookingRules.proposalLabel(proposed),
+        ),
+      );
+      return proposed;
     });
   }
-
   @override
   Future<BookingRequest> respondToProposal({
     required BookingRequest request,
@@ -1862,7 +1975,7 @@ class FirestoreBookingRepository implements BookingRepository {
         request.id,
       );
 
-      return _firestore.runTransaction<BookingRequest>((
+      final BookingRequest answered = await _firestore.runTransaction<BookingRequest>((
         Transaction transaction,
       ) async {
         final BookingRequest current = await _readBooking(
@@ -1907,9 +2020,28 @@ class FirestoreBookingRepository implements BookingRepository {
         await _bookSlot(transaction, accepted);
         return accepted;
       });
+
+      await _notify(
+        type: accept
+            ? NotificationType.bookingAccepted
+            : NotificationType.bookingRejected,
+        recipientId: byTeacher
+            ? (answered.studentId ?? '')
+            : (answered.teacherId ?? ''),
+        actorId: actorId,
+        actorName: byTeacher ? answered.teacherName : answered.studentName,
+        targetId: answered.id,
+        body: NotificationRules.bodyFor(
+          type: accept
+              ? NotificationType.bookingAccepted
+              : NotificationType.bookingRejected,
+          actorName: byTeacher ? answered.teacherName : answered.studentName,
+          slotLabel: BookingRules.slotLabel(answered),
+        ),
+      );
+      return answered;
     });
   }
-
   @override
   Future<BookingRequest> completeRequest({
     required BookingRequest request,
@@ -2145,10 +2277,16 @@ class FirestoreBookingRepository implements BookingRepository {
 /// القواعد هي التي تمنع الخيط غير المصرّح به؛ الواجهة تتحقق محليًا فقط لتشرح
 /// السبب بالعربية قبل محاولة كتابة ستُرفض.
 class FirestoreDirectChatRepository implements DirectChatRepository {
-  FirestoreDirectChatRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirestoreDirectChatRepository({
+    FirebaseFirestore? firestore,
+    NotificationRepository? notifications,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _notifications = notifications;
 
   final FirebaseFirestore _firestore;
+
+  /// اختياري: كاتب الإشعارات (P12) — يُخطر الطرف الآخر برسالة جديدة.
+  final NotificationRepository? _notifications;
 
   CollectionReference<Map<String, dynamic>> get _chats =>
       _firestore.collection(FirestoreCollections.directChats);
@@ -2424,6 +2562,23 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
       });
       await batch.commit();
 
+      // إشعار الطرف الآخر (P12). من كان داخل المحادثة نفسها يقرأ الرسالة
+      // فورًا ويعلمها مقروءة عند وصول واجهته — الإشعار للسجل والجرس.
+      final String recipientId = chat.isTeacherViewer(senderId)
+          ? chat.studentId
+          : chat.teacherId;
+      await _notify(
+        type: NotificationType.directMessage,
+        recipientId: recipientId,
+        actorId: senderId,
+        actorName: senderName,
+        targetId: chat.id,
+        body: NotificationRules.bodyFor(
+          type: NotificationType.directMessage,
+          actorName: senderName,
+        ),
+      );
+
       return message;
     });
   }
@@ -2465,6 +2620,242 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
         .get();
     final Map<String, Object?>? data = snapshot.data();
     return data != null && data['status'] == 'rejected';
+  }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12).
+  ///
+  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
+  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        title: title,
+        body: body,
+      );
+    } on Object catch (error) {
+      log('notification push failed', name: 'notifications', error: error);
+    }
+  }
+
+  (String, Map<String, Object?>) _entry(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) => (doc.id, doc.data());
+}
+
+/// الإشعارات داخل التطبيق في Firestore (P12).
+///
+/// **العزل بالقراءة:** كل استعلام مقيّد بـ`recipientId`، والقواعد ترفض قراءة أي
+/// مستند لمستلم آخر — العزل ليس تصفية في العميل.
+///
+/// **الإنشاء من العميل:** لا دوال سحابية في هذه المرحلة، فيكتب الإشعار الطرف
+/// الذي نفّذ الفعل، وتتحقق القواعد من العلاقة (حجز/محادثة/عضوية) ومن أن
+/// `actorId == request.auth.uid`. البديل (Cloud Function) يحتاج خطة Blaze —
+/// خارج نطاق المشروع الآن.
+class FirestoreNotificationRepository implements NotificationRepository {
+  FirestoreNotificationRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _items =>
+      _firestore.collection(FirestoreCollections.notifications);
+
+  @override
+  Future<List<AppNotification>> listMine(String recipientId) {
+    return _guard(() async {
+      if (recipientId.isEmpty) {
+        return const <AppNotification>[];
+      }
+      // بلا `orderBy`: الترتيب على عميل (قائمة قصيرة) تفاديًا لفهرس مركّب
+      // إضافي — نفس سياسة بقية الشاشات (P8/P9).
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _items
+          .where('recipientId', isEqualTo: recipientId)
+          .limit(NotificationRules.maxPerLoad)
+          .get();
+      return NotificationRules.newestFirst(
+        mapDocuments(snapshot.docs.map(_entry), notificationFromMap),
+      );
+    });
+  }
+
+  @override
+  Stream<int> watchUnreadCount(String recipientId) {
+    if (recipientId.isEmpty) {
+      return Stream<int>.value(0);
+    }
+    // شرطان متساويان ⇒ لا يحتاج فهرسًا مركّبًا (دمج فهارس أحادية).
+    return _items
+        .where('recipientId', isEqualTo: recipientId)
+        .where('readAt', isNull: true)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) =>
+              snapshot.docs.length,
+        );
+  }
+
+  @override
+  Future<void> markRead({
+    required String notificationId,
+    required String recipientId,
+  }) {
+    return _guard(() async {
+      // حقل واحد فقط (readAt) — القواعد ترفض أي تعديل آخر.
+      await _items.doc(notificationId).update(<String, Object?>{
+        'readAt': DateTime.now(),
+      });
+    });
+  }
+
+  @override
+  Future<void> markAllRead(String recipientId) {
+    return _guard(() async {
+      if (recipientId.isEmpty) {
+        return;
+      }
+      final QuerySnapshot<Map<String, dynamic>> unread = await _items
+          .where('recipientId', isEqualTo: recipientId)
+          .where('readAt', isNull: true)
+          .get();
+      if (unread.docs.isEmpty) {
+        return;
+      }
+
+      final DateTime now = DateTime.now();
+      // دفعات من 400: سقف Firestore 500 عملية في الدفعة الواحدة.
+      const int chunk = 400;
+      for (int start = 0; start < unread.docs.length; start += chunk) {
+        final WriteBatch batch = _firestore.batch();
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+            in unread.docs.skip(start).take(chunk)) {
+          batch.update(doc.reference, <String, Object?>{'readAt': now});
+        }
+        await batch.commit();
+      }
+    });
+  }
+
+  @override
+  Future<void> deleteNotification({
+    required String notificationId,
+    required String recipientId,
+  }) {
+    return _guard(() async {
+      // القواعد تتحقق من المستلم؛ الحذف هنا لا يتجاوزها.
+      await _items.doc(notificationId).delete();
+    });
+  }
+
+  @override
+  Future<AppNotification> push({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) {
+    return _guard(() async {
+      final String cleanActorName = NotificationRules.normalize(
+        actorName,
+      );
+      final String cleanTitle = NotificationRules.normalize(
+        title ??
+            NotificationRules.titleFor(type: type, actorName: cleanActorName),
+      );
+      final String? cleanBody = body == null
+          ? null
+          : NotificationRules.normalize(body);
+
+      final String? problem = NotificationRules.textProblem(
+        title: cleanTitle,
+        body: cleanBody,
+        actorName: cleanActorName,
+      );
+      if (problem != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: problem,
+          debugMessage: 'invalid notification text',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      final DocumentReference<Map<String, dynamic>> ref = _items.doc();
+      final Map<String, Object?> data = <String, Object?>{
+        'recipientId': recipientId,
+        'type': type.wireName,
+        'actorId': actorId,
+        'actorName': cleanActorName,
+        'targetId': targetId,
+        'title': cleanTitle,
+        if (cleanBody != null && cleanBody.isNotEmpty) 'body': cleanBody,
+        'createdAt': now,
+      };
+      await ref.set(data);
+
+      return AppNotification(
+        id: ref.id,
+        recipientId: recipientId,
+        type: type,
+        actorId: actorId,
+        actorName: cleanActorName,
+        targetId: targetId,
+        title: cleanTitle,
+        body: cleanBody,
+        createdAt: now,
+      );
+    });
+  }
+
+  /// ينشئ إشعارًا «بأفضل جهد» (P12).
+  ///
+  /// فشل الإشعار لا يُفشل العملية الأصلية: الحجز أو الرسالة تمّت فعلًا، وإسقاط
+  /// نجاحها بسبب إشعار سيكون كذبًا على المستخدم. الخطأ يُسجَّل للتشخيص فقط.
+  Future<void> _notify({
+    required NotificationType type,
+    required String recipientId,
+    required String actorId,
+    required String actorName,
+    required String targetId,
+    String? title,
+    String? body,
+  }) async {
+    final NotificationRepository? repo = _notifications;
+    if (repo == null || recipientId.isEmpty || recipientId == actorId) {
+      return;
+    }
+    try {
+      await repo.push(
+        type: type,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: targetId,
+        title: title,
+        body: body,
+      );
+    } on Object catch (error) {
+      log('notification push failed', name: 'notifications', error: error);
+    }
   }
 
   (String, Map<String, Object?>) _entry(

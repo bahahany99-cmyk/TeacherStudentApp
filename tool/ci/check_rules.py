@@ -42,6 +42,7 @@ REQUIRED_MATCHES = (
     'match /bookingRequests/{bookingId}',
     'match /teacherCalendar/{calendarId}',
     'match /teacherSettings/{teacherId}',
+    'match /notifications/{notificationId}',
     'match /directChats/{chatId}',
     'match /messages/{messageId}',
 )
@@ -235,6 +236,22 @@ def main() -> int:
         problems.append('directChats/messages: الرسالة قد تُكتب في خيط آخر')
     if code.count('request.resource.data.senderId == request.auth.uid') < 2:
         problems.append('directChats/messages: لا يوجد منع لانتحال المرسل')
+
+    # 11-ج) P12: الإشعارات للمستلم فقط، والإنشاء بعلاقة موثّقة
+    if 'isSelf(resource.data.recipientId)' not in code:
+        problems.append('notifications: القراءة/التعليم غير مقيّدة بالمستلم')
+    if 'request.resource.data.actorId == request.auth.uid' not in code:
+        problems.append('notifications: الإنشاء غير مقيّد بالمُحدِث نفسه')
+    if 'request.resource.data.recipientId != request.auth.uid' not in code:
+        problems.append('notifications: يمكن إرسال إشعار لنفسك')
+    if 'bookingTypeMatchesStatus()' not in code:
+        problems.append('notifications: النوع لا يطابق حالة الحجز')
+    if 'chatPartiesMatch()' not in code:
+        problems.append('notifications: رسالة الإشعار لا تشترط وجود محادثة')
+    if 'groupOfNotification().teacherId == request.auth.uid' not in code:
+        problems.append('notifications: إشعار الترقية ليس من مالك المجموعة')
+    if "request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])" not in code:
+        problems.append('notifications: التعليم يمكنه تغيير حقول أخرى')
 
     # 12) منع الحقول الإدارية في ملف المدرس
     for field in ('isFeatured', 'rating', 'reviewsCount'):

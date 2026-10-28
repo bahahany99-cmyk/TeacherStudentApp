@@ -5,6 +5,7 @@ import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
+import 'package:teacher_student_app/data/services/notification_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
@@ -23,6 +24,7 @@ class AppServices {
     required this.schedules,
     required this.messages,
     required this.chats,
+    required this.notifications,
   });
 
   final AuthService auth;
@@ -38,6 +40,9 @@ class AppServices {
 
   /// المحادثات المباشرة بين الطالب والمدرس (P11).
   final DirectChatRepository chats;
+
+  /// الإشعارات داخل التطبيق (P12).
+  final NotificationRepository notifications;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -55,14 +60,19 @@ class AppServices {
 
   /// حزمة متصلة بـFirestore (تُستخدم فقط بعد نجاح التهيئة).
   factory AppServices.firebase() {
+    // كاتب إشعارات واحد يخدم المستودعات الثلاثة التي تُنتج إشعارات (P12)،
+    // فتبقى سياسة الإشعارات في مكان واحد.
+    final FirestoreNotificationRepository notifications =
+        FirestoreNotificationRepository();
     return AppServices(
       auth: FirebaseAuthService(),
       teachers: FirestoreTeacherRepository(),
-      groups: FirestoreGroupRepository(),
-      bookings: FirestoreBookingRepository(),
+      groups: FirestoreGroupRepository(notifications: notifications),
+      bookings: FirestoreBookingRepository(notifications: notifications),
       schedules: FirestoreScheduleRepository(),
       messages: FirestoreMessageRepository(),
-      chats: FirestoreDirectChatRepository(),
+      chats: FirestoreDirectChatRepository(notifications: notifications),
+      notifications: notifications,
     );
   }
 
@@ -70,8 +80,14 @@ class AppServices {
   factory AppServices.demo() {
     // المستودعات مترابطة عمدًا: المحادثة تتحقق من «الأصل الموثّق» (حجز قائم أو
     // عضوية مجموعة) من نفس مصادر البيانات، فلا يمرّ خيط بلا علاقة حقيقية.
-    final DemoBookingRepository bookings = DemoBookingRepository();
-    final DemoGroupRepository groups = DemoGroupRepository();
+    final DemoNotificationRepository notifications =
+        DemoNotificationRepository();
+    final DemoBookingRepository bookings = DemoBookingRepository(
+      notifications: notifications,
+    );
+    final DemoGroupRepository groups = DemoGroupRepository(
+      notifications: notifications,
+    );
     return AppServices(
       auth: const DemoAuthService(),
       teachers: DemoTeacherRepository(),
@@ -82,7 +98,9 @@ class AppServices {
       chats: DemoDirectChatRepository(
         findBooking: bookings.findById,
         isMember: groups.isMember,
+        notifications: notifications,
       ),
+      notifications: notifications,
     );
   }
 }

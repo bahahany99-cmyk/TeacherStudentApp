@@ -152,7 +152,9 @@ class ProfileScreen extends StatelessWidget {
                     _ProfileTile(
                       icon: Icons.notifications_none,
                       label: 'الإشعارات',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.notifications),
                     ),
                     const Divider(height: 1),
                     _ProfileTile(

@@ -2466,6 +2466,302 @@ describe('P11 — الرسائل: الطرفان فقط ولا انتحال', ()
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// P12 — الإشعارات: العزل بالمستلم والإنشاء بعلاقة موثّقة
+// ═════════════════════════════════════════════════════════════════════════════
+
+const notificationDoc = (recipientId, actorId, type, targetId, overrides = {}) =>
+  clean({
+    recipientId,
+    type,
+    actorId,
+    actorName: 'طالب',
+    targetId,
+    title: 'إشعار',
+    createdAt: now(),
+    ...overrides,
+  });
+
+const notificationPath = (id) => `notifications/${id}`;
+
+/** حجز حالة معيّنة بين student-1 وteacher-1. */
+const seedBooking = (status) =>
+  seed([
+    {
+      path: 'bookingRequests/b1',
+      data: bookingDoc('student-1', 'teacher-1', { status }),
+    },
+  ]);
+
+describe('P12 — الإشعارات: المستلم وحده يقرأ ويعلّم ويحذف', () => {
+  it('المستلم يقرأ إشعاره، وغيره لا', async () => {
+    await seed([
+      {
+        path: notificationPath('n1'),
+        data: notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), notificationPath('n1'))));
+    await assertFails(getDoc(doc(asOther(), notificationPath('n1'))));
+    await assertFails(getDoc(doc(asTeacher(), notificationPath('n1'))));
+    await assertFails(getDoc(doc(asGuest(), notificationPath('n1'))));
+  });
+
+  it('استعلام «إشعاراتي» محصور بالمستلم', async () => {
+    await seed([
+      {
+        path: notificationPath('n1'),
+        data: notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      },
+      {
+        path: notificationPath('n2'),
+        data: notificationDoc('student-2', 'teacher-1', 'bookingAccepted', 'b2'),
+      },
+    ]);
+
+    const mine = await assertSucceeds(
+      getDocs(
+        query(
+          collection(asStudent(), 'notifications'),
+          where('recipientId', '==', 'student-1'),
+        ),
+      ),
+    );
+    assert.equal(mine.docs.length, 1);
+
+    // محاولة قراءة إشعار غيري صراحةً تُرفض.
+    await assertFails(
+      getDocs(
+        query(
+          collection(asStudent(), 'notifications'),
+          where('recipientId', '==', 'student-2'),
+        ),
+      ),
+    );
+  });
+
+  it('تعليم مقروء: المستلم وحده وحقل readAt فقط', async () => {
+    await seed([
+      {
+        path: notificationPath('n1'),
+        data: notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), notificationPath('n1')), { readAt: now() }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), notificationPath('n1')), {
+        readAt: now(),
+        title: 'نص جديد',
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), notificationPath('n1')), { readAt: now() }),
+    );
+    // الكتابة نفسها مرة أخرى لا تُنتج فروقًا ⇒ مرفوضة (لا عمل بلا أثر).
+    await assertFails(
+      updateDoc(doc(asStudent(), notificationPath('n1')), { readAt: now() }),
+    );
+  });
+
+  it('الحذف للمستلم فقط', async () => {
+    await seed([
+      {
+        path: notificationPath('n1'),
+        data: notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      },
+      {
+        path: notificationPath('n2'),
+        data: notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      },
+    ]);
+
+    await assertFails(deleteDoc(doc(asOther(), notificationPath('n2'))));
+    await assertSucceeds(deleteDoc(doc(asStudent(), notificationPath('n1'))));
+  });
+});
+
+describe('P12 — الإنشاء: لا تزوير ولا إشعار لشخص بلا علاقة', () => {
+  it('الطالب يُشعر المدرس بطلب حجز معلّق', async () => {
+    await seedBooking('pending');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingRequested', 'b1', {
+          title: 'طلب حجز جديد',
+        }),
+      ),
+    );
+  });
+
+  it('لا إشعار لطرف ثالث في نفس الحجز', async () => {
+    await seedBooking('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asOther(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'stranger-9', 'bookingRequested', 'b1', {
+          actorName: 'غريب',
+        }),
+      ),
+    );
+  });
+
+  it('لا انتحال مُحدِث آخر', async () => {
+    await seedBooking('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asOther(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingRequested', 'b1'),
+      ),
+    );
+  });
+
+  it('النوع يجب أن يطابق حالة الحجز', async () => {
+    await seedBooking('pending');
+
+    // «قُبل» لحجز معلّق مرفوض.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('n1')),
+        notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      ),
+    );
+
+    await seedBooking('accepted');
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), notificationPath('n2')),
+        notificationDoc('student-1', 'teacher-1', 'bookingAccepted', 'b1'),
+      ),
+    );
+  });
+
+  it('إشعار لنفسك مرفوض، والإشعار لا يُنشأ مقروءًا', async () => {
+    await seedBooking('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('student-1', 'student-1', 'bookingRequested', 'b1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n2')),
+        notificationDoc('teacher-1', 'student-1', 'bookingRequested', 'b1', {
+          readAt: now(),
+        }),
+      ),
+    );
+  });
+
+  it('عنوان طويل أو حقول إضافية مرفوضة', async () => {
+    await seedBooking('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingRequested', 'b1', {
+          title: 'ا'.repeat(121),
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n2')),
+        notificationDoc('teacher-1', 'student-1', 'bookingRequested', 'b1', {
+          injected: true,
+        }),
+      ),
+    );
+  });
+
+  it('رسالة مباشرة: طرفا المحادثة فقط', async () => {
+    await seed([
+      {
+        path: 'bookingRequests/b1',
+        data: bookingDoc('student-1', 'teacher-1', { status: 'accepted' }),
+      },
+      {
+        path: chatPath('teacher-1', 'student-1'),
+        data: directChatDoc('teacher-1', 'student-1'),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'directMessage', 'teacher-1_student-1'),
+      ),
+    );
+
+    // غريب يحاول استخدام نفس المحادثة.
+    await assertFails(
+      setDoc(
+        doc(asOther(), notificationPath('n2')),
+        notificationDoc('student-1', 'stranger-9', 'directMessage', 'teacher-1_student-1', {
+          actorName: 'غريب',
+        }),
+      ),
+    );
+  });
+
+  it('ترقية قائمة الانتظار: من مالك المجموعة ولعضو فعلًا', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 1 }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: {
+          studentId: 'student-1',
+          groupId: 'g1',
+          name: 'طالب',
+          joinedAt: now(),
+          status: 'active',
+        },
+      },
+    ]);
+
+    // غير المالك.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('student-1', 'student-1', 'waitlistPromoted', 'g1'),
+      ),
+    );
+    // المالك لشخص ليس عضوًا.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('n2')),
+        notificationDoc('stranger-9', 'teacher-1', 'waitlistPromoted', 'g1'),
+      ),
+    );
+    // المالك لعضو حقيقي.
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), notificationPath('n3')),
+        notificationDoc('student-1', 'teacher-1', 'waitlistPromoted', 'g1'),
+      ),
+    );
+  });
+
+  it('نوع غير معروف مرفوض', async () => {
+    await seedBooking('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'promoMessage', 'b1'),
+      ),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 describe('سلامة المحاكي نفسه (حماية من اختبارات وهمية)', () => {
   it('البيانات التجريبية تُكتب فعلًا مع تجاوز القواعد', async () => {
     await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
