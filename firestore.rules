@@ -862,7 +862,10 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/teacherSettings/$(request.resource.data.teacherId)).data;
       }
 
-      allow read: if isAdmin() || isParticipant();
+      // `resource == null` ليست ثغرة: هي حالة «المستند غير موجود». بدونها
+      // تصبح قراءة خيط لم يُنشأ بعد **ممنوعة** لا «غير موجودة»، فينكسر تدفّق
+      // «إن لم توجد محادثة فأنشئها» في العميل.
+      allow read: if isAdmin() || resource == null || isParticipant();
 
       // (أ) خيط مرتبط بحجز: الطالب أو المدرس، والحجز يخصّ الطرفين معًا.
       allow create: if commonPayload()
@@ -1198,7 +1201,10 @@ service cloud.firestore {
         return ['studentId', 'kind', 'targetId', 'createdAt'];
       }
 
-      allow read: if isAdmin() || (signedIn() && isSelf(resource.data.studentId));
+      // `resource == null` = المستند غير موجود، وهي الحالة التي يسأل عنها
+      // العميل قبل أول إضافة إلى المفضلة.
+      allow read: if isAdmin()
+        || (signedIn() && (resource == null || isSelf(resource.data.studentId)));
 
       allow create: if signedIn()
         && request.resource.data.studentId == request.auth.uid

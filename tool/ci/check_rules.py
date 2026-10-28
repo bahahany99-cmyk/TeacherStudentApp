@@ -313,6 +313,11 @@ def main() -> int:
     favorites_block = match_block(code, 'match /favorites/{favoriteId}') or ''
     if 'isSelf(resource.data.studentId)' not in favorites_block:
         problems.append('favorites: القراءة/الحذف غير مقيّدين بصاحب المفضلة')
+    if 'resource == null' not in favorites_block:
+        problems.append('favorites: قراءة مستند غير موجود تُرفض (يكسر أول إضافة)')
+    direct_block = match_block(code, 'match /directChats/{chatId}') or ''
+    if 'resource == null' not in direct_block:
+        problems.append('directChats: قراءة محادثة غير موجودة تُرفض (يكسر بدء المحادثة)')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

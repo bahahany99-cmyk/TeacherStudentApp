@@ -3207,6 +3207,35 @@ describe('P13 — المفضلة: خاصة بصاحبها ومعرّفها مش�
   });
 });
 
+
+describe('P13 — قراءة المستند غير الموجود تعيد «غير موجود» لا «ممنوع»', () => {
+  it('مفضلة غير موجودة: القراءة ناجحة (exists = false)', async () => {
+    const path = favoritePath('student-1', 'teacher', 'teacher-1');
+    const snapshot = await assertSucceeds(getDoc(doc(asStudent(), path)));
+    assert.equal(snapshot.exists(), false);
+  });
+
+  it('محادثة غير موجودة: القراءة ناجحة (exists = false)', async () => {
+    const snapshot = await assertSucceeds(
+      getDoc(doc(asStudent(), 'directChats/teacher-1_student-1')),
+    );
+    assert.equal(snapshot.exists(), false);
+  });
+
+  it('ومع ذلك: قراءة مستند قائم لغيره ما زالت مرفوضة', async () => {
+    await seed([
+      {
+        path: favoritePath('student-2', 'teacher', 'teacher-1'),
+        data: favoriteDoc('student-2', 'teacher', 'teacher-1'),
+      },
+    ]);
+
+    await assertFails(
+      getDoc(doc(asStudent(), favoritePath('student-2', 'teacher', 'teacher-1'))),
+    );
+  });
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 describe('سلامة المحاكي نفسه (حماية من اختبارات وهمية)', () => {
   it('البيانات التجريبية تُكتب فعلًا مع تجاوز القواعد', async () => {
