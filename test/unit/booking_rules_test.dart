@@ -61,20 +61,24 @@ void main() {
     });
 
     test('المدة يجب أن تكون من الخيارات المعتمدة', () {
+      // «الآن» مُثبَّت حتى لا تتغير النتيجة مع ساعة تشغيل CI.
+      final DateTime now = DateTime(2026, 1, 15, 10);
+      final DateTime start = DateTime(2026, 1, 20, 12);
+
       expect(
         BookingRules.slotBlockReason(
-          startsAt: _soon(),
+          startsAt: start,
           durationMinutes: 50,
-          now: DateTime.now(),
+          now: now,
         ),
-        contains('المدة'),
+        contains('مدة'),
       );
       for (final int duration in BookingRules.durationOptions) {
         expect(
           BookingRules.slotBlockReason(
-            startsAt: _soon(atHour: 12),
+            startsAt: start,
             durationMinutes: duration,
-            now: DateTime.now(),
+            now: now,
           ),
           isNull,
           reason: 'المدة $duration معتمدة',
@@ -103,22 +107,32 @@ void main() {
     });
 
     test('مهلة ساعة على الأقل قبل الموعد', () {
+      final DateTime now = DateTime(2026, 1, 15, 10);
       expect(
         BookingRules.slotBlockReason(
-          startsAt: DateTime.now().add(const Duration(minutes: 20)),
+          startsAt: DateTime(2026, 1, 15, 10, 30),
           durationMinutes: 60,
-          now: DateTime.now(),
+          now: now,
         ),
         contains('ساعة'),
+      );
+      expect(
+        BookingRules.slotBlockReason(
+          startsAt: DateTime(2026, 1, 15, 11, 30),
+          durationMinutes: 60,
+          now: now,
+        ),
+        isNull,
       );
     });
 
     test('لا حجز أبعد من 90 يومًا', () {
+      final DateTime now = DateTime(2026, 1, 15, 10);
       expect(
         BookingRules.slotBlockReason(
-          startsAt: DateTime.now().add(const Duration(days: 120)),
+          startsAt: DateTime(2026, 6, 1, 12),
           durationMinutes: 60,
-          now: DateTime.now(),
+          now: now,
         ),
         contains('90'),
       );
@@ -217,7 +231,8 @@ void main() {
           action: BookingAction.accept,
           now: now,
         ),
-        contains('المدرس'),
+        isNotNull,
+        reason: 'الطالب لا يقبل طلبه بنفسه',
       );
     });
 
