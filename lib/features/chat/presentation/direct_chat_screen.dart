@@ -13,9 +13,8 @@ import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
-import 'package:teacher_student_app/data/models/booking_request.dart';
-import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/widgets/error_state.dart';
+import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
@@ -246,6 +245,9 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     input: _input,
                     sending: _sending,
                     onSend: () => _send(chat, viewerId, viewerName),
+                    // التدفّقان يُنشآن في `build`، فإعادة البناء = إعادة اشتراك
+                    // (التدفّق المنتهي بالخطأ لا يُعاد تشغيله تلقائيًا).
+                    onRetryStreams: () => setState(() {}),
                   );
                 },
           ),
@@ -263,6 +265,7 @@ class _ChatBody extends StatelessWidget {
     required this.input,
     required this.sending,
     required this.onSend,
+    required this.onRetryStreams,
   });
 
   final DirectChat chat;
@@ -271,6 +274,9 @@ class _ChatBody extends StatelessWidget {
   final TextEditingController input;
   final bool sending;
   final VoidCallback onSend;
+
+  /// يعيد الاشتراك في تدفّقي المحادثة والرسائل بعد انقطاعهما.
+  final VoidCallback onRetryStreams;
 
   @override
   Widget build(BuildContext context) {
@@ -344,7 +350,7 @@ class _ChatBody extends StatelessWidget {
                   if (snapshot.hasError) {
                     return ErrorState(
                       error: snapshot.error!,
-                      onRetry: () => setState(() {}),
+                      onRetry: onRetryStreams,
                     );
                   }
                   final List<DirectChatMessage> messages =
