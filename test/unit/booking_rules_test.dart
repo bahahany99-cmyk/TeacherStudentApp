@@ -14,6 +14,42 @@ DateTime _soon({int hours = 48, int atHour = 16}) {
   return DateTime(base.year, base.month, base.day, atHour);
 }
 
+/// أول موعد داخل نافذة الإلغاء المجاني (12 ساعة) وفي ساعات العمل.
+///
+/// لماذا دالة مستقلة؟ لأن «داخل 12 ساعة» و«داخل 8:00–22:00» لا يتقاطعان في كل
+/// ساعة من اليوم لنفس المدة (نمط 19:07 يترك 53 دقيقة فقط قبل الإغلاق والصبح
+/// يقع خارج النافذة). نبدأ من `now + المهلة` ونصعد بنصف ساعة، فنضمن موعدًا
+/// صالحًا للإنشاء **و** داخل النافذة في أي وقت — وبدل افتراض الساعة الحالية.
+DateTime _slotInsideCancelWindow({int durationMinutes = 60}) {
+  final DateTime now = DateTime.now();
+  DateTime candidate = now.add(BookingRules.minimumLeadTime);
+  candidate = DateTime(
+    candidate.year,
+    candidate.month,
+    candidate.day,
+    candidate.hour,
+    candidate.minute,
+  );
+  if (candidate.minute % 30 != 0) {
+    candidate = candidate.add(Duration(minutes: 30 - candidate.minute % 30));
+  }
+
+  for (int step = 0; step < 48; step++) {
+    final int minute = candidate.hour * 60 + candidate.minute;
+    final bool insideHours =
+        minute >= BookingRules.openMinute &&
+        minute + durationMinutes <= BookingRules.closeMinute;
+    final bool insideWindow =
+        candidate.isBefore(now.add(BookingRules.freeCancelWindow)) &&
+        !candidate.isBefore(now.add(BookingRules.minimumLeadTime));
+    if (insideHours && insideWindow) {
+      return candidate;
+    }
+    candidate = candidate.add(const Duration(minutes: 30));
+  }
+  throw StateError('تعذّر إيجاد موعد داخل نافذة الإلغاء — راجع BookingRules.');
+}
+
 /// أول موعد داخل ساعات العمل بعد [after] — يبدأ الفحص من `now + after`.
 ///
 /// السبب: الاختبارات كانت تستخدم «الآن + ساعتين/خمس ساعات» مباشرة، فتنجح نهارًا
@@ -358,8 +394,7 @@ void main() {
     });
 
     test('الإلغاء داخل 12 ساعة يُسجّل «ملغى متأخرًا»', () {
-      // داخل مهلة الإلغاء المجاني (12 ساعة) وفي نفس الوقت داخل ساعات العمل.
-      final DateTime start = _businessSlotAhead(const Duration(hours: 3));
+      final DateTime start = DateTime.now().add(const Duration(hours: 5));
       final BookingRequest booking = _booking(startsAt: start);
       expect(
         BookingRules.cancelStatus(booking: booking, now: DateTime.now()),
@@ -525,7 +560,9 @@ void main() {
       final DemoBookingRepository repo = DemoBookingRepository(
         source: <BookingRequest>[],
       );
-      final DateTime start = DateTime.now().add(const Duration(hours: 5));
+      // داخل نافذة الإلغاء المجاني (12 ساعة) **وداخل** ساعات العمل: الموعد
+      // هنا يُنشأ فعليًا، فـ«الآن + 5 ساعات» الليلية كان يُرفض قبل الإلغاء.
+      final DateTime start = _slotInsideCancelWindow();
 
       final BookingRequest created = await repo.createRequest(
         teacherId: 'teacher-1',
