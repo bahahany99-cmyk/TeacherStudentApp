@@ -269,18 +269,72 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # (P17) قيم Firebase الخمس تُمرَّر وقت البناء — لا ملف google-services.json.
+      # القيم ليست أسرارًا بالمعنى الدقيق (تظهر داخل أي تطبيق Firebase)، لكنها
+      # تبقى في Secrets حتى لا يرتبط المستودع بمشروع بعينه.
+      # نطبع **حضورها فقط** (true/false) ولا نطبع أي قيمة.
+      - name: Report Firebase configuration (بدون كشف قيم)
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        run: |
+          missing=0
+          report=""
+          for name in FIREBASE_PROJECT_ID FIREBASE_API_KEY FIREBASE_APP_ID \
+                      FIREBASE_MESSAGING_SENDER_ID FIREBASE_STORAGE_BUCKET; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              report="$report $name=موجود"
+            else
+              report="$report $name=غائب"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "::notice title=Firebase secrets::$report"
+          if [ "$missing" -eq 0 ]; then
+            echo "FIREBASE_READY=true" >> "$GITHUB_ENV"
+            echo "كل القيم الخمس موجودة ⇒ ENABLE_FIREBASE=true"
+          else
+            echo "FIREBASE_READY=false" >> "$GITHUB_ENV"
+            echo "::warning title=Firebase secrets::ينقص $missing من 5 أسرار — سيُبنى التطبيق في الوضع التجريبي (ENABLE_FIREBASE=false). راجع أسماء الأسرار في Settings ← Secrets and variables ← Actions."
+          fi
+
       # بناء مقسّم حسب المعمارية: يقلّل الحجم إلى النصف تقريبًا مقارنة بملف
       # واحد يحمل مكتبات كل المعماريات (Firebase تضيف مكتبات أصلية كبيرة).
       - name: Build APK
         env:
           # وسم الدفعة يعني release دائمًا؛ وإلا نأخذ مدخلات التشغيل اليدوي.
           MODE: ${{ inputs.build_mode || 'release' }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
         run: |
           set -o pipefail
           status=0
+
+          # لا نُمرّر قيمًا فارغة: تمرير ENABLE_FIREBASE=true بلا إعدادات
+          # يُسقط التهيئة ويُربك المستخدم. البناء التجريبي يبقى صالحًا للتجربة.
+          defines=(--dart-define=ENABLE_FIREBASE=false)
+          if [ "$FIREBASE_READY" = "true" ]; then
+            defines=(
+              --dart-define=ENABLE_FIREBASE=true
+              "--dart-define=FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID"
+              "--dart-define=FIREBASE_API_KEY=$FIREBASE_API_KEY"
+              "--dart-define=FIREBASE_APP_ID=$FIREBASE_APP_ID"
+              "--dart-define=FIREBASE_MESSAGING_SENDER_ID=$FIREBASE_MESSAGING_SENDER_ID"
+              "--dart-define=FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
+            )
+          fi
+
           flutter build apk --"$MODE" \
             --split-per-abi \
             --target-platform android-arm64,android-arm \
+            "${defines[@]}" \
             > /tmp/build.txt 2>&1 || status=$?
           tail -80 /tmp/build.txt
 
@@ -325,6 +379,46 @@ jobs:
               uses_release = 'signingConfigs.release' in text or 'getByName("release")' in text
               msg = 'توقيع الإصدار (keystore)' if uses_release else 'توقيع debug (لم تُضبط الأسرار)'
               print(f'::notice title=APK signing::{msg}')
+          PYEOF
+
+      # بصمات الشهادة **من داخل الـAPK نفسه** (لا تقديرًا): هذا ما يُسجَّل في
+      # Firebase Console ← Project settings ← Your apps ← SHA certificate fingerprints.
+      - name: Report APK certificate fingerprints (SHA-1 / SHA-256)
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, os, subprocess
+          apks = sorted(glob.glob('build/app/outputs/flutter-apk/*.apk'))
+          if not apks:
+              print('::error title=fingerprints::لا يوجد APK لتقرير البصمة')
+              raise SystemExit(1)
+          for apk in apks:
+              name = os.path.basename(apk)
+              try:
+                  out = subprocess.run(
+                      ['keytool', '-printcert', '-jarfile', apk],
+                      capture_output=True, text=True, check=True,
+                  ).stdout
+              except Exception as error:  # noqa: BLE001
+                  print(f'::warning title=fingerprints::{name}: تعذّر قراءة الشهادة ({error})')
+                  continue
+              sha1 = sha256 = owner = ''
+              for line in out.splitlines():
+                  stripped = line.strip()
+                  if stripped.startswith('Owner:'):
+                      owner = stripped[len('Owner:'):].strip()
+                  elif stripped.startswith('SHA1:'):
+                      sha1 = stripped[len('SHA1:'):].strip()
+                  elif stripped.startswith('SHA256:'):
+                      sha256 = stripped[len('SHA256:'):].strip()
+              if not sha1:
+                  print(f'::warning title=fingerprints::{name}: لا توقيع v1 (JAR) — البصمة موجودة فقط في توقيع v2/v3')
+                  continue
+              print(f'::notice title=SHA-1 ({name})::{sha1}')
+              print(f'::notice title=SHA-256 ({name})::{sha256}')
+              print(f'::notice title=المفتاح ({name})::{owner}')
+              if 'Android Debug' in owner:
+                  print(f'::warning title=مفتاح debug::{name} موقّع بمفتاح debug — بصمته لا تصحّ لبناء جهازك ولا لـPlay. سجّل بصمة مفتاحك الحقيقي.')
           PYEOF
 
       - name: Upload APK artifact
