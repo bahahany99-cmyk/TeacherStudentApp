@@ -164,7 +164,30 @@ firebase deploy --only firestore:rules
 `accountHidden` يخرج الملف من الاكتشاف فورًا، ويجب أن يوجد بـ`false` **منذ
 الإنشاء** (يكتبه التطبيق)، لأن استعلامات البحث تفلتر عليه صراحةً.
 
-### 3.6 أول تشغيل: ما يجب أن يحدث
+### 3.6 بصمة SHA لبناءات CI (مهم قبل Google Sign-In)
+
+`flutter build apk` في Actions يُنتج APK موقّعًا بمفتاح **debug يُولَّد على كل
+runner**، وقياسًا تبيّن أن بصمته تتغيّر بين بناءين متتاليين. لذلك:
+
+- ❌ **لا تُسجّل** بصمة APK مأخوذة من build في Actions.
+- ✅ سجّل بصمة **مفتاحك الثابت**: مفتاح التصحيح على جهازك، ومفتاح الإصدار الذي
+  تضعه في أسرار CI.
+
+```bash
+# مفتاح التصحيح على جهازك (يكفي لتجربة Google Sign-In محليًا)
+keytool -list -v -keystore ~/.android/debug.keystore \
+  -alias androiddebugkey -storepass android -keypass android
+
+# مفتاح الإصدار (يُسجَّل للإطلاق)
+keytool -list -v -keystore darsly-release.p12 -storetype PKCS12 -alias darsly
+# أو من داخل android/:  ./gradlew signingReport
+```
+
+لجعل بناءات CI موقّعة بمفتاح ثابت، أضف الأسرار الأربعة (انظر `docs/SIGNING.md`):
+`DARSLY_KEYSTORE_BASE64` · `DARSLY_STORE_PASSWORD` · `DARSLY_KEY_ALIAS` ·
+`DARSLY_KEY_PASSWORD`. بعدها تصبح بصمة كل بناء ثابتة وقابلة للتسجيل مرة واحدة.
+
+### 3.7 أول تشغيل: ما يجب أن يحدث
 
 1. شاشة الدخول: زر Google وزر «الدخول بالبريد الإلكتروني» يعملان (لا رسالة
    «غير متاحة»).
