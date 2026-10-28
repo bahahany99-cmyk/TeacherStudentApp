@@ -13,6 +13,7 @@ import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
 /// أرقام لوحة الإدارة — تُقرأ مرة واحدة عند فتح الشاشة.
@@ -57,16 +58,15 @@ class AdminDashboardScreen extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   AsyncView<_AdminOverview>(
                     load: () async {
-                      final List<TeacherProfile> queue = await AppServicesScope.of(
-                        context,
-                      ).admin.listVerificationQueue();
+                      // نقرأ الخدمات مرة واحدة **قبل** أي `await`: لا نستخدم
+                      // `BuildContext` بعد فجوة غير متزامنة.
+                      final AppServices services = AppServicesScope.of(context);
+                      final List<TeacherProfile> queue =
+                          await services.admin.listVerificationQueue();
                       final List<ContentReport> reports =
-                          await AppServicesScope.of(
-                            context,
-                          ).admin.listOpenReports();
-                      final List<TeacherProfile> all = await AppServicesScope.of(
-                        context,
-                      ).admin.listAllProfiles();
+                          await services.admin.listOpenReports();
+                      final List<TeacherProfile> all =
+                          await services.admin.listAllProfiles();
                       return _AdminOverview(
                         queue: queue,
                         reports: reports,

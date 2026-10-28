@@ -210,9 +210,17 @@ class _QueueCard extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(height: 1.7),
             ),
           const SizedBox(height: AppSpacing.xs),
-          DetailRow(label: 'المنطقة', value: profile.area),
+          DetailRow(
+            icon: Icons.place_outlined,
+            label: 'المنطقة',
+            value: profile.area,
+          ),
           if (profile.priceHint != null)
-            DetailRow(label: 'السعر', value: profile.priceHint!),
+            DetailRow(
+              icon: Icons.payments_outlined,
+              label: 'السعر',
+              value: profile.priceHint!,
+            ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: <Widget>[

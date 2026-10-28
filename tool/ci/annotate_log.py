@@ -37,6 +37,18 @@ MARKERS = (
     'Missing or insufficient permissions',
 )
 
+# **ترتيب الأهمية:** اختبارات القواعد السلبية تُنتج `PERMISSION_DENIED` في كل
+# تشغيل ناجح، فلو أخذنا المقاطع بترتيب ظهورها لامتلأت الـannotations بالضجيج
+# وضاعت أسطر الفشل الحقيقية (حدث فعلًا في P14). نقدّم مقاطع الفشل الفعلية.
+HIGH_PRIORITY = (
+    '✖',
+    'not ok',
+    'Failing tests:',
+    'failing tests',
+    'AssertionError',
+    'EXCEPTION CAUGHT',
+)
+
 
 def escape(value: str) -> str:
     return value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
@@ -56,7 +68,7 @@ def main() -> int:
 
     lines = path.read_text(errors='replace').splitlines()
 
-    blocks: list[str] = []
+    candidates: list[tuple[int, int, str]] = []
     used_until = -1
 
     for index, line in enumerate(lines):
@@ -67,8 +79,13 @@ def main() -> int:
 
         part = lines[index : index + LINES_PER_BLOCK]
         block = '\n'.join(part)[:MAX_CHARS]
-        blocks.append(f'[سطر {index + 1}]\n{block}')
+        priority = 0 if any(marker in line for marker in HIGH_PRIORITY) else 1
+        candidates.append((priority, index, f'[سطر {index + 1}]\n{block}'))
         used_until = index + len(part) - 1
+
+    # الفشل الحقيقي أولًا، وداخل الفئة نفسها ترتيب ظهوره.
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    blocks: list[str] = [item[2] for item in candidates]
 
     if not blocks:
         tail = lines[-LINES_PER_BLOCK:]

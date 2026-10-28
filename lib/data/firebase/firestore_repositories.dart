@@ -3339,12 +3339,13 @@ class FirestoreAdminRepository implements AdminRepository {
     String? note,
   }) {
     return _guard(() async {
+      final String cleanNote = note?.trim() ?? '';
       await _reports.doc(reportId).update(<String, Object?>{
         'status': resolution.wireValue,
         'resolvedAt': FieldValue.serverTimestamp(),
-        'resolutionNote': note == null || note.trim().isEmpty
+        'resolutionNote': cleanNote.isEmpty
             ? FieldValue.delete()
-            : note.trim(),
+            : cleanNote,
         if (_adminUid != null) 'resolvedBy': _adminUid,
       });
     });
