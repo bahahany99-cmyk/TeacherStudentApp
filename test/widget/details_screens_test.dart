@@ -181,6 +181,40 @@ void main() {
       expect(find.textContaining('تم الحفظ'), findsNothing);
     });
 
+    testWidgets('نموذج التعديل يعرض طريقة التقديم وموقع المحاضرة (P15)', (
+      WidgetTester tester,
+    ) async {
+      await _openEditForm(tester);
+
+      // (P15) علم واحد لطريقة التقديم، ثم المحافظة والحي للمحاضرة الحضورية.
+      expect(find.widgetWithText(SwitchListTile, 'أدرّس عن بُعد'), findsOneWidget);
+
+      final Finder governorate = find.descendant(
+        of: find.byType(TextFormField),
+        matching: find.text('المحافظة (اختياري)'),
+      );
+      expect(governorate, findsOneWidget);
+      expect(find.text('الحي / المركز (اختياري)'), findsOneWidget);
+    });
+
+    testWidgets('تشغيل «عن بُعد» يخفي حقلي المحافظة والحي (P15)', (
+      WidgetTester tester,
+    ) async {
+      await _openEditForm(tester);
+
+      await tapVisible(tester, find.byType(SwitchListTile));
+
+      expect(find.text('المحافظة (اختياري)'), findsNothing);
+      expect(find.text('الحي / المركز (اختياري)'), findsNothing);
+      // ولا يُطالب بهما في التعليم عن بُعد.
+      expect(
+        find.textContaining('ولا يُطلبان في'),
+        findsOneWidget,
+        reason: 'يجب أن يشرح النموذج أن المحافظة غير مطلوبة عن بُعد',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('معرّف غير موجود يعرض حالة واضحة لا شاشة منهارة', (
       WidgetTester tester,
     ) async {

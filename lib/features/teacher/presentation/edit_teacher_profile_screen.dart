@@ -77,6 +77,9 @@ class _EditProfileFormState extends State<_EditProfileForm> {
   late final TextEditingController _area;
   late final TextEditingController _bio;
   late final TextEditingController _price;
+  late final TextEditingController _governorate;
+  late final TextEditingController _district;
+  late bool _isOnline;
 
   @override
   void initState() {
@@ -88,6 +91,9 @@ class _EditProfileFormState extends State<_EditProfileForm> {
     _area = TextEditingController(text: profile.area);
     _bio = TextEditingController(text: profile.bio);
     _price = TextEditingController(text: profile.priceHint ?? '');
+    _governorate = TextEditingController(text: profile.governorate ?? '');
+    _district = TextEditingController(text: profile.district ?? '');
+    _isOnline = profile.isOnline;
   }
 
   @override
@@ -98,6 +104,8 @@ class _EditProfileFormState extends State<_EditProfileForm> {
     _area.dispose();
     _bio.dispose();
     _price.dispose();
+    _governorate.dispose();
+    _district.dispose();
     super.dispose();
   }
 
@@ -117,6 +125,24 @@ class _EditProfileFormState extends State<_EditProfileForm> {
       'سيُضاف لاحقًا.',
       type: AppMessageType.info,
     );
+  }
+
+  /// حقل مكان اختياري: الفراغ مسموح، وأي نص يجب أن يقع بين حرفين والحدّ.
+  ///
+  /// الحدود مطابقة لـ`validOptionalText` في `firestore.rules` (المحافظة 40
+  /// والحي 60) حتى لا يُقبل هنا ما ترفضه القواعد لاحقًا.
+  String? _optionalPlace(String? value, String label, int maxLength) {
+    final String text = (value ?? '').trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    if (text.length < 2) {
+      return '$label قصير جدًا (حرفان على الأقل)';
+    }
+    if (text.length > maxLength) {
+      return '$label طويل جدًا ($maxLength حرفًا كحد أقصى)';
+    }
+    return null;
   }
 
   String? _required(String? value, String label) {
@@ -172,9 +198,56 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           TextFormField(
             controller: _area,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'المنطقة'),
+            decoration: const InputDecoration(
+              labelText: 'المنطقة',
+              helperText: 'وصف حر يظهر في ملفك العام',
+            ),
             validator: (String? value) => _required(value, 'المنطقة'),
           ),
+          const SizedBox(height: AppSpacing.md),
+          // (P15) طريقة التقديم: علم واحد مستقلّ عن المحافظة — من يعلّم «عن
+          // بُعد» يظهر لكل المحافظات في فلتر «عن بُعد»، ويُستبعد من «حضوري».
+          SwitchListTile(
+            value: _isOnline,
+            onChanged: (bool value) => setState(() => _isOnline = value),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('أدرّس عن بُعد'),
+            subtitle: Text(
+              _isOnline
+                  ? 'يظهر ملفك في «عن بُعد» لكل المحافظات، ويُستبعد من البحث '
+                        'الحضوري.'
+                  : 'حضوري فقط: يظهر ملفك حسب محافظتك، ويُستبعد من «عن بُعد».',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (_isOnline)
+            const InfoNote(
+              text:
+                  'المحافظة والحي يخصّان المحاضرات الحضورية، ولا يُطلبان في '
+                  'التعليم عن بُعد. يمكنك تركهما فارغين.',
+            )
+          else ...<Widget>[
+            TextFormField(
+              controller: _governorate,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'المحافظة (اختياري)',
+                helperText: 'فلتر البحث الأساسي للطلاب — مثل: القاهرة',
+              ),
+              validator: (String? value) =>
+                  _optionalPlace(value, 'المحافظة', 40),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextFormField(
+              controller: _district,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'الحي / المركز (اختياري)',
+                helperText: 'أدقّ ما يراه الطالب قبل الحجز — مثل: المعادي',
+              ),
+              validator: (String? value) => _optionalPlace(value, 'الحي', 60),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
             controller: _bio,
@@ -210,7 +283,9 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           const InfoNote(
             text:
                 'لا يُرسل هذا النموذج أي بيانات، ولا يُحدَّث الملف بعد الحفظ. '
-                'وجوده الآن لتثبيت الحقول وقواعد التحقق قبل ربط Firestore.',
+                'وجوده الآن لتثبيت الحقول وقواعد التحقق قبل ربط Firestore. '
+                'قيم طريقة التقديم والمكان هنا مطابقة لما تفرضه قواعد الأمان '
+                'على صاحب الملف (حقول وصفية فقط، والتمييز إداري).',
           ),
           const SizedBox(height: AppSpacing.lg),
         ],

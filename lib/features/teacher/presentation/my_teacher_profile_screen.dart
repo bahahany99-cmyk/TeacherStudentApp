@@ -134,6 +134,17 @@ class _MyProfileBody extends StatelessWidget {
                 label: 'المنطقة',
                 value: profile.area,
               ),
+              // (P15) المكان الدقيق وطريقة التقديم — يظهران للطالب قبل الحجز.
+              DetailRow(
+                icon: Icons.map_outlined,
+                label: 'الموقع',
+                value: profile.locationLabel,
+              ),
+              DetailRow(
+                icon: Icons.laptop_mac_outlined,
+                label: 'طريقة التقديم',
+                value: profile.deliveryLabel,
+              ),
               DetailRow(
                 icon: Icons.payments_outlined,
                 label: 'السعر',
