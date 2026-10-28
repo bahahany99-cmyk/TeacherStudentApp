@@ -883,8 +883,12 @@ service cloud.firestore {
         return ['teacherId', 'dateKey', 'busy'];
       }
 
+      // (P16) `resource == null` مقصود: القبول يقرأ **تقويم اليوم** داخل معاملة
+      // قبل أن يكون المستند موجودًا (أول حجز في اليوم). بدون هذا الشرط تفشل
+      // قراءة مستند غير موجود بالقواعد، فيُرفض أول حجز في كل يوم.
       allow read: if isAdmin()
-        || (signedIn() && resource.data.teacherId == request.auth.uid);
+        || (signedIn() && (resource == null
+                           || resource.data.teacherId == request.auth.uid));
 
       allow create: if signedIn()
         && request.resource.data.teacherId == request.auth.uid

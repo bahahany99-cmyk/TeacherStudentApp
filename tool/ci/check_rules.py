@@ -427,6 +427,13 @@ def main() -> int:
     elif 'teacherVerified(request.resource.data.teacherId)' not in bookings_block:
         problems.append('P16: طلب حجز لمدرس غير موثّق غير ممنوع')
 
+    # 16) P16: قراءة تقويم اليوم قبل وجوده (أول حجز في اليوم)
+    calendar_block = block_starting_at(code, 'match /teacherCalendar/{calendarId}')
+    if not calendar_block:
+        problems.append('teacherCalendar: تعذّر تحديد كتلة القاعدة')
+    elif 'resource == null' not in calendar_block:
+        problems.append('teacherCalendar: قراءة مستند غير موجود تُرفض (أول حجز يفشل)')
+
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:
         print(f'مشاكل: {len(problems)}')
