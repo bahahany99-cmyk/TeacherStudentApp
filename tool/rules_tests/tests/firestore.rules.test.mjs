@@ -3567,3 +3567,246 @@ describe('P14 — حذف تقييم مخالف: إدارة فقط والمجمو
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P15 — الاكتشاف: الموثّق فقط، وطريقة التقديم والمكان، والتمييز الإداري
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** ملف مدرس موثّق مع حقول الاكتشاف (P15). */
+const discoverDoc = (uid, overrides = {}) =>
+  teacherDoc(uid, {
+    status: 'verified',
+    isOnline: false,
+    governorate: 'القاهرة',
+    district: 'المعادي',
+    ...overrides,
+  });
+
+describe('P15 — الاكتشاف: الموثّق وحده يُقرأ للطلاب', () => {
+  it('الموثّق يُقرأ من غير المسجّل، وغير الموثّق لا', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asGuest(), 'teacherProfiles/teacher-1')));
+    await assertFails(getDoc(doc(asGuest(), 'teacherProfiles/teacher-2')));
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-2')));
+    // صاحب الملف يرى ملفه في أي حالة.
+    await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
+  });
+
+  it('الاستعلام بلا شرط الحالة يُرفض،ومعها يُقبل', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+    ]);
+
+    // قراءة المجموعة كاملة تشمل ملفًا غير موثّق ⇒ تُرفض كوحدة واحدة.
+    await assertFails(getDocs(collection(asStudent(), 'teacherProfiles')));
+
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(asStudent(), 'teacherProfiles'),
+          where('status', '==', 'verified'),
+        ),
+      ),
+    );
+  });
+
+  it('استعلام «عن بُعد» مساواة واحدة على isOnline', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: discoverDoc('teacher-1', { isOnline: true, governorate: null }),
+      },
+      { path: 'teacherProfiles/teacher-2', data: discoverDoc('teacher-2') },
+    ]);
+
+    const snapshot = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('isOnline', '==', true),
+      ),
+    );
+
+    assert.deepEqual(
+      snapshot.docs.map((item) => item.id),
+      ['teacher-1'],
+    );
+  });
+
+  it('استعلام حضوري بمحافظة يعيد مدرس تلك المحافظة فقط', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+      {
+        path: 'teacherProfiles/teacher-2',
+        data: discoverDoc('teacher-2', {
+          governorate: 'أسيوط',
+          district: 'أسيوط',
+        }),
+      },
+    ]);
+
+    const snapshot = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('isOnline', '==', false),
+        where('governorate', '==', 'أسيوط'),
+      ),
+    );
+
+    assert.deepEqual(
+      snapshot.docs.map((item) => item.id),
+      ['teacher-2'],
+    );
+  });
+});
+
+describe('P15 — طريقة التقديم والمكان يكتبها صاحب الملف', () => {
+  it('يكتب isOnline والمحافظة والمدينة', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        isOnline: true,
+        governorate: 'القاهرة',
+        district: 'المعادي',
+      }),
+    );
+  });
+
+  it('قيمة غير منطقية أو محافظة أطول من الحد مرفوضة', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        isOnline: 'yes',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        governorate: 'ا'.repeat(41),
+      }),
+    );
+  });
+
+  it('غيره لا يكتب حقوله الوصفية', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-1'), {
+        isOnline: true,
+      }),
+    );
+  });
+});
+
+describe('P15 — التمييز إداري وحده', () => {
+  it('المسؤول يميّز ملفًا موثّقًا ويقرأ القيم', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1,
+      }),
+    );
+
+    const stored = await readAsAdmin('teacherProfiles/teacher-1');
+    assert.equal(stored.isFeatured, true);
+    assert.equal(stored.featuredOrder, 1);
+  });
+
+  it('صاحب الملف والطالب لا يميّزان', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1,
+      }),
+    );
+  });
+
+  it('لا تمييز لملف غير موثّق', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-2'), {
+        isFeatured: true,
+        featuredOrder: 1,
+      }),
+    );
+  });
+
+  it('التمييز لا يحمل معه أي تعديل آخر', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1,
+        displayName: 'اسم آخر',
+      }),
+    );
+  });
+
+  it('ترتيب خارج 0..999 مرفوض', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), {
+        isFeatured: true,
+        featuredOrder: 1000,
+      }),
+    );
+  });
+
+  it('صاحب الملف يعدّل نبذته بعد التمييز ولا يمسّ التمييز', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: discoverDoc('teacher-1', { isFeatured: true, featuredOrder: 3 }),
+      },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        bio: 'نبذة محدثة بعد التمييز',
+      }),
+    );
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        bio: 'محاولة ثانية',
+        isFeatured: false,
+      }),
+    );
+  });
+});

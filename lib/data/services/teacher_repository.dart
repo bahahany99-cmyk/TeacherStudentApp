@@ -1,3 +1,4 @@
+import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 
 /// عقد قراءة ملفات المدرسين.
@@ -10,8 +11,13 @@ abstract interface class TeacherRepository {
 
   /// المدرسون المميزون (قسم مستقل عن نتائج البحث العادي — C-14).
   ///
-  /// ⚠️ آلية اختيار المميزين لم تُحسم (Q-01..Q-03)؛ نعرض الحقل فقط.
+  /// (P15) الترتيب حتمي: `featuredOrder` ثم التقييم ثم الاسم — انظر
+  /// `TeacherDiscoveryRules.featured`. التمييز قرار إداري لا يكتبه المدرس.
   Future<List<TeacherProfile>> listFeatured();
+
+  /// استكشاف المدرسين بفلتر (P15): بحث نصي + مادة/مرحلة + عن بُعد/حضوري
+  /// بمحافظة. النتيجة تحمل إجمالي الموثّقين قبل فلاتر العميل.
+  Future<TeacherSearchResult> search(TeacherFilter filter);
 
   /// ملف مدرس واحد بالمعرّف.
   ///

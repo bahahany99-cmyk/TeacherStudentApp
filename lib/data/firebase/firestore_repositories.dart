@@ -21,6 +21,7 @@ import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
@@ -40,6 +41,7 @@ import 'package:teacher_student_app/data/validation/review_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
+import 'package:teacher_student_app/data/validation/teacher_discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
@@ -133,13 +135,45 @@ class FirestoreTeacherRepository implements TeacherRepository {
   @override
   Future<List<TeacherProfile>> listFeatured() {
     return _guard(() async {
-      // ⚠️ لا ترتيب هنا: آلية اختيار/ترتيب المميزين لم تُحسم (Q-01..Q-03)،
-      // فإضافة `orderBy` كانت ستُثبّت قرارًا غير معتمد.
+      // شرطان بالمساواة فقط (بلا `orderBy`) ⇒ لا فهرس مركّب (A-91). الترتيب
+      // (`featuredOrder` ثم التقييم ثم الاسم) يُطبَّق في العميل بنفس دالة
+      // الوضع التجريبي، فلا يختلف الشريط بين البيئتين (P15).
       final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
           .where('status', isEqualTo: 'verified')
           .where('isFeatured', isEqualTo: true)
           .get();
-      return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
+      return TeacherDiscoveryRules.featured(
+        mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
+      );
+    });
+  }
+
+  @override
+  Future<TeacherSearchResult> search(TeacherFilter filter) {
+    return _guard(() async {
+      // شروط الخادم وحدها هنا؛ النص/المادة/المرحلة في العميل. كل شرط مساواة
+      // على حقل واحد، فتكفي الفهارس الأحادية المرتّبة تلقائيًا.
+      Query<Map<String, dynamic>> query = _profiles.where(
+        'status',
+        isEqualTo: 'verified',
+      );
+      switch (filter.delivery) {
+        case TeacherDeliveryFilter.any:
+          break;
+        case TeacherDeliveryFilter.online:
+          query = query.where('isOnline', isEqualTo: true);
+        case TeacherDeliveryFilter.inPerson:
+          query = query.where('isOnline', isEqualTo: false);
+      }
+      if (filter.governorate != null) {
+        query = query.where('governorate', isEqualTo: filter.governorate);
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      return TeacherDiscoveryRules.search(
+        mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
+        filter,
+      );
     });
   }
 
@@ -3302,6 +3336,22 @@ class FirestoreAdminRepository implements AdminRepository {
         'reviewNote': note == null ? FieldValue.delete() : note,
         'reviewedAt': FieldValue.serverTimestamp(),
         if (_adminUid != null) 'reviewedBy': _adminUid,
+      });
+    });
+  }
+
+  @override
+  Future<void> setFeatured({
+    required String teacherId,
+    required bool isFeatured,
+    int order = 0,
+  }) {
+    return _guard(() async {
+      // كتابة حقلي التمييز وحدهما: القواعد تشترط `affectedKeys().hasOnly`
+      // عليهما وأن يكون الملف موثّقًا، وترفض أي حقل آخر معهما (P15).
+      await _profiles.doc(teacherId).update(<String, Object?>{
+        'isFeatured': isFeatured,
+        'featuredOrder': isFeatured ? order : 0,
       });
     });
   }

@@ -42,6 +42,13 @@ rules_version = '2';
 //      تقييمٍ أُنشئ في **نفس الكتابة الذرّية** (getAfter)، فلا يمكن نفخه.
 //  13. المفضلة (P13): مستند لكل (طالب، نوع، هدف) بمعرّف مشتق، وقراءته وحذفه
 //      لصاحبه فقط، ولا تعديل أصلًا.
+//  16. الاكتشاف والتمييز (P15): `teacherProfiles` تُقرأ للطلاب **للموثّقين فقط**
+//      (شرط واحد في قاعدة القراءة يقيّد أي استعلام)، وطريقة التقديم
+//      (`isOnline`) والمكان (`governorate`/`district`) يكتبها صاحب الملف ضمن
+//      قائمة حقوله. أما التمييز (`isFeatured`/`featuredOrder`) فإداري وحده:
+//      خارج قائمة المالك، ولا يُغيّر إلا في كتابة تمسّ هذين الحقلين فقط
+//      (`affectedKeys().hasOnly`) وعلى ملف موثّق — فلا يُستخدم التمييز غطاءً
+//      لتعديل اسم أو حالة.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -108,28 +115,82 @@ service cloud.firestore {
 
     // ── 2) teacherProfiles/{uid} ─────────────────────────────────────────────
     match /teacherProfiles/{uid} {
-      // القراءة: الملف المعتمد للجميع، وصاحبه يرى ملفه بأي حالة.
+      // القراءة: الملف الموثّق للجميع، وصاحبه يرى ملفه بأي حالة (P14).
+      // هذا شرط **الاكتشاف** الحقيقي: أي استعلام من الطالب على غير الموثّق
+      // يُرفض كاملًا، فلا يفيده حذف شرط `status` من التطبيق (P15).
       allow read: if isAdmin()
         || resource.data.status == 'verified'
         || isSelf(uid);
+
+      // حقول يملكها صاحب الملف: التعريف وطريقة التقديم والمكان (P15).
+      // `isFeatured`/`featuredOrder` إداريان، و`reviewNote`… قرار مراجعة —
+      // لكنها مذكورة هنا لأن التحديث يقارن المستند كاملًا: صاحب الملف يرسل
+      // هذه الحقول كما هي (merge) فيجب أن تُقبل **بلا تغيير** لا أن تُرفض.
+      function profileKeys() {
+        return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
+                'stage', 'area', 'bio', 'priceHint', 'isOnline',
+                'governorate', 'district', 'isFeatured', 'featuredOrder',
+                'reviewNote', 'reviewedAt', 'reviewedBy'];
+      }
+
+      // حدود الحقول الاختيارية: نص قصير أو غياب، ممنوع أي نوع آخر.
+      function validOptionalText(field, maxLength) {
+        return !(field in request.resource.data.keys())
+          || (request.resource.data[field] is string
+              && request.resource.data[field].size() >= 2
+              && request.resource.data[field].size() <= maxLength);
+      }
+
+      function validProfilePayload() {
+        return request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 80
+          && request.resource.data.keys().hasOnly(profileKeys())
+          && (!('isOnline' in request.resource.data.keys())
+              || request.resource.data.isOnline is bool)
+          && validOptionalText('governorate', 40)
+          && validOptionalText('district', 60);
+      }
+
+      // عند الإنشاء: لا حقل إداري إطلاقًا — الملف يبدأ بلا تمييز ولا قرار.
+      function noAdminFields() {
+        return !('isFeatured' in request.resource.data.keys())
+          && !('featuredOrder' in request.resource.data.keys())
+          && !('reviewNote' in request.resource.data.keys())
+          && !('reviewedAt' in request.resource.data.keys())
+          && !('reviewedBy' in request.resource.data.keys());
+      }
+
+      // عند التحديث من صاحب الملف: كل حقل إداري **بلا تغيير**، وإلا صار
+      // بإمكانه تمييز نفسه أو محو سبب رفضه.
+      function unchangedAdminFields() {
+        return (!('isFeatured' in request.resource.data.keys())
+              || request.resource.data.isFeatured == resource.data.isFeatured)
+          && (!('featuredOrder' in request.resource.data.keys())
+              || request.resource.data.featuredOrder == resource.data.featuredOrder)
+          && (!('reviewNote' in request.resource.data.keys())
+              || request.resource.data.reviewNote == resource.data.reviewNote)
+          && (!('reviewedAt' in request.resource.data.keys())
+              || request.resource.data.reviewedAt == resource.data.reviewedAt)
+          && (!('reviewedBy' in request.resource.data.keys())
+              || request.resource.data.reviewedBy == resource.data.reviewedBy);
+      }
 
       // الإنشاء: صاحبه فقط، وبداية دورة المراجعة إجبارية.
       allow create: if isSelf(uid)
         && request.resource.data.status == 'pendingReview'
         && request.resource.data.ownerId == uid
-        && request.resource.data.keys().hasOnly(
-             ['ownerId', 'displayName', 'status', 'createdAt',
-              'subject', 'stage', 'area', 'bio', 'priceHint'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 80;
+        && validProfilePayload()
+        && noAdminFields();
 
-      // قائمة حقول المسؤول: كل الحقول الوصفية **زائد** حقول القرار الأربعة.
-      // `isFeatured` و`rating`/`reviewsCount` خارجها: التمييز قرار منتج لم
-      // يُحسم (Q-01..Q-03)، والتقييم يُحسب من `teacherRatings` لا يُكتب يدويًا.
+      // قائمة حقول المسؤول: الحقول الوصفية **زائد** حقول القرار الأربعة.
+      // `isFeatured`/`featuredOrder` لها مسار منفصل (`validAdminCuration`)،
+      // و`rating`/`reviewsCount` تبقى خارج الاثنين: التقييم يُحسب من
+      // `teacherRatings` ولا يُكتب يدويًا (A-85).
       function adminDecisionKeys() {
         return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
-                'stage', 'area', 'bio', 'priceHint', 'reviewNote',
+                'stage', 'area', 'bio', 'priceHint', 'isOnline',
+                'governorate', 'district', 'reviewNote',
                 'reviewedAt', 'reviewedBy'];
       }
 
@@ -149,20 +210,35 @@ service cloud.firestore {
                   && request.resource.data.reviewNote.size() <= 200));
       }
 
-      // التحديث: صاحبه يعدّل حقوله الوصفية فقط، والمسؤول يصدر قرارًا مقيّدًا.
+      // تمييز إداري (P15): **الحقلان وحدهما** يتغيّران في الكتابة.
+      // - `affectedKeys().hasOnly` يمنع تمرير أي تعديل آخر (اسم/حالة/نبذة) مع
+      //   التمييز، فلا يُستخدم التمييز غطاءً لقرار آخر.
+      // - الملف يجب أن يكون موثّقًا: تمييز مسودة يعني إبراز ملف لا يُقرأ للطلاب.
+      // - الترتيب عدد صحيح 0..999، والأصغر يظهر أولًا في شريط الرئيسية.
+      function validAdminCuration() {
+        return request.auth.token.admin == true
+          && resource.data.status == 'verified'
+          && request.resource.data.status == 'verified'
+          && request.resource.data.affectedKeys().hasOnly(
+               ['isFeatured', 'featuredOrder'])
+          && request.resource.data.isFeatured is bool
+          && request.resource.data.featuredOrder is int
+          && request.resource.data.featuredOrder >= 0
+          && request.resource.data.featuredOrder <= 999;
+      }
+
+      // التحديث: صاحبه يعدّل حقوله الوصفية فقط (والحقول الإدارية كما هي)،
+      // والمسؤول يصدر قرارًا مقيّدًا أو يُميّز عبر المسار المخصّص.
       // - status و ownerId ثابتان لصاحب الملف (يُضبطان إداريًا أو عند الإنشاء).
-      // - isFeatured و rating و reviewsCount غير مذكورة في hasOnly ⇒ لا يكتبها
-      //   التطبيق إطلاقًا — ولا المسؤول كذلك.
-      allow update: if (isAdmin() && validAdminDecision()) || (
+      // - rating و reviewsCount غير مذكورة في أي قائمة ⇒ لا يكتبها أحد يدويًا.
+      allow update: if (isAdmin()
+          && (validAdminDecision() || validAdminCuration()))
+        || (
         isSelf(uid)
         && request.resource.data.status == resource.data.status
         && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.keys().hasOnly(
-             ['ownerId', 'displayName', 'status', 'createdAt',
-              'subject', 'stage', 'area', 'bio', 'priceHint'])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 80
+        && validProfilePayload()
+        && unchangedAdminFields()
       );
 
       // لا حذف من التطبيق.

@@ -1,25 +1,70 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
-import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/data/validation/teacher_discovery_rules.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_carousel.dart';
 import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_card.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_filter_bar.dart';
 
-/// صفحة استعراض المدرسين (بنية عرض فقط).
+/// صفحة استعراض المدرسين (P15): شريط مميزين + بحث وفلاتر تعمل فعلًا.
 ///
-/// - البحث والفلاتر غير مفعّلة (Phase 6).
-/// - قسم المميزين منفصل عن قائمة كل المدرسين.
-/// - المستودع يعرض الملفات المعتمدة فقط، تأكيدًا لمبدأ C-06 على مستوى الواجهة
-///   (والفرض الحقيقي سيكون في قواعد Firestore).
-class TeachersScreen extends StatelessWidget {
+/// ما تُطبّقه الشاشة وما لا:
+/// - **المستودع** يقرأ الموثّقين فقط، ويطبّق شرط «عن بُعد/حضوري» والمحافظة في
+///   الاستعلام (`TeacherRepository.search`).
+/// - **الشاشة** تعرض، وتترك النص والمادة والترتيب لقواعد نقيّة في
+///   `TeacherDiscoveryRules`، فلا منطق فلترة مكتوب في الودجت.
+class TeachersScreen extends StatefulWidget {
   const TeachersScreen({super.key});
+
+  @override
+  State<TeachersScreen> createState() => _TeachersScreenState();
+}
+
+class _TeachersScreenState extends State<TeachersScreen> {
+  TeacherFilter _filter = TeacherFilter.empty;
+
+  /// كل الموثّقين — تُشتق منها خيارات الفلاتر (لا خيارات نظرية).
+  List<TeacherProfile> _universe = const <TeacherProfile>[];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_universe.isEmpty) {
+      _loadUniverse();
+    }
+  }
+
+  Future<void> _loadUniverse() async {
+    final AppServices services = AppServicesScope.of(context);
+    try {
+      final List<TeacherProfile> teachers = await services.teachers
+          .listVerified();
+      if (mounted) {
+        setState(() => _universe = teachers);
+      }
+    } on AppException {
+      // لا نُفشل الشاشة بسبب خيارات الفلترة: البحث نفسه يعرض خطأه.
+      _universe = const <TeacherProfile>[];
+    }
+  }
+
+  void _openProfile(TeacherProfile teacher) {
+    Navigator.of(context).pushNamed(
+      RoutePaths.teacherProfile,
+      arguments: teacher.id,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,82 +78,74 @@ class TeachersScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const DemoBanner(),
-              TextField(
-                enabled: false,
-                decoration: const InputDecoration(
-                  hintText: 'ابحث باسم المدرس أو المادة (Phase 6)',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              // صف فلاتر أفقي (نسخة 3): شرائح «حبة دواء» تُمرَّر أفقيًا ولا
-              // تلتف إلى صفوف — مطابق للمرجع. الفلاتر نفسها غير مفعّلة بعد.
-              PillRow(
-                children: const <Widget>[
-                  PillChip(label: 'المادة', icon: Icons.expand_more),
-                  PillChip(label: 'المرحلة الدراسية', icon: Icons.expand_more),
-                  PillChip(label: 'المنطقة', icon: Icons.expand_more),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sectionGap),
               const SectionHeader(
                 title: 'مدرسون مميزون',
                 subtitle: 'يُدار التمييز من الإدارة فقط',
               ),
               AsyncView<List<TeacherProfile>>(
                 load: () => AppServicesScope.of(context).teachers.listFeatured(),
-                builder: (BuildContext context, List<TeacherProfile> teachers) {
-                  if (teachers.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.workspace_premium_outlined,
-                      title: 'لا يوجد مدرسون مميزون حاليًا',
-                    );
-                  }
-                  return Column(
-                    children: teachers
-                        .map(
-                          (TeacherProfile t) => TeacherCard(
-                            teacher: t,
-                            onTap: () => Navigator.of(context).pushNamed(
-                              RoutePaths.teacherProfile,
-                              arguments: t.id,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                  );
-                },
+                builder:
+                    (BuildContext context, List<TeacherProfile> featured) {
+                      if (featured.isEmpty) {
+                        return const EmptyState(
+                          icon: Icons.workspace_premium_outlined,
+                          title: 'لا يوجد مدرسون مميزون حاليًا',
+                        );
+                      }
+                      return FeaturedTeachersCarousel(
+                        teachers: featured,
+                        onTeacherTap: _openProfile,
+                      );
+                    },
               ),
               const SizedBox(height: AppSpacing.sectionGap),
               const SectionHeader(
                 title: 'كل المدرسين',
-                subtitle: 'الملفات المعتمدة فقط',
+                subtitle: 'الملفات الموثّقة فقط',
               ),
-              AsyncView<List<TeacherProfile>>(
-                load: () => AppServicesScope.of(context).teachers.listVerified(),
-                builder: (BuildContext context, List<TeacherProfile> teachers) {
-                  if (teachers.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.person_search_outlined,
-                      title: 'لا توجد ملفات مدرسين معتمدة',
-                    );
-                  }
-                  return Column(
-                    children: <Widget>[
-                      for (final TeacherProfile t in teachers)
-                        TeacherCard(teacher: t),
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xs),
-                        child: Text(
-                          'الفلاتر والبحث والصفحات التالية غير مفعّلة في هذه المرحلة.',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
+              TeacherFilterBar(
+                filter: _filter,
+                governorates: TeacherDiscoveryRules.governorateOptions(
+                  _universe,
+                ),
+                resultLabel: _filter.isActive
+                    ? 'نتائج مفلترة'
+                    : 'اعرض الكل أو اختر طريقة تقديم',
+                onChanged: (TeacherFilter next) {
+                  setState(() => _filter = next);
                 },
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AsyncView<TeacherSearchResult>(
+                key: ValueKey<TeacherFilter>(_filter),
+                load: () =>
+                    AppServicesScope.of(context).teachers.search(_filter),
+                isEmpty: (TeacherSearchResult result) => result.isEmpty,
+                emptyBuilder: (BuildContext context) => EmptyState(
+                  icon: Icons.person_search_outlined,
+                  title: 'لا نتائج',
+                  message: TeacherDiscoveryRules.emptyMessage(_filter),
+                ),
+                builder:
+                    (BuildContext context, TeacherSearchResult result) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Text(
+                            TeacherDiscoveryRules.resultsLine(result),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          for (final TeacherProfile teacher
+                              in result.teachers)
+                            TeacherCard(
+                              teacher: teacher,
+                              onTap: () => _openProfile(teacher),
+                            ),
+                        ],
+                      );
+                    },
               ),
               const SizedBox(height: AppSpacing.lg),
             ],

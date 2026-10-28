@@ -57,6 +57,10 @@ void main() {
           'bio': 'شرح مبسّط',
           'status': 'verified',
           'isFeatured': true,
+          'featuredOrder': 2,
+          'isOnline': true,
+          'governorate': 'القاهرة',
+          'district': 'المعادي',
           'rating': 4.8,
           'reviewsCount': 126,
           'priceHint': '150 ج.م',
@@ -68,6 +72,13 @@ void main() {
       expect(profile.status, TeacherProfileStatus.verified);
       expect(profile.isVisibleToStudents, isTrue);
       expect(profile.isFeatured, isTrue);
+      // (P15) حقول الاكتشاف: الترتيب وطريقة التقديم والمكان.
+      expect(profile.featuredOrder, 2);
+      expect(profile.isOnline, isTrue);
+      expect(profile.governorate, 'القاهرة');
+      expect(profile.district, 'المعادي');
+      expect(profile.locationLabel, 'المعادي — القاهرة');
+      expect(profile.deliveryLabel, 'عن بُعد');
       expect(profile.rating, 4.8);
       expect(profile.reviewsCount, 126);
     });
@@ -103,6 +114,10 @@ void main() {
       expect(profile.rating, 0);
       expect(profile.reviewsCount, 0);
       expect(profile.priceHint, isNull);
+      // (P15) مستند قديم بلا حقول اكتشاف: حضوري، والمكان يقع على `area`.
+      expect(profile.isOnline, isFalse);
+      expect(profile.featuredOrder, 0);
+      expect(profile.locationLabel, 'غير محدد');
     });
   });
 

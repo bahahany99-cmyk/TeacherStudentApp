@@ -149,10 +149,16 @@ class _TeacherProfileBody extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
+              // (P15) طريقة التقديم أولًا ثم المكان: أهم معلومة قرار لمن
+              // يبحث عن مدرس حضوري في محافظته.
               DetailRow(
-                icon: Icons.place_outlined,
-                label: 'المنطقة',
-                value: teacher.area,
+                icon: teacher.isOnline
+                    ? Icons.public_rounded
+                    : Icons.place_outlined,
+                label: 'طريقة التقديم',
+                value: teacher.isOnline
+                    ? 'عن بُعد${_locationSuffix(teacher)}'
+                    : 'حضوري — ${teacher.locationLabel}',
               ),
               _RatingSummaryRow(teacher: teacher),
               if (teacher.priceHint != null)
@@ -287,4 +293,10 @@ class _RatingSummaryRow extends StatelessWidget {
       },
     );
   }
+}
+
+/// لاحقة المكان لمدرس «عن بُعد»: قد يذكر محافظته اختياريًا، وقد لا يذكر.
+String _locationSuffix(TeacherProfile teacher) {
+  final String governorate = teacher.governorate?.trim() ?? '';
+  return governorate.isEmpty ? '' : ' · متاح أيضًا حضوريًا في $governorate';
 }

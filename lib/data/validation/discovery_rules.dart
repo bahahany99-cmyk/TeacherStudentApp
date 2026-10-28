@@ -1,3 +1,4 @@
+import 'package:teacher_student_app/core/utils/arabic_text.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 
@@ -136,24 +137,6 @@ abstract final class DiscoveryRules {
     return '${result.groups.length} من ${result.total} مجموعة';
   }
 
-  /// تطبيع عربي بسيط بلا حزم خارجية.
-  static String _normalize(String value) {
-    final StringBuffer buffer = StringBuffer();
-    for (final int rune in value.trim().toLowerCase().runes) {
-      // التشكيل والتطويل: يُحذف لأنه يمنع المطابقة بلا فائدة بصرية.
-      if ((rune >= 0x064B && rune <= 0x0652) || rune == 0x0640) {
-        continue;
-      }
-      final String char = String.fromCharCode(rune);
-      buffer.write(switch (char) {
-        'أ' || 'إ' || 'آ' || 'ٱ' => 'ا',
-        'ى' => 'ي',
-        'ة' => 'ه',
-        'ؤ' => 'و',
-        'ئ' => 'ي',
-        _ => char,
-      });
-    }
-    return buffer.toString();
-  }
+  /// تطبيع مشترك — انظر [ArabicText.normalize] (نُقل في P15).
+  static String _normalize(String value) => ArabicText.normalize(value);
 }

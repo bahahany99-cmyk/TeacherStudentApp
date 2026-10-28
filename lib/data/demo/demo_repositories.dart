@@ -19,6 +19,7 @@ import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
+import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
@@ -35,6 +36,7 @@ import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/review_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/admin_rules.dart';
+import 'package:teacher_student_app/data/validation/teacher_discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
@@ -106,9 +108,12 @@ class DemoTeacherRepository implements TeacherRepository {
   Future<List<TeacherProfile>> listVerified() async => _visible();
 
   @override
-  Future<List<TeacherProfile>> listFeatured() async => _visible()
-      .where((TeacherProfile teacher) => teacher.isFeatured)
-      .toList(growable: false);
+  Future<List<TeacherProfile>> listFeatured() async =>
+      TeacherDiscoveryRules.featured(_source);
+
+  @override
+  Future<TeacherSearchResult> search(TeacherFilter filter) async =>
+      TeacherDiscoveryRules.search(_source, filter);
 
   List<TeacherProfile> _visible() => _source
       .where((TeacherProfile t) => t.isVisibleToStudents)
@@ -2632,20 +2637,37 @@ class DemoAdminRepository implements AdminRepository {
         overrideMessage: 'لم يعد هذا الملف موجودًا — حدّث الطابور.',
       );
     }
-    final TeacherProfile current = _profiles[index];
-    _profiles[index] = TeacherProfile(
-      id: current.id,
-      displayName: current.displayName,
-      subject: current.subject,
-      stage: current.stage,
-      area: current.area,
-      bio: current.bio,
+    // `copyWith` لا بناء يدوي: أي حقل جديد يُضاف للنموذج (P15: التمييز وطريقة
+    // التقديم والمحافظة) يبقى محفوظًا بلا أن ننساه هنا.
+    _profiles[index] = _profiles[index].copyWith(
       status: status,
-      isFeatured: current.isFeatured,
-      rating: current.rating,
-      reviewsCount: current.reviewsCount,
-      priceHint: current.priceHint,
       reviewNote: reviewNote,
+      clearReviewNote: reviewNote == null,
+    );
+  }
+
+  @override
+  Future<void> setFeatured({
+    required String teacherId,
+    required bool isFeatured,
+    int order = 0,
+  }) async {
+    final int index = _profileIndex(teacherId);
+    if (index < 0) {
+      throw const AppException.notFound(
+        debugMessage: 'teacher profile missing (demo admin)',
+        overrideMessage: 'لم يعد هذا الملف موجودًا — حدّث الطابور.',
+      );
+    }
+    if (_profiles[index].status != TeacherProfileStatus.verified) {
+      throw const AppException.invalidInput(
+        debugMessage: 'feature decision on non-verified profile (demo)',
+        overrideMessage: 'لا يمكن تمييز ملف غير موثّق.',
+      );
+    }
+    _profiles[index] = _profiles[index].copyWith(
+      isFeatured: isFeatured,
+      featuredOrder: isFeatured ? order : 0,
     );
   }
 

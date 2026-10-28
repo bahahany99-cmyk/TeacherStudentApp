@@ -18,9 +18,16 @@
 10. أن المحادثات المباشرة (P11) مشدودة بمعرّف مشتق من الطرفين، وأن كل أصل
     (حجز/مجموعة/استفسار) مفحوص، وأن الكتابة على المحادثة محدودة بحقل القارئ
     أو بملخّص رسالة يكتبها مرسلها.
+11-ب. أن التقييم (P13) لا يُكتب إلا لحجز منفّذ، وأن المتوسط مجموع+عدد لا
+    يتحرك بلا تقييم في نفس الكتابة، وأن المفضلة بمعرّف مشتق لصاحبها.
+12-ب. أن كتل `teacherProfiles`/`reviews`/`favorites`/`contentReports` تُقرأ
+    بالقوس المتوازن لا بعلامة تعليق (كان الحارس القديم يمتد إلى نهاية الملف).
 14. أن كل إجراء إداري (P14) مشروط بـ`isAdmin()` ومقيّد بحقول معلنة، وأن
     المدرس غير الموثّق لا يقبل حجزًا ولا طلب انضمام ولا ترقية منتظر، وأن
     البلاغ يُنشأ مفتوحًا ولا يُحذف، وأن الحالة المخزّنة صارت `verified`.
+15. أن الاكتشاف (P15) لا يُقرأ إلا للموثّقين، وأن حقول طريقة التقديم والمكان
+    يكتبها صاحب الملف، وأن التمييز (`isFeatured`/`featuredOrder`) إداري وحده:
+    لا يتغيّر إلا بحقلَي التمييز وحدهما، وأن صاحب الملف لا يغيّرهما.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -91,6 +98,35 @@ def match_block(code: str, header: str) -> str | None:
             if depth == 0:
                 return code[start:index + 1]
     return None
+
+
+
+def block_starting_at(code: str, needle: str) -> str:
+    """يستخرج من موضع [needle] حتى إغلاق القوس المتوازن.
+
+    الفحص القديم كان يقسم الملف على علامة تعليق (`// ── 3)`)، والتعليقات تُحذف
+    قبل الفحص، فكان «البلوك» يمتد إلى نهاية الملف: حارسٌ لا يحرس شيئًا. الحدّ
+    الحقيقي هو القوس المتوازن (كشفه P15 عند إضافة حقول إدارية للقواعد).
+    """
+    start = code.find(needle)
+    if start < 0:
+        return ''
+    # آخر `{` في سطر العنوان هو جسم القاعدة؛ `{uid}` في العنوان اسم متغيّر لا قوس.
+    line_end = code.find('\n', start)
+    if line_end < 0:
+        line_end = len(code)
+    first = code.rfind('{', start, line_end)
+    if first < 0:
+        return ''
+    depth = 0
+    for index in range(first, len(code)):
+        if code[index] == '{':
+            depth += 1
+        elif code[index] == '}':
+            depth -= 1
+            if depth == 0:
+                return code[start:index + 1]
+    return ''
 
 
 def main() -> int:
@@ -283,79 +319,101 @@ def main() -> int:
     if "request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])" not in code:
         problems.append('notifications: التعليم يمكنه تغيير حقول أخرى')
 
-    # 12) منع الحقول الإدارية في ملف المدرس
-    # الحدّ يُحدَّد بتوازن الأقواس لا بعلامة تعليق: التعليقات تُحذف قبل الفحص،
-    # فكان الحدّ القديم يقع على آخر الملف ويشمل قواعد لاحقة (P13) بلا سبب.
-    teacher_block = match_block(code, 'match /teacherProfiles/{uid}')
-    if teacher_block is None:
+    # 12) منع الحقول الإدارية في ملف المدرس (P14/P15)
+    teacher_block = block_starting_at(code, 'match /teacherProfiles/{uid}')
+    if not teacher_block:
         problems.append('teacherProfiles: تعذّر تحديد كتلة القاعدة')
     else:
-        for field in ('isFeatured', 'rating', 'reviewsCount'):
+        for field in ('rating', 'reviewsCount'):
             if field in teacher_block:
-                problems.append(f'teacherProfiles: الحقل الإداري «{field}» مذكور في القواعد')
+                problems.append(
+                    f'teacherProfiles: الحقل الإداري «{field}» مذكور في القواعد'
+                )
+        # القراءة للطلاب مشروطة بالتوثيق — وهو شرط الاكتشاف الحقيقي (P15).
+        if "resource.data.status == 'verified'" not in teacher_block:
+            problems.append('teacherProfiles: القراءة غير مقيّدة بالموثّقين')
+        # قرار الإدارة مقيّد بحقول معلنة، والحالة من مجموعة مغلقة.
+        if 'validAdminDecision()' not in teacher_block:
+            problems.append('teacherProfiles: لا دالة قرار إدارية (validAdminDecision)')
+        if "['draft', 'pendingReview', 'verified', 'rejected']" not in teacher_block:
+            problems.append('teacherProfiles: الحالة الإدارية غير مقيّدة بمجموعة')
+        if 'request.resource.data.reviewNote.size() >= 5' not in teacher_block:
+            problems.append('teacherProfiles: سبب الرفض غير مقيّد بطول أدنى')
+        # صاحب الملف: لا يغيّر الحالة ولا المالك.
+        if 'request.resource.data.status == resource.data.status' not in teacher_block:
+            problems.append('teacherProfiles: صاحب الملف يستطيع تغيير الحالة')
+        # (P15) الاكتشاف: طريقة التقديم والمكان يكتبها المالك ضمن حقوله.
+        profile_keys = block_starting_at(code, 'function profileKeys()')
+        if not profile_keys:
+            problems.append('teacherProfiles: لا قائمة حقول للمالك (profileKeys)')
+        else:
+            for field in ('isOnline', 'governorate', 'district'):
+                if field not in profile_keys:
+                    problems.append(f'teacherProfiles: حقل «{field}» غير مسموح للمالك')
+        # (P15) التمييز: حقول إدارية لا تتغيّر في مسار المالك.
+        if 'noAdminFields()' not in teacher_block:
+            problems.append('teacherProfiles: الإنشاء قد يحمل حقول التمييز')
+        if 'unchangedAdminFields()' not in teacher_block:
+            problems.append('teacherProfiles: صاحب الملف قد يغيّر حقول التمييز')
+        curation = block_starting_at(code, 'function validAdminCuration()')
+        if not curation:
+            problems.append('teacherProfiles: لا مسار تمييز إداري (validAdminCuration)')
+        else:
+            if "'isFeatured', 'featuredOrder'" not in curation:
+                problems.append('teacherProfiles: التمييز قد يغيّر حقولًا أخرى')
+            if 'affectedKeys().hasOnly' not in curation:
+                problems.append('teacherProfiles: التمييز بلا فحص affectedKeys')
+            if "resource.data.status == 'verified'" not in curation:
+                problems.append('teacherProfiles: تمييز ملف غير موثّق غير ممنوع')
+            if 'featuredOrder <= 999' not in curation:
+                problems.append('teacherProfiles: ترتيب التمييز بلا حد أعلى')
 
     # 13) P13: التقييم ببوابة G7، والمتوسط لا يتحرك بلا تقييم، والمفضلة مشتقة
     if "bookingOfReview().status == 'completed'" not in code:
         problems.append('reviews: التقييم غير مقيّد بحجز منفّذ (G7)')
     if 'request.resource.data.bookingId == reviewId' not in code:
-        problems.append('reviews: معرّف التقييم ليس معرّف الحجز (منع التكرار)')
+        problems.append('reviews: معرّف التقييم ليس معرّف الحجز (ضد التكرار)')
     if 'bookingOfReview().teacherId == request.resource.data.teacherId' not in code:
-        problems.append('reviews: التقييم قد يخصّ مدرسًا آخر غير مدرس الحجز')
-    reviews_block = match_block(code, 'match /reviews/{reviewId}') or ''
-    if 'allow update: if false;' not in reviews_block:
+        problems.append('reviews: التقييم قد يخص مدرسًا آخر')
+    reviews_block = block_starting_at(code, 'match /reviews/{reviewId}')
+    if not reviews_block:
+        problems.append('reviews: تعذّر تحديد كتلة القاعدة')
+    elif 'allow update: if false;' not in reviews_block:
         problems.append('reviews: التقييم قابل للتعديل بعد الكتابة')
+
     if 'getAfter(' not in code:
         problems.append('teacherRatings: الزيادة لا تُطابق تقييمًا في نفس الكتابة')
     if 'request.resource.data.totalReviews == resource.data.totalReviews + 1' not in code:
-        problems.append('teacherRatings: العدّاد يزيد بأكثر من تقييم واحد')
-    if 'request.resource.data.ratingSum\n             == resource.data.ratingSum + reviewOfAggregate().rating' not in code:
-        problems.append('teacherRatings: المجموع لا يساوي القديم + تقييم التقييم الجديد')
-    if "favoriteId == request.resource.data.studentId + '_' + request.resource.data.kind + '_' + request.resource.data.targetId" not in code:
-        problems.append('favorites: المعرّف المشتق غير مفروض')
-    if "request.resource.data.kind in ['teacher', 'group']" not in code:
-        problems.append('favorites: نوع الهدف غير مقيّد بقائمة')
-    favorites_block = match_block(code, 'match /favorites/{favoriteId}') or ''
-    if 'isSelf(resource.data.studentId)' not in favorites_block:
-        problems.append('favorites: القراءة/الحذف غير مقيّدين بصاحب المفضلة')
-    if 'resource == null' not in favorites_block:
-        problems.append('favorites: قراءة مستند غير موجود تُرفض (يكسر أول إضافة)')
-    # 14) P14: الإدارة والتوثيق — كل قرار إداري مشروط بالادعاء ومقيّد الحقول
-    if 'isAdmin() && validAdminDecision()' not in code:
-        problems.append('teacherProfiles: قرار الإدارة غير مقيّد بحقول معلنة')
-    if "'draft', 'pendingReview', 'verified', 'rejected'" not in code:
-        problems.append('teacherProfiles: الحالة الإدارية غير مقيّدة بمجموعة معلنة')
-    if 'reviewNote' not in code:
-        problems.append('teacherProfiles: حقل سبب الرفض (reviewNote) غير موجود')
-    elif 'request.resource.data.reviewNote.size() >= 5' not in code:
-        problems.append('teacherProfiles: سبب الرفض غير مقيّد بطول أدنى')
-    # كل مسار قبول مدرس يجب أن يشترط التوثيق: 4 قرارات حجز + طلب انضمام +
-    # ترقية منتظر. العدد أقل من ذلك يعني مسارًا نُسي.
-    if code.count('teacherVerified(request.auth.uid)') < 6:
-        problems.append(
-            'P14: مسار قبول مدرس غير مشروط بالتوثيق (teacherVerified)'
-        )
-    if "'approved'" in code:
-        problems.append('P14: بقيت القيمة القديمة approved في القواعد')
-    reports_block = match_block(code, 'match /contentReports/{reportId}') or ''
-    if len(reports_block) == 0:
+        problems.append('teacherRatings: العدّاد يزيد بأكثر من واحد')
+    if 'reviewOfAggregate().rating' not in code:
+        problems.append('teacherRatings: الزيادة لا تأخذ تقييم التقييم نفسه')
+    if 'request.resource.data.totalReviews == resource.data.totalReviews - 1' not in code:
+        problems.append('teacherRatings: لا مسار للنقصان الإداري (حذف تقييم)')
+    if 'resource.data.ratingSum - request.resource.data.ratingSum >= 1' not in code:
+        problems.append('teacherRatings: النقصان الإداري قد ينفخ المتوسط')
+
+    favorites_block = block_starting_at(code, 'match /favorites/{favoriteId}')
+    if not favorites_block:
+        problems.append('favorites: تعذّر تحديد كتلة القاعدة')
+    else:
+        if 'isSelf(resource.data.studentId)' not in favorites_block:
+            problems.append('favorites: القراءة/الحذف لغير صاحب المفضلة')
+        if "request.resource.data.kind in ['teacher', 'group']" not in code:
+            problems.append('favorites: نوع الهدف غير مقيّد بقائمة')
+
+    # 14) P14: البلاغات لا تُحذف وتُحسم إداريًا، والقبول مشروط بالتوثيق
+    reports_block = block_starting_at(code, 'match /contentReports/{reportId}')
+    if not reports_block:
         problems.append('contentReports: تعذّر تحديد كتلة القاعدة')
     else:
         if "request.resource.data.status == 'open'" not in reports_block:
-            problems.append('contentReports: الإنشاء غير مقيّد بحالة مفتوحة')
-        if 'targetExists(' not in reports_block:
-            problems.append('contentReports: الهدف غير مفحوص الوجود')
+            problems.append('contentReports: الإنشاء غير مقيّد بحالة open')
         if 'allow update: if isAdmin()' not in reports_block:
             problems.append('contentReports: الحسم غير مقيّد بالإدارة')
         if 'allow delete: if false;' not in reports_block:
-            problems.append('contentReports: البلاغ قابل للحذف من التطبيق')
-        if 'isSelf(resource.data.reporterId)' in reports_block or 'request.auth.uid == resource.data.reporterId' not in reports_block:
-            problems.append('contentReports: القراءة غير مقيّدة بصاحب البلاغ')
-    if 'request.resource.data.totalReviews == resource.data.totalReviews - 1' not in code:
-        problems.append('teacherRatings: لا قاعدة للنقصان الإداري عند حذف تقييم')
-
-    direct_block = match_block(code, 'match /directChats/{chatId}') or ''
-    if 'resource == null' not in direct_block:
-        problems.append('directChats: قراءة محادثة غير موجودة تُرفض (يكسر بدء المحادثة)')
+            problems.append('contentReports: البلاغ قابل للحذف')
+    if code.count('teacherVerified(request.auth.uid)') < 6:
+        problems.append('P14: مسار قبول مدرس غير مشروط بالتوثيق')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

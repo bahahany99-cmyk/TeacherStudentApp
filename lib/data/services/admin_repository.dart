@@ -36,6 +36,17 @@ abstract interface class AdminRepository {
     required String reason,
   });
 
+  /// تمييز ملف أو إزالته من شريط المميزين (P15).
+  ///
+  /// الترتيب في الشريط `featuredOrder` تصاعديًا، ثم التقييم. الحقلان إداريان
+  /// في القواعد: صاحب الملف لا يكتبهما، والمسؤول لا يكتب معهما أي حقل آخر.
+  /// التمييز مشروط بأن يكون الملف **موثّقًا** (تشترطه القواعد أيضًا).
+  Future<void> setFeatured({
+    required String teacherId,
+    required bool isFeatured,
+    int order,
+  });
+
   /// البلاغات المفتوحة — الأحدث أولًا.
   Future<List<ContentReport>> listOpenReports();
 

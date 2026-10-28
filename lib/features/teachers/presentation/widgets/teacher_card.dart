@@ -109,12 +109,33 @@ class TeacherCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${teacher.subject} • ${teacher.area}',
+                        '${teacher.subject} • ${teacher.locationLabel}',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      // (P15) طريقة التقديم ظاهرة على البطاقة لا داخل الملف:
+                      // الطالب يفلتر بها أصلًا، فلا يفتح ملفًا ليتبيّنها.
+                      Row(
+                        children: <Widget>[
+                          Icon(
+                            teacher.isOnline
+                                ? Icons.public_rounded
+                                : Icons.place_outlined,
+                            size: 12,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            teacher.deliveryLabel,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

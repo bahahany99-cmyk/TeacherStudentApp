@@ -16,7 +16,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
-import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_card.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_carousel.dart';
 
 /// الصفحة الرئيسية لواجهة الطالب.
 ///
@@ -129,6 +129,8 @@ class StudentHomeScreen extends StatelessWidget {
                 onActionTap: () =>
                     ShellScope.read(context).goTo(AppTab.teachers),
               ),
+              // (P15) شريط أفقي بدل قائمة عمودية: التمييز قسم قصير، وتركه
+              // عموديًا كان يدفع «حجوزاتي القادمة» خارج الشاشة الأولى.
               AsyncView<List<TeacherProfile>>(
                 load: () => AppServicesScope.of(context).teachers.listFeatured(),
                 builder: (BuildContext context, List<TeacherProfile> teachers) {
@@ -138,18 +140,13 @@ class StudentHomeScreen extends StatelessWidget {
                       title: 'لا يوجد مدرسون مميزون حاليًا',
                     );
                   }
-                  return Column(
-                    children: teachers
-                        .map(
-                          (TeacherProfile t) => TeacherCard(
-                            teacher: t,
-                            onTap: () => Navigator.of(context).pushNamed(
-                              RoutePaths.teacherProfile,
-                              arguments: t.id,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
+                  return FeaturedTeachersCarousel(
+                    teachers: teachers,
+                    onTeacherTap: (TeacherProfile teacher) =>
+                        Navigator.of(context).pushNamed(
+                          RoutePaths.teacherProfile,
+                          arguments: teacher.id,
+                        ),
                   );
                 },
               ),

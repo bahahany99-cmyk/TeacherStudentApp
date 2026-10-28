@@ -42,6 +42,10 @@ class TeacherProfile {
     required this.bio,
     required this.status,
     this.isFeatured = false,
+    this.featuredOrder = 0,
+    this.isOnline = false,
+    this.governorate,
+    this.district,
     this.rating = 0,
     this.reviewsCount = 0,
     this.priceHint,
@@ -63,9 +67,29 @@ class TeacherProfile {
   final String bio;
   final TeacherProfileStatus status;
 
-  /// التمييز يُدار من الإدارة فقط. قواعد اختيار/ترتيب المميزين **لم تُحسم بعد**
-  /// (Q-01..Q-03)؛ الحقل هنا للعرض البنيوي فقط.
+  /// التمييز يُدار من الإدارة فقط (P15): لا يكتبه صاحب الملف في القواعد،
+  /// ويكتبه المسؤول وحده عبر مسار تحديث مقيّد بحقلي التمييز.
   final bool isFeatured;
+
+  /// ترتيب الظهور في شريط المميزين — الأصغر أولًا (P15).
+  ///
+  /// إداري فقط مثل [isFeatured]، والترتيب النهائي حتمي: (ترتيب، تقييم، اسم)
+  /// في `TeacherDiscoveryRules.featured`.
+  final int featuredOrder;
+
+  /// يقدّم حصصًا **عن بُعد** — متاحة لأي طالب في أي محافظة (P15).
+  ///
+  /// العلم مستقلّ عن [governorate]: مدرس يقبل الاثنين يكون `isOnline == true`
+  /// وله محافظة. لذلك فلتر «عن بُعد» يضمّه، وفلتر «حضوري فقط» يستبعده
+  /// (`!isOnline`) — مساواة واحدة على حقل واحد، بلا استعلام `OR` ولا فهرس
+  /// مركّب (A-93).
+  final bool isOnline;
+
+  /// المحافظة (للمحاضرة الحضورية) — فلتر الاستكشاف الأساسي في P15.
+  final String? governorate;
+
+  /// المركز/الحي داخل المحافظة — أدقّ ما يُعرض للطالب قبل الحجز.
+  final String? district;
 
   final double rating;
   final int reviewsCount;
@@ -80,6 +104,70 @@ class TeacherProfile {
 
   /// هل يظهر للطلاب؟ القاعدة الحقيقية تُفرض في قواعد Firestore.
   bool get isVisibleToStudents => status == TeacherProfileStatus.verified;
+
+  /// وصف المكان للعرض: «المعادي — القاهرة» ثم [area] كبديل للبيانات القديمة.
+  ///
+  /// المستندات القديمة (قبل P15) لا تحمل `governorate`/`district`، فالسقوط إلى
+  /// [area] يمنع ظهور «غير محدد» في كل بطاقة.
+  String get locationLabel {
+    final String gov = governorate?.trim() ?? '';
+    final String dist = district?.trim() ?? '';
+    if (dist.isNotEmpty && gov.isNotEmpty) {
+      return '$dist — $gov';
+    }
+    if (gov.isNotEmpty) {
+      return gov;
+    }
+    if (dist.isNotEmpty) {
+      return dist;
+    }
+    return area;
+  }
+
+  /// وسم طريقة التقديم: «عن بُعد» أو «حضوري فقط».
+  String get deliveryLabel => isOnline ? 'عن بُعد' : 'حضوري فقط';
+
+  /// نسخة معدّلة — تُستخدم في المستودع التجريبي والحسابات المشتقة.
+  ///
+  /// [clearReviewNote] لأن `copyWith(note: null)` لا يستطيع التمييز بين «لا
+  /// تغيير» و«احذف السبب»، وحذف السبب عند التوثيق مقصود في P14.
+  TeacherProfile copyWith({
+    String? displayName,
+    String? subject,
+    String? stage,
+    String? area,
+    String? bio,
+    TeacherProfileStatus? status,
+    bool? isFeatured,
+    int? featuredOrder,
+    bool? isOnline,
+    String? governorate,
+    String? district,
+    double? rating,
+    int? reviewsCount,
+    String? priceHint,
+    String? reviewNote,
+    bool clearReviewNote = false,
+  }) {
+    return TeacherProfile(
+      id: id,
+      displayName: displayName ?? this.displayName,
+      subject: subject ?? this.subject,
+      stage: stage ?? this.stage,
+      area: area ?? this.area,
+      bio: bio ?? this.bio,
+      status: status ?? this.status,
+      isFeatured: isFeatured ?? this.isFeatured,
+      featuredOrder: featuredOrder ?? this.featuredOrder,
+      isOnline: isOnline ?? this.isOnline,
+      governorate: governorate ?? this.governorate,
+      district: district ?? this.district,
+      rating: rating ?? this.rating,
+      reviewsCount: reviewsCount ?? this.reviewsCount,
+      priceHint: priceHint ?? this.priceHint,
+      reviewNote: clearReviewNote ? null : (reviewNote ?? this.reviewNote),
+    );
+  }
 
   String get initials {
     final String trimmed = displayName.trim();
