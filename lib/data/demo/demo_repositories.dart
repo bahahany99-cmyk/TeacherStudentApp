@@ -1731,8 +1731,8 @@ class DemoDirectChatRepository implements DirectChatRepository {
         .where((DirectChat chat) => chat.involves(viewerId))
         .toList(growable: false)
       ..sort((DirectChat a, DirectChat b) {
-        final DateTime? left = a.lastMessageAt ?? a.createdAt;
-        final DateTime? right = b.lastMessageAt ?? b.createdAt;
+        final DateTime left = a.lastMessageAt ?? a.createdAt;
+        final DateTime right = b.lastMessageAt ?? b.createdAt;
         return right.compareTo(left);
       });
     return List<DirectChat>.unmodifiable(mine);
@@ -1934,6 +1934,10 @@ class DemoDirectChatRepository implements DirectChatRepository {
   }) async {
     final DirectChat? chat = _find(chatId);
     if (chat == null || !chat.involves(viewerId)) {
+      return;
+    }
+    final DateTime? current = chat.lastReadAtFor(viewerId);
+    if (current != null && !at.isAfter(current)) {
       return;
     }
     _replace(

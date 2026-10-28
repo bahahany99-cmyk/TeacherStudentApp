@@ -16,6 +16,7 @@ import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
@@ -59,14 +60,16 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   /// يقرأ الإعدادات وحالة الحجز المرتبطة لحساب سبب المنع مرة واحدة.
   Future<void> _resolveAccess(DirectChat chat, String viewerId) async {
     _resolvingAccess = true;
-    final DirectChatRepository repo = AppServicesScope.of(context).chats;
+    // نلتقط المستودعين قبل أي `await` حتى لا نستخدم `context` بعده.
+    final AppServices services = AppServicesScope.of(context);
+    final DirectChatRepository repo = services.chats;
     final bool allow = await repo.allowDirectMessages(chat.teacherId);
     bool rejected = false;
     final String? bookingId = chat.bookingId;
     if (bookingId != null) {
-      final BookingRequest? booking = await AppServicesScope.of(
-        context,
-      ).bookings.findById(bookingId);
+      final BookingRequest? booking = await services.bookings.findById(
+        bookingId,
+      );
       rejected = booking?.status == BookingStatus.rejected;
     }
     if (!mounted) {

@@ -2273,6 +2273,46 @@ describe('P11 — قراءة المحادثة وحالة القراءة', () => 
       }),
     );
   });
+
+  it('ملخّص آخر رسالة: من المرسل وحده وبلا رجوع بالزمن', async () => {
+    await seedChat();
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        lastMessageAt: now(),
+        lastMessageText: 'رسالة جديدة',
+        lastSenderId: 'student-1',
+      }),
+    );
+
+    // انتحال مرسل آخر في الملخّص.
+    await assertFails(
+      updateDoc(doc(asTeacher(), chatPath('teacher-1', 'student-1')), {
+        lastMessageAt: now(),
+        lastMessageText: 'انتحال',
+        lastSenderId: 'student-1',
+      }),
+    );
+
+    // تعديل حقول خارج الملخّص.
+    await assertFails(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        lastMessageAt: now(),
+        lastMessageText: 'نص',
+        lastSenderId: 'student-1',
+        origin: 'inquiry',
+      }),
+    );
+
+    // زمن أقدم من المسجّل.
+    await assertFails(
+      updateDoc(doc(asStudent(), chatPath('teacher-1', 'student-1')), {
+        lastMessageAt: new Date('2026-10-01T09:00:00Z'),
+        lastMessageText: 'قديم',
+        lastSenderId: 'student-1',
+      }),
+    );
+  });
 });
 
 describe('P11 — الرسائل: الطرفان فقط ولا انتحال', () => {

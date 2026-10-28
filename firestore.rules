@@ -881,9 +881,12 @@ service cloud.firestore {
         && teacherSettingsDoc().allowDirectMessages == true;
 
       // (د) حالة القراءة: كل طرف يكتب حقلَه وحده، ولا يمسّ شيئًا آخر.
+      // `size() > 0` ضروري: كتابة القيمة نفسها لا تُنتج فروقًا، فتنجح
+      // `hasOnly` على مجموعة فارغة — وهذا منفذ لكتابة «لا شيء» باسم القراءة.
       allow update: if isParticipant()
         && request.resource.data.teacherId == resource.data.teacherId
         && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
         && (
              (request.auth.uid == resource.data.studentId
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentLastReadAt'])
@@ -895,13 +898,20 @@ service cloud.firestore {
            );
 
       // (هـ) ملخّص آخر رسالة: يكتبه مرسل الرسالة نفسه فقط، بعدها في الدفعة
-      // نفسها. لا يغيّر الأطراف ولا الأصل.
+      // نفسها. لا يغيّر الأطراف ولا الأصل، ولا يُرجِع الزمن للخلف.
+      //
+      // **حدّ معروف:** القواعد لا تستطيع إثبات أن الرسالة كُتبت في نفس الدفعة
+      // (`get` يرى ما قبلها)، فمنعنا هنا ما يضر: لا ينتحل المرسل، ولا يغيّر
+      // إلا ثلاثة حقول، ولا يعرض نصًا أطول من حدّه. النص نفسه في مجموعة
+      // الرسائل محكوم بقاعدة القراءة/الكتابة الخاصة بها.
       allow update: if isParticipant()
         && request.resource.data.teacherId == resource.data.teacherId
         && request.resource.data.studentId == resource.data.studentId
         && request.resource.data.origin == resource.data.origin
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
         && request.resource.data.lastSenderId == request.auth.uid
         && request.resource.data.lastMessageAt is timestamp
+        && request.resource.data.lastMessageAt >= resource.data.get('lastMessageAt', timestamp.value(0))
         && request.resource.data.lastMessageText is string
         && request.resource.data.lastMessageText.size() > 0
         && request.resource.data.lastMessageText.size() <= 500

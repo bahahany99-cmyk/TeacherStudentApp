@@ -2145,17 +2145,10 @@ class FirestoreBookingRepository implements BookingRepository {
 /// القواعد هي التي تمنع الخيط غير المصرّح به؛ الواجهة تتحقق محليًا فقط لتشرح
 /// السبب بالعربية قبل محاولة كتابة ستُرفض.
 class FirestoreDirectChatRepository implements DirectChatRepository {
-  FirestoreDirectChatRepository({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-    Future<String?> Function()? currentUid,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _currentUid =
-           currentUid ??
-           (() async => (auth ?? FirebaseAuth.instance).currentUser?.uid);
+  FirestoreDirectChatRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
-  final Future<String?> Function() _currentUid;
 
   CollectionReference<Map<String, dynamic>> get _chats =>
       _firestore.collection(FirestoreCollections.directChats);
@@ -2444,6 +2437,11 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
     return _guard(() async {
       final DirectChat? chat = await findById(chatId);
       if (chat == null || !chat.involves(viewerId)) {
+        return;
+      }
+      // لا نكتب قيمة مساوية أو أقدم: القواعد تشترط تغييرًا فعليًا لحقل القارئ.
+      final DateTime? current = chat.lastReadAtFor(viewerId);
+      if (current != null && !at.isAfter(current)) {
         return;
       }
       final String field = chat.isTeacherViewer(viewerId)
