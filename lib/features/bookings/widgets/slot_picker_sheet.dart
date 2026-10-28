@@ -78,19 +78,27 @@ class _SlotPickerSheetState extends State<_SlotPickerSheet> {
   }
 
   /// أول موعد مسموح: بعد المهلة الدنيا، على رأس نصف ساعة.
+  ///
+  /// ⚠️ عيب حقيقي كُشف في P17 (اختبار الرحلة كان يسقط ليلًا): `clamp` وحدها كانت
+  /// تُعيد الموعد **إلى الخلف** حين تتجاوز المهلة الدنيا ساعة الإغلاق. مثال:
+  /// الساعة 20:40 والمهلة ساعة ⇒ 21:40، وبعد التقريب 22:00، فيُقصّ إلى 21:00
+  /// وهو موعد **مرفوض** (أقل من المهلة) — فيفتح النموذج على وقت غير صالح ويرى
+  /// المستخدم خطأً قبل أن يلمس شيئًا. الصواب: إن لم يبقَ متسع اليوم انتقل إلى
+  /// الغد عند ساعة الفتح.
   DateTime _defaultSlot() {
     final DateTime earliest = DateTime.now().add(BookingRules.minimumLeadTime);
-    final int rounded = ((earliest.hour * 60 + earliest.minute) ~/ 30 + 1) * 30;
-    final int clamped = rounded
-        .clamp(BookingRules.openMinute, BookingRules.closeMinute - 60)
-        .toInt();
-    return DateTime(
-      earliest.year,
-      earliest.month,
-      earliest.day,
-      clamped ~/ 60,
-      clamped % 60,
-    );
+    DateTime day = DateTime(earliest.year, earliest.month, earliest.day);
+    int minutes = ((earliest.hour * 60 + earliest.minute) ~/ 30 + 1) * 30;
+
+    if (minutes + widget.durationMinutes > BookingRules.closeMinute) {
+      // لا متسع اليوم لهذه المدة: أول موعد غدًا عند الفتح.
+      day = day.add(const Duration(days: 1));
+      minutes = BookingRules.openMinute;
+    } else if (minutes < BookingRules.openMinute) {
+      minutes = BookingRules.openMinute;
+    }
+
+    return DateTime(day.year, day.month, day.day, minutes ~/ 60, minutes % 60);
   }
 
   @override

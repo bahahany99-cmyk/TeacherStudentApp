@@ -14,6 +14,35 @@ DateTime _soon({int hours = 48, int atHour = 16}) {
   return DateTime(base.year, base.month, base.day, atHour);
 }
 
+/// أول موعد داخل ساعات العمل بعد [after] — يبدأ الفحص من `now + after`.
+///
+/// السبب: الاختبارات كانت تستخدم «الآن + ساعتين/خمس ساعات» مباشرة، فتنجح نهارًا
+/// وتسقط ليلًا لأن الموعد يخرج عن نافذة 8:00–22:00 (كشفه CI في P17 الساعة
+/// 20:40). نبحث عن أول خانة نصف ساعة صالحة بدل افتراض الساعة الحالية.
+DateTime _businessSlotAhead(Duration after) {
+  final DateTime now = DateTime.now();
+  DateTime candidate = now.add(after);
+  for (int step = 0; step < 96; step++) {
+    final int minute = candidate.hour * 60 + candidate.minute;
+    final bool insideHours =
+        minute >= BookingRules.openMinute &&
+        minute + 60 <= BookingRules.closeMinute;
+    if (insideHours && !candidate.isBefore(now.add(BookingRules.minimumLeadTime))) {
+      return candidate;
+    }
+    // ننتقل نصف ساعة للأمام، وإلى الفتح إن كنا خارج النافذة.
+    candidate = minute + 30 >= BookingRules.closeMinute
+        ? DateTime(
+            candidate.year,
+            candidate.month,
+            candidate.day + 1,
+            BookingRules.openMinute ~/ 60,
+          )
+        : candidate.add(const Duration(minutes: 30));
+  }
+  throw StateError('تعذّر إيجاد موعد داخل ساعات العمل — راجع BookingRules.');
+}
+
 BookingRequest _booking({
   String id = 'b1',
   String teacherId = 'teacher-1',
@@ -329,7 +358,8 @@ void main() {
     });
 
     test('الإلغاء داخل 12 ساعة يُسجّل «ملغى متأخرًا»', () {
-      final DateTime start = DateTime.now().add(const Duration(hours: 5));
+      // داخل مهلة الإلغاء المجاني (12 ساعة) وفي نفس الوقت داخل ساعات العمل.
+      final DateTime start = _businessSlotAhead(const Duration(hours: 3));
       final BookingRequest booking = _booking(startsAt: start);
       expect(
         BookingRules.cancelStatus(booking: booking, now: DateTime.now()),
@@ -563,9 +593,8 @@ void main() {
       final DemoBookingRepository repo = DemoBookingRepository(
         source: <BookingRequest>[],
       );
-      final DateTime proposed = DateTime.now().add(
-        const Duration(hours: 2),
-      );
+      // موعد بديل صالح في أي ساعة من اليوم (لا «الآن + ساعتين»).
+      final DateTime proposed = _businessSlotAhead(const Duration(hours: 2));
 
       final BookingRequest created = await repo.createRequest(
         teacherId: 'teacher-1',
