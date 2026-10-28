@@ -165,13 +165,21 @@ void main() {
       await _openEditForm(tester);
 
       await tester.enterText(find.byType(TextFormField).first, '');
-      await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
+      await tester.pumpAndSettle();
 
-      // الرسالة العامة تظهر بجوار زر الحفظ، فهي دليل أن التحقق جرى فعلًا.
+      // (P15) النموذج صار أطول من الشاشة، وزر «حفظ» في أسفله. نضغط معالجه
+      // مباشرة بدل الاعتماد على إصابة نقطة يحتاج تمريرها — والضغط الحقيقي
+      // على الزر مغطّى في اختبار «النموذج الصالح لا يدّعي الحفظ».
+      final FilledButton save = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'حفظ'),
+      );
+      save.onPressed!();
+      await tester.pumpAndSettle();
+
+      // الرسالة العامة دليل على أن التحقق جرى.
       expect(find.text('راجع الحقول المطلوبة قبل الحفظ.'), findsOneWidget);
 
-      // النموذج صار أطول من الشاشة (P15)، وقد يكون الحقل الأول خارج العرض
-      // بعد التمرير إلى «حفظ» — نصعد إليه لقراءة خطئه.
+      // ثم نصعد إلى الحقل الأول لقراءة رسالته الخاصة.
       await tester.dragUntilVisible(
         find.text('الاسم مطلوب'),
         find.byType(ListView).first,
