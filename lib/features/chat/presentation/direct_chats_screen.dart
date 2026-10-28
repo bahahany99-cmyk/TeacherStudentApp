@@ -197,13 +197,15 @@ class _ChatRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxs),
-                Row(
+                // `Wrap` لا `Row`: وسمان عربيان قد يتجاوزان عرض الشاشة الضيقة.
+                Wrap(
+                  spacing: AppSpacing.xxs,
+                  runSpacing: AppSpacing.xxs,
                   children: <Widget>[
                     StatusChip(
                       label: chat.origin.label,
                       color: theme.colorScheme.primary,
                     ),
-                    const SizedBox(width: AppSpacing.xxs),
                     if (unread)
                       StatusChip(
                         label: 'جديد',
