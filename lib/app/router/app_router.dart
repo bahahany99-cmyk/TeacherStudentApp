@@ -10,6 +10,7 @@ import 'package:teacher_student_app/features/admin/presentation/admin_guard.dart
 import 'package:teacher_student_app/features/admin/presentation/featured_teachers_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
+import 'package:teacher_student_app/features/account/presentation/account_restore_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/login_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/role_selection_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
@@ -46,6 +47,8 @@ abstract final class AppRouter {
         return _page(const RoleSelectionScreen(), settings);
       case RoutePaths.shell:
         return _page(const AppShell(), settings);
+      case RoutePaths.accountRestore:
+        return _page(const AccountRestoreScreen(), settings);
       case RoutePaths.designGallery:
         return _page(const DesignGalleryScreen(), settings);
       case RoutePaths.teacherProfile:

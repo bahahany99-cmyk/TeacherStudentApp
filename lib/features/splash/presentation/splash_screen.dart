@@ -33,9 +33,11 @@ class _SplashScreenState extends State<SplashScreen> {
 
     final SessionController session = SessionScope.read(context);
     // حساب بلا دور محفوظ ← شاشة اختيار الدور (أول دخول فقط).
+    // حساب مجدول للحذف ← شاشة الاستعادة، لا الهيكل (P17).
     final String nextRoute = switch (session.status) {
       SessionStatus.signedIn => RoutePaths.shell,
       SessionStatus.needsRole => RoutePaths.roleSelection,
+      SessionStatus.pendingDeletion => RoutePaths.accountRestore,
       SessionStatus.signedOut || SessionStatus.unknown => RoutePaths.login,
     };
 

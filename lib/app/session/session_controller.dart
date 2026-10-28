@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/features/admin/domain/admin_roles.dart';
+import 'package:teacher_student_app/data/models/account_status.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 
 /// حالة الجلسة.
 enum SessionStatus {
@@ -20,6 +22,9 @@ enum SessionStatus {
 
   /// يوجد مستخدم بدور معروف.
   signedIn,
+
+  /// الحساب مجدول للحذف (P17): لا يدخل التطبيق، بل شاشة الاستعادة.
+  pendingDeletion,
 }
 
 /// إدارة حالة الجلسة والدور على مستوى الواجهة.
@@ -57,6 +62,12 @@ class SessionController extends ChangeNotifier {
   String? get pendingEmail => _pendingRole?.email;
 
   bool get isDemoSession => _user?.isDemoAccount ?? false;
+
+  /// هل الحساب الحالي مجدول للحذف؟ (P17)
+  bool get isPendingDeletion => _status == SessionStatus.pendingDeletion;
+
+  /// موعد الحذف المجدول للحساب الحالي — `null` في الحساب النشط.
+  DateTime? get scheduledDeletionAt => _user?.scheduledDeletionAt;
 
   /// دور المستخدم الحالي؛ يُستخدم لاختيار واجهة (طالب/مدرس/إدارة) فقط.
   UserRole? get role => _user?.role;
@@ -164,6 +175,47 @@ class SessionController extends ChangeNotifier {
     startDemoSession(role);
   }
 
+  /// طلب حذف الحساب (حذف ناعم) ثم إنهاء الجلسة — P17.
+  ///
+  /// الترتيب مقصود: الكتابة أولًا، والخروج بعد نجاحها فقط. لو خرجنا أولًا ثم
+  /// فشلت الكتابة لبقي المستخدم خارج التطبيق وهو يظن أن طلبه سُجّل.
+  ///
+  /// يعيد موعد الحذف المجدول لعرضه في رسالة التأكيد، أو `null` إن لم تكن هناك
+  /// جلسة. الجلسة التجريبية تُعالج محليًا (لا مستند Firestore) وتُعلِم
+  /// المستخدم بأن الأثر محلي فقط.
+  Future<DateTime?> requestAccountDeletion() async {
+    final AppUser? user = _user;
+    if (user == null) {
+      return null;
+    }
+
+    final DateTime scheduledAt = user.isDemoAccount
+        ? AccountDeletionRules.scheduledAt(DateTime.now())
+        : await _auth.requestAccountDeletion(uid: user.id);
+
+    await signOut();
+    return scheduledAt;
+  }
+
+  /// استعادة الحساب المجدول للحذف (داخل مهلة السماح) — P17.
+  ///
+  /// بعد النجاح يصبح الحساب نشطًا وتدخل الجلسة الحالة `signedIn` مباشرة، فلا
+  /// يحتاج المستخدم إلى تسجيل دخول آخر.
+  Future<void> restoreAccount() async {
+    final AppUser? user = _user;
+    if (user == null || !user.isPendingDeletion) {
+      throw StateError('لا يوجد حساب مجدول للحذف.');
+    }
+
+    if (!user.isDemoAccount) {
+      await _auth.restoreAccount(uid: user.id);
+    }
+
+    _user = user.withAccountStatus(AccountStatus.active);
+    _status = SessionStatus.signedIn;
+    notifyListeners();
+  }
+
   /// إنهاء الجلسة.
   Future<void> signOut() async {
     await _auth.signOut();
@@ -183,6 +235,12 @@ class SessionController extends ChangeNotifier {
         _user = user;
         _pendingRole = null;
         _status = SessionStatus.signedIn;
+      case AuthPendingDeletion(:final AppUser user):
+        // نُيبقي المستخدم في الجلسة لأن شاشة الاستعادة تحتاجه، لكن الحالة
+        // ليست `signedIn`: لا هيكل ولا تبويبات ولا وصول للبيانات.
+        _user = user;
+        _pendingRole = null;
+        _status = SessionStatus.pendingDeletion;
       case final AuthNeedsRole needsRole:
         _user = null;
         _pendingRole = needsRole;

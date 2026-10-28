@@ -47,6 +47,13 @@ class _FakeAuthService implements AuthService {
   }) async => AuthNeedsRole(uid: 'uid-new', displayName: displayName);
 
   @override
+  Future<DateTime> requestAccountDeletion({required String uid}) async =>
+      DateTime(2026, 11, 4);
+
+  @override
+  Future<void> restoreAccount({required String uid}) async {}
+
+  @override
   Future<AppUser> assignRole({
     required String uid,
     required String displayName,

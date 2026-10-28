@@ -39,6 +39,20 @@ abstract interface class AuthService {
     required String displayName,
   });
 
+  /// طلب حذف الحساب (حذف ناعم) — P17.
+  ///
+  /// يكتب `status = 'pending_deletion'` و`scheduledDeletionAt` (بعد 7 أيام) في
+  /// `users/{uid}`، ويعيد الموعد الذي حُفظ فعلًا. لا يحذف شيئًا ولا يُنهي
+  /// الجلسة: مناديه (`SessionController`) هو من يسجّل الخروج بعد نجاح الكتابة،
+  /// حتى لا يخرج المستخدم بلا سبب إن فشلت العملية.
+  Future<DateTime> requestAccountDeletion({required String uid});
+
+  /// استعادة حساب مجدول للحذف **داخل** مهلة السماح — P17.
+  ///
+  /// يعيد الحالة `active` ويحذف موعد الحذف. القاعدة على الخادم ترفض الاستعادة
+  /// بعد انتهاء المهلة، فلا تعتمد على الساعة المحلية وحدها.
+  Future<void> restoreAccount({required String uid});
+
   /// حفظ الدور المختار عند أول دخول، وإرجاع المستخدم جاهزًا.
   ///
   /// ⚠️ هذا ليس تصريحًا بالصلاحية: القواعد على الخادم هي ما يمنع تغيير الدور

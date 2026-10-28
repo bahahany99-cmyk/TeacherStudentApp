@@ -49,6 +49,12 @@ rules_version = '2';
 //      خارج قائمة المالك، ولا يُغيّر إلا في كتابة تمسّ هذين الحقلين فقط
 //      (`affectedKeys().hasOnly`) وعلى ملف موثّق — فلا يُستخدم التمييز غطاءً
 //      لتعديل اسم أو حالة.
+//  17. حذف الحساب (P17): **حذف ناعم** بمهلة 7 أيام. صاحب الحساب وحده يكتب
+//      `status`/`scheduledDeletionAt` في مستنده، وبانتقالات محددة: طلب
+//      (active ← pending_deletion بموعد داخل 8 أيام) أو استعادة
+//      (pending_deletion ← active قبل انتهاء الموعد، بحذف الحقل). ولا تمديد
+//      للمهلة ولا محو للموعد. وأثناء الحذف: الملف يخرج من الاكتشاف،
+//      و`teacherVerified()` يصبح `false` فلا يقبل المدرس أي طلب جديد.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -78,13 +84,31 @@ service cloud.firestore {
       return signedIn() && request.auth.token.admin == true;
     }
 
-    // هل هذا المدرس **موثّق**؟ (P14)
+    // هل طلب صاحب الحساب حذفه؟ (P17)
     //
-    // قراءة مستند واحد بمسار معروف، فتصلح داخل المعاملات أيضًا. الملف الغائب
-    // أو غير الموثّق = غير مخوّل: لا «موافقة ضمنية» لمدرس لم يُراجع.
+    // المصدر هو `users/{uid}.status` لا حالة ملف المدرس: صاحب الملف لا يستطيع
+    // تغيير `status` في `teacherProfiles` (قرار إداري)، ولو جعلنا الحذف يكتب
+    // هناك لاحتاجت الاستعادة إلى قرار إداري جديد — أي أن المستخدم لا يستطيع
+    // التراجع داخل المهلة. الحالة في مستند المستخدم تحلّ ذلك بكتابة واحدة.
+    //
+    // التكلفة: قراءة مستند إضافية. نتحمّلها لأن البديل (إخفاء الظهور في
+    // الواجهة فقط) لا يمنع قراءة الملف مباشرة بالمعرّف.
+    function accountPendingDeletion(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.get('status', 'active') == 'pending_deletion';
+    }
+
+    // هل هذا المدرس **موثّق وحسابه نشط**؟ (P14 + P17)
+    //
+    // قراءة مستندات بمسار معروف، فتصلح داخل المعاملات أيضًا. الملف الغائب أو
+    // غير الموثّق = غير مخوّل: لا «موافقة ضمنية» لمدرس لم يُراجع.
+    // (P17) وطلب الحذف يوقف كل ما يفعله المدرس (قبول حجز، إنشاء مجموعة، إرسال
+    // إشعار…) حتى لو بقي رمز هويته صالحًا على جهاز آخر. الاستعادة تعيد القدرة
+    // فورًا (نفس الشرط يُعاد تقييمه).
     function teacherVerified(uid) {
       return exists(/databases/$(database)/documents/teacherProfiles/$(uid))
-        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.status == 'verified';
+        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.status == 'verified'
+        && !accountPendingDeletion(uid);
     }
 
     // ── 1) users/{uid} ───────────────────────────────────────────────────────
@@ -99,15 +123,51 @@ service cloud.firestore {
         && request.resource.data.displayName.size() > 0
         && request.resource.data.displayName.size() <= 80;
 
+      // حالة الحساب (P17): تُقرأ كـ`active` عند غياب الحقل، فكل مستند قديم
+      // (قبل هذه المرحلة) يبقى نشطًا بلا ترحيل بيانات.
+      function accountStatusOf(data) {
+        return data.get('status', 'active');
+      }
+
+      // الانتقالات المسموحة لحالة الحساب — ثلاثة فقط:
+      //  1. **بلا تغيير**: تعديل الاسم/البريد لا يمسّ الحالة ولا الموعد (وإلا
+      //     صار كل تحديث للملف الشخصي قادرًا على محو موعد الحذف).
+      //  2. **طلب الحذف**: active ← pending_deletion، مع موعد في المستقبل
+      //     وبسقف المهلة (7 أيام + هامش يوم لفروق ساعة الجهاز عن ساعة الخادم).
+      //  3. **الاستعادة**: pending_deletion ← active، بشرط أن الموعد **لم يمرّ**
+      //     وأن الحقل يُحذف بالكامل (لا `null`): لا يُترك أثر لموعد ماضٍ.
+      // ولا مسار رابع: لا تمديد للمهلة (الفرع 2 يشترط الحالة الحالية active)،
+      // ولا حذف الموعد مع البقاء على pending_deletion.
+      function validAccountStateChange() {
+        return (accountStatusOf(request.resource.data) == accountStatusOf(resource.data)
+            && request.resource.data.get('scheduledDeletionAt', null)
+               == resource.data.get('scheduledDeletionAt', null))
+          || (accountStatusOf(request.resource.data) == 'pending_deletion'
+            && accountStatusOf(resource.data) == 'active'
+            && 'scheduledDeletionAt' in request.resource.data.keys()
+            && request.resource.data.scheduledDeletionAt is timestamp
+            && request.resource.data.scheduledDeletionAt > request.time
+            && request.resource.data.scheduledDeletionAt
+               <= request.time + duration.value(8, 'd'))
+          || (accountStatusOf(request.resource.data) == 'active'
+            && accountStatusOf(resource.data) == 'pending_deletion'
+            && !('scheduledDeletionAt' in request.resource.data.keys())
+            && 'scheduledDeletionAt' in resource.data.keys()
+            && resource.data.scheduledDeletionAt > request.time);
+      }
+
       // الدور ثابت: أي محاولة لتغييره تُرفض. بقية الحقول (الاسم/البريد) يجوز
-      // تحديثها، والحقول غير المعروفة مرفوضة.
+      // تحديثها، وحقلا الحذف الناعم (P17) بانتقالات `validAccountStateChange`
+      // وحدها. الحقول غير المعروفة مرفوضة.
       allow update: if isSelf(uid)
         && request.resource.data.role == resource.data.role
         && request.resource.data.keys().hasOnly(
-             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt'])
+             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt',
+              'status', 'scheduledDeletionAt'])
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
-        && request.resource.data.displayName.size() <= 80;
+        && request.resource.data.displayName.size() <= 80
+        && validAccountStateChange();
 
       // لا حذف من التطبيق: حذف الحساب إجراء إداري (سياسة الاحتفاظ T-10).
       allow delete: if isAdmin();
@@ -118,9 +178,12 @@ service cloud.firestore {
       // القراءة: الملف الموثّق للجميع، وصاحبه يرى ملفه بأي حالة (P14).
       // هذا شرط **الاكتشاف** الحقيقي: أي استعلام من الطالب على غير الموثّق
       // يُرفض كاملًا، فلا يفيده حذف شرط `status` من التطبيق (P15).
+      // (P17) الملف الموثّق لصاحب حساب **غير مجدول للحذف**: الحذف الناعم يُخرج
+      // الملف من الاكتشاف فورًا، مع بقاء المستند (الاستعادة تُعيده بلا فقدان
+      // بيانات). صاحبه يرى ملفه دائمًا، والمسؤول يرى الكل.
       allow read: if isAdmin()
-        || resource.data.status == 'verified'
-        || isSelf(uid);
+        || isSelf(uid)
+        || (resource.data.status == 'verified' && !accountPendingDeletion(uid));
 
       // حقول يملكها صاحب الملف: التعريف وطريقة التقديم والمكان (P15).
       // `isFeatured`/`featuredOrder` إداريان، و`reviewNote`… قرار مراجعة —

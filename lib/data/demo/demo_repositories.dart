@@ -87,6 +87,17 @@ class DemoAuthService implements AuthService {
     required String displayName,
   }) => throw _notConnected;
 
+  /// الحذف الناعم يحتاج مستندًا حقيقيًا في `users/{uid}`؛ لا شيء يُحفظ في
+  /// الوضع التجريبي، ولذلك نرمي نفس خطأ «غير متاح» بدل إيهام المستخدم بأن
+  /// حسابه سيُحذف. `SessionController` يتعامل مع الجلسة التجريبية محليًا ولا
+  /// يستدعي هذه الدوال.
+  @override
+  Future<DateTime> requestAccountDeletion({required String uid}) =>
+      throw _notConnected;
+
+  @override
+  Future<void> restoreAccount({required String uid}) => throw _notConnected;
+
   @override
   Future<AppUser> assignRole({
     required String uid,

@@ -24,6 +24,7 @@ import {
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -3993,5 +3994,267 @@ describe('P16 — حدود حقول الإدارة: الحالة والتميي�
         featuredOrder: 1,
       }),
     );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P17 — حذف الحساب الناعم: مهلة 7 أيام، استعادة داخل المهلة، وخروج من الاكتشاف
+
+/** موعد نسبي بساعة المحاكي نفسها (لا ساعة ثابتة قد تصبح ماضية). */
+const daysFromNow = (days) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+describe('P17 — طلب الحذف: انتقال واحد صحيح', () => {
+  it('صاحب الحساب يطلب الحذف بموعد داخل المهلة', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'pending_deletion',
+        scheduledDeletionAt: daysFromNow(7),
+      }),
+    );
+
+    const stored = await readAsAdmin('users/student-1');
+    assert.equal(stored.status, 'pending_deletion');
+    assert.ok(stored.scheduledDeletionAt);
+  });
+
+  it('موعد أبعد من 8 أيام مرفوض (لا حذف مؤجّل سنة)', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'pending_deletion',
+        scheduledDeletionAt: daysFromNow(30),
+      }),
+    );
+  });
+
+  it('موعد في الماضي أو غائب أو بلا نوع Timestamp مرفوض', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'pending_deletion',
+        scheduledDeletionAt: daysFromNow(-1),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'pending_deletion',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'pending_deletion',
+        scheduledDeletionAt: '2026-11-04',
+      }),
+    );
+  });
+
+  it('حالة غير معلنة (deleted) مرفوضة', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'deleted',
+        scheduledDeletionAt: daysFromNow(3),
+      }),
+    );
+  });
+
+  it('لا أحد يطلب الحذف لغيره', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asOther(), 'users/student-1'), {
+        status: 'pending_deletion',
+        scheduledDeletionAt: daysFromNow(7),
+      }),
+    );
+  });
+
+  it('تعديل الاسم وحده لا يمسّ الحالة', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        displayName: 'اسم محدّث',
+      }),
+    );
+
+    const stored = await readAsAdmin('users/student-1');
+    assert.equal(stored.status, undefined);
+    assert.equal(stored.displayName, 'اسم محدّث');
+  });
+});
+
+describe('P17 — الاستعادة: داخل المهلة فقط', () => {
+  const pendingUser = (uid, scheduledAt) => ({
+    ...userDoc(uid),
+    status: 'pending_deletion',
+    scheduledDeletionAt: scheduledAt,
+  });
+
+  it('الاستعادة قبل الموعد تنجح وتحذف الموعد', async () => {
+    await seed([
+      { path: 'users/student-1', data: pendingUser('student-1', daysFromNow(3)) },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'active',
+        scheduledDeletionAt: deleteField(),
+      }),
+    );
+
+    const stored = await readAsAdmin('users/student-1');
+    assert.equal(stored.status, 'active');
+    assert.equal(stored.scheduledDeletionAt, undefined);
+  });
+
+  it('الاستعادة بعد انتهاء المهلة مرفوضة', async () => {
+    await seed([
+      {
+        path: 'users/student-1',
+        data: pendingUser('student-1', daysFromNow(-1)),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'active',
+        scheduledDeletionAt: deleteField(),
+      }),
+    );
+  });
+
+  it('الاستعادة التي تُبقي الموعد مرفوضة', async () => {
+    await seed([
+      { path: 'users/student-1', data: pendingUser('student-1', daysFromNow(3)) },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        status: 'active',
+        scheduledDeletionAt: daysFromNow(3),
+      }),
+    );
+  });
+
+  it('تمديد المهلة بإعادة كتابة الموعد مرفوض', async () => {
+    await seed([
+      { path: 'users/student-1', data: pendingUser('student-1', daysFromNow(1)) },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        scheduledDeletionAt: daysFromNow(7),
+      }),
+    );
+  });
+
+  it('محو الموعد مع البقاء على pending_deletion مرفوض', async () => {
+    await seed([
+      { path: 'users/student-1', data: pendingUser('student-1', daysFromNow(3)) },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        scheduledDeletionAt: deleteField(),
+      }),
+    );
+  });
+
+  it('تعديل الاسم أثناء الانتظار يمرّ ويُبقي الحالة والموعد', async () => {
+    await seed([
+      { path: 'users/student-1', data: pendingUser('student-1', daysFromNow(3)) },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        displayName: 'اسم أثناء الانتظار',
+      }),
+    );
+
+    const stored = await readAsAdmin('users/student-1');
+    assert.equal(stored.status, 'pending_deletion');
+    assert.ok(stored.scheduledDeletionAt);
+  });
+});
+
+describe('P17 — الحساب المعلّق يخرج من الاكتشاف ومن التوثيق', () => {
+  it('ملف مدرس معلّق الحذف لا يُقرأ للطلاب، ويُقرأ لصاحبه', async () => {
+    await seed([
+      {
+        path: 'users/teacher-1',
+        data: {
+          ...userDoc('teacher-1', 'teacher'),
+          status: 'pending_deletion',
+          scheduledDeletionAt: daysFromNow(5),
+        },
+      },
+    ]);
+
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
+    await assertFails(getDoc(doc(asGuest(), 'teacherProfiles/teacher-1')));
+    await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
+
+    // الاستعلام لا يعرضه. سلوك Firestore مع شرط `get()` داخل قاعدة القراءة
+    // إمّا استبعاد المستند من النتيجة أو رفض الاستعلام كاملًا — وكلاهما يعني
+    // «غير قابل للاكتشاف»، وهو الوعد الذي نقيسه هنا.
+    let visible = [];
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(asStudent(), 'teacherProfiles'),
+          where('status', '==', 'verified'),
+        ),
+      );
+      visible = snapshot.docs.map((item) => item.id);
+    } catch (error) {
+      visible = [];
+    }
+    assert.deepEqual(visible, []);
+  });
+
+  it('الاستعادة تُعيد الملف للاكتشاف فورًا', async () => {
+    await seed([
+      {
+        path: 'users/teacher-1',
+        data: {
+          ...userDoc('teacher-1', 'teacher'),
+          status: 'pending_deletion',
+          scheduledDeletionAt: daysFromNow(5),
+        },
+      },
+    ]);
+
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'users/teacher-1'), {
+        status: 'active',
+        scheduledDeletionAt: deleteField(),
+      }),
+    );
+
+    await assertSucceeds(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
+  });
+
+  it('المدرس المعلّق لا يقبل حجزًا حتى لو بقي ملفه موثّقًا', async () => {
+    await seed([
+      {
+        path: 'users/teacher-1',
+        data: {
+          ...userDoc('teacher-1', 'teacher'),
+          status: 'pending_deletion',
+          scheduledDeletionAt: daysFromNow(5),
+        },
+      },
+      { path: 'bookingRequests/b1', data: bookingDoc('student-1', 'teacher-1') },
+    ]);
+
+    await assertFails(acceptBooking(asTeacher()));
   });
 });

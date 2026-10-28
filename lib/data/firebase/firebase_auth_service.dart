@@ -3,10 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
+import 'package:teacher_student_app/data/models/account_status.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 
 /// تنفيذ المصادقة بـ Firebase.
 ///
@@ -21,6 +23,8 @@ import 'package:teacher_student_app/data/services/auth_service.dart';
 ///   role: 'student' | 'teacher',
 ///   createdAt: Timestamp,
 ///   roleChosenAt: Timestamp,
+///   status: 'active' | 'pending_deletion',   // P17 — غيابه يعني active
+///   scheduledDeletionAt: Timestamp,          // P17 — مع pending_deletion فقط
 /// }
 /// ```
 /// وعند اختيار الدور «مدرس» يُنشأ أيضًا `teacherProfiles/{uid}`:
@@ -43,6 +47,12 @@ class FirebaseAuthService implements AuthService {
   final FirebaseFirestore _firestore;
 
   static const String usersCollection = 'users';
+
+  /// حقل حالة الحساب (P17) — `active` أو `pending_deletion`.
+  static const String statusField = 'status';
+
+  /// حقل موعد الحذف المجدول (P17) — `Timestamp` في القاعدة.
+  static const String scheduledDeletionField = 'scheduledDeletionAt';
 
   /// ملفات المدرسين. يُنشأ المستند تلقائيًا بحالة `pendingReview` عند اختيار
   /// الدور «مدرس» (قرار صاحب المشروع 2026-10-27).
@@ -136,6 +146,56 @@ class FirebaseAuthService implements AuthService {
         email: user.email,
       );
     });
+  }
+
+  @override
+  Future<DateTime> requestAccountDeletion({required String uid}) async {
+    final DocumentReference<Map<String, dynamic>> doc = _firestore
+        .collection(usersCollection)
+        .doc(uid);
+
+    // الموعد يُحسب على العميل لأن القواعد تحدّده بسقف (7 أيام + هامش ساعة
+    // للفروق بين ساعة الجهاز وساعة الخادم) وترفض ما يخرج عنه.
+    final DateTime scheduledAt = AccountDeletionRules.scheduledAt(
+      DateTime.now(),
+    );
+
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> existing = await doc.get();
+      if (existing.data()?['role'] == null) {
+        // حذف حساب لم يكتمل إعداده يترك مستندًا بلا دور؛ شاشة الحساب لا تُفتح
+        // أصلًا قبل اختيار الدور، لكن نمنعه صراحةً لا اعتمادًا على المسار.
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          debugMessage: 'cannot delete an account without a role',
+          overrideTitle: 'الحساب غير مكتمل',
+          overrideMessage: 'أكمل اختيار نوع الحساب قبل طلب الحذف.',
+        );
+      }
+
+      await doc.update(<String, Object?>{
+        statusField: AccountStatus.pendingDeletionWire,
+        scheduledDeletionField: scheduledAt,
+      });
+      return scheduledAt;
+    } on FirebaseException catch (error) {
+      throw firebaseCodeToException(error.code, debugMessage: error.message);
+    }
+  }
+
+  @override
+  Future<void> restoreAccount({required String uid}) async {
+    try {
+      await _firestore.collection(usersCollection).doc(uid).update(
+        <String, Object?>{
+          statusField: AccountStatus.activeWire,
+          // الحذف (لا `null`) حتى يختفي الحقل: القاعدة ترفض بقاءه مع `active`.
+          scheduledDeletionField: FieldValue.delete(),
+        },
+      );
+    } on FirebaseException catch (error) {
+      throw firebaseCodeToException(error.code, debugMessage: error.message);
+    }
   }
 
   @override
@@ -261,15 +321,27 @@ class FirebaseAuthService implements AuthService {
       );
     }
 
-    return AuthSignedIn(
-      AppUser(
-        id: user.uid,
-        displayName: displayName,
-        role: role,
-        email: user.email,
-        hasAdminClaim: await _readAdminClaim(user),
-      ),
+    final AccountStatus status = AccountStatus.fromWire(
+      doc.data()?[statusField],
     );
+    final DateTime? scheduledDeletionAt = _dateFrom(
+      doc.data()?[scheduledDeletionField],
+    );
+
+    final AppUser resolved = AppUser(
+      id: user.uid,
+      displayName: displayName,
+      role: role,
+      email: user.email,
+      hasAdminClaim: await _readAdminClaim(user),
+      status: status,
+      scheduledDeletionAt: scheduledDeletionAt,
+    );
+
+    // حساب مجدول للحذف لا يدخل التطبيق: يُوجَّه إلى شاشة الاستعادة.
+    return status == AccountStatus.pendingDeletion
+        ? AuthPendingDeletion(resolved)
+        : AuthSignedIn(resolved);
   }
 
   /// يقرأ الادعاء الإداري من رمز الهوية (P14).
@@ -290,6 +362,20 @@ class FirebaseAuthService implements AuthService {
     } on Object {
       return false;
     }
+  }
+
+  /// يحوّل قيمة حقل تاريخ إلى `DateTime` بصرف النظر عن نوعها القادم.
+  ///
+  /// `cloud_firestore` يعيد `Timestamp`، والبيانات التجريبية/الاختبارات تستخدم
+  /// `DateTime` مباشرة. أي نوع آخر ⇒ `null` (لا نرمي داخل مسار الدخول).
+  DateTime? _dateFrom(Object? raw) {
+    if (raw is Timestamp) {
+      return raw.toDate();
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
+    return null;
   }
 
   UserRole? _roleFrom(Object? raw) {

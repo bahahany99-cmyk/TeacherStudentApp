@@ -28,6 +28,9 @@
 15. أن الاكتشاف (P15) لا يُقرأ إلا للموثّقين، وأن حقول طريقة التقديم والمكان
     يكتبها صاحب الملف، وأن التمييز (`isFeatured`/`featuredOrder`) إداري وحده:
     لا يتغيّر إلا بحقلَي التمييز وحدهما، وأن صاحب الملف لا يغيّرهما.
+17. أن حذف الحساب (P17) يبقى **ناعمًا ومؤقتًا**: انتقالان فقط لحالة الحساب
+    (طلب بموعد داخل سقف المهلة، واستعادة قبل انتهائه بحذف الحقل)، وأن الملف
+    المعلّق حذفه يخرج من الاكتشاف ومن `teacherVerified()`.
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -433,6 +436,53 @@ def main() -> int:
         problems.append('teacherCalendar: تعذّر تحديد كتلة القاعدة')
     elif 'resource == null' not in calendar_block:
         problems.append('teacherCalendar: قراءة مستند غير موجود تُرفض (أول حجز يفشل)')
+
+    # 17) P17: حذف الحساب الناعم — انتقالات محددة، وخروج الملف من الاكتشاف
+    users_block = block_starting_at(code, 'match /users/{uid}')
+    if not users_block:
+        problems.append('users: تعذّر تحديد كتلة القاعدة')
+    else:
+        if 'validAccountStateChange()' not in users_block:
+            problems.append('users: لا قاعدة انتقال لحالة الحساب (P17)')
+        if "'status', 'scheduledDeletionAt'" not in users_block:
+            problems.append('users: حقلا الحذف الناعم غير مذكورين في قائمة التحديث')
+    for needle, message in (
+        (
+            "accountStatusOf(request.resource.data) == 'pending_deletion'",
+            'users: لا مسار لطلب الحذف (P17)',
+        ),
+        (
+            "accountStatusOf(request.resource.data) == 'active'",
+            'users: لا مسار لاستعادة الحساب (P17)',
+        ),
+        (
+            'request.resource.data.scheduledDeletionAt > request.time',
+            'users: موعد الحذف قد يكون في الماضي (P17)',
+        ),
+        (
+            "duration.value(8, 'd')",
+            'users: سقف مهلة الحذف (8 أيام) غير مفروض',
+        ),
+        (
+            "!('scheduledDeletionAt' in request.resource.data.keys())",
+            'users: الاستعادة قد تُبقي موعد الحذف',
+        ),
+        (
+            "resource.data.scheduledDeletionAt > request.time",
+            'users: الاستعادة ممكنة بعد انتهاء المهلة',
+        ),
+        (
+            '!accountPendingDeletion(uid)',
+            'P17: الحساب المجدول للحذف قد يبقى موثّقًا/ظاهرًا',
+        ),
+    ):
+        if needle not in code:
+            problems.append(message)
+    if (
+        "resource.data.status == 'verified' && !accountPendingDeletion(uid)"
+        not in code
+    ):
+        problems.append('teacherProfiles: الاكتشاف لا يستثني الحساب المجدول للحذف')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

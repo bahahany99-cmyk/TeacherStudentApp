@@ -75,6 +75,12 @@ abstract final class RoutePaths {
   /// مراجعة البلاغات والتقييمات (P14).
   static const String adminModeration = '/admin/moderation';
 
+  /// استعادة حساب مجدول للحذف داخل مهلة السماح (P17).
+  ///
+  /// تُفتح بعد تسجيل الدخول مباشرةً لحساب حالته `pending_deletion`، ولا يمكن
+  /// الوصول إليها من التنقل العادي: وجودها في المسارات لا يمنح دخولًا للتطبيق.
+  static const String accountRestore = '/account/restore';
+
   /// معرض المكونات — شاشة تطوير للمراجعة البصرية فقط (P1).
   static const String designGallery = '/dev/design-gallery';
 }
