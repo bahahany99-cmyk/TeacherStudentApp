@@ -23,6 +23,8 @@ AppServices _services() {
     notifications: DemoNotificationRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 

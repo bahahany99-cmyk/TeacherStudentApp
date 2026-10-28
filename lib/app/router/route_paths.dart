@@ -51,6 +51,9 @@ abstract final class RoutePaths {
   /// محادثة مباشرة واحدة. `arguments` = معرّف المحادثة.
   static const String directChat = '/chat';
 
+  /// المفضلة: مدرسون ومجموعات (P13).
+  static const String favorites = '/favorites';
+
   /// الإشعارات داخل التطبيق (P12).
   static const String notifications = '/notifications';
 

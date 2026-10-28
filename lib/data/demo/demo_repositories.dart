@@ -17,7 +17,10 @@ import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_rating.dart';
+import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
@@ -26,10 +29,13 @@ import 'package:teacher_student_app/data/services/notification_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
+import 'package:teacher_student_app/data/services/favorite_repository.dart';
+import 'package:teacher_student_app/data/services/review_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
+import 'package:teacher_student_app/data/validation/review_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
@@ -2313,5 +2319,253 @@ class DemoNotificationRepository implements NotificationRepository {
     _items.add(item);
     _publish(recipientId);
     return item;
+  }
+}
+
+/// تقييمات المدرسين في الوضع التجريبي (P13).
+///
+/// يحاكي التنفيذ الحقيقي في نقطتين مهمتين:
+/// 1. **G7 قبل الكتابة:** يقرأ الحجز طازجًا من المستودع (لا يثق بالنسخة
+///    المعروضة) ويرفض التقييم إن لم يكن منفّذًا أو لم يكن للطالب نفسه.
+/// 2. **المتوسط مشتق لا مكتوب:** `TeacherRating` يُحسب من قائمة التقييمات
+///    نفسها، فلا يمكن أن يتقدّم على التقييمات أو يتخلّف عنها.
+class DemoReviewRepository implements ReviewRepository {
+  DemoReviewRepository({
+    List<TeacherReview>? source,
+    Future<BookingRequest?> Function(String id)? findBooking,
+  }) : _reviews = <TeacherReview>[...(source ?? DemoData.reviews)],
+       _findBooking = findBooking;
+
+  final List<TeacherReview> _reviews;
+
+  /// قراءة الحجز الطازج — يمنع تقييم حجز لم يُنفَّذ فعلًا.
+  final Future<BookingRequest?> Function(String id)? _findBooking;
+
+  final Map<String, StreamController<List<TeacherReview>>> _streams =
+      <String, StreamController<List<TeacherReview>>>{};
+
+  StreamController<List<TeacherReview>> _streamFor(String teacherId) {
+    return _streams.putIfAbsent(
+      teacherId,
+      () => StreamController<List<TeacherReview>>.broadcast(),
+    );
+  }
+
+  TeacherRating _ratingOf(String teacherId) {
+    int sum = 0;
+    int count = 0;
+    for (final TeacherReview review in _reviews) {
+      if (review.teacherId == teacherId) {
+        sum += review.rating;
+        count++;
+      }
+    }
+    return TeacherRating(
+      teacherId: teacherId,
+      totalReviews: count,
+      ratingSum: sum,
+    );
+  }
+
+  List<TeacherReview> _ofTeacher(String teacherId) => ReviewRules.newestFirst(
+    _reviews
+        .where((TeacherReview review) => review.teacherId == teacherId)
+        .toList(growable: false),
+  );
+
+  void _publish(String teacherId) => _streamFor(teacherId).add(
+    _ofTeacher(teacherId),
+  );
+
+  @override
+  Future<List<TeacherReview>> listForTeacher(String teacherId) async =>
+      _ofTeacher(teacherId);
+
+  @override
+  Stream<List<TeacherReview>> watchForTeacher(String teacherId) async* {
+    yield _ofTeacher(teacherId);
+    yield* _streamFor(teacherId).stream;
+  }
+
+  @override
+  Future<TeacherRating> ratingFor(String teacherId) async =>
+      _ratingOf(teacherId);
+
+  @override
+  Stream<TeacherRating> watchRating(String teacherId) async* {
+    yield _ratingOf(teacherId);
+    yield* _streamFor(teacherId).stream.map(
+      (List<TeacherReview> _) => _ratingOf(teacherId),
+    );
+  }
+
+  @override
+  Future<TeacherReview?> findForBooking(String bookingId) async {
+    for (final TeacherReview review in _reviews) {
+      if (review.bookingId == bookingId) {
+        return review;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<TeacherReview> submit({
+    required BookingRequest booking,
+    required String studentId,
+    required String studentName,
+    required int rating,
+    String? comment,
+  }) async {
+    final BookingRequest fresh =
+        await _findBooking?.call(booking.id) ?? booking;
+    final bool alreadyReviewed =
+        await findForBooking(fresh.id) != null;
+
+    final String? blocked = ReviewRules.eligibilityProblem(
+      booking: fresh,
+      studentId: studentId,
+      alreadyReviewed: alreadyReviewed,
+    );
+    if (blocked != null) {
+      throw AppException(
+        AppErrorKind.permission,
+        overrideMessage: blocked,
+        debugMessage: 'review not eligible (demo)',
+      );
+    }
+
+    final String? ratingProblem = ReviewRules.ratingProblem(rating);
+    if (ratingProblem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: ratingProblem,
+        debugMessage: 'invalid rating (demo)',
+      );
+    }
+
+    final String? cleanComment = comment == null
+        ? null
+        : ReviewRules.normalize(comment);
+    final String? commentProblem = ReviewRules.commentProblem(cleanComment);
+    if (commentProblem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        overrideMessage: commentProblem,
+        debugMessage: 'invalid review comment (demo)',
+      );
+    }
+
+    final String teacherId = fresh.teacherId ?? '';
+    if (teacherId.isEmpty) {
+      throw const AppException.notFound(
+        debugMessage: 'booking without teacher (demo review)',
+        overrideMessage: 'لا يمكن تحديد المدرس من هذا الحجز.',
+      );
+    }
+
+    final TeacherReview review = TeacherReview(
+      bookingId: fresh.id,
+      teacherId: teacherId,
+      studentId: studentId,
+      studentName: ReviewRules.normalize(studentName),
+      rating: rating,
+      comment: cleanComment == null || cleanComment.isEmpty
+          ? null
+          : cleanComment,
+      createdAt: DateTime.now(),
+    );
+    _reviews.add(review);
+    _publish(teacherId);
+    return review;
+  }
+}
+
+/// مفضلة الطالب في الوضع التجريبي (P13) — نفس بنية المعرّف المشتق.
+class DemoFavoriteRepository implements FavoriteRepository {
+  DemoFavoriteRepository({List<Favorite>? source})
+    : _items = <Favorite>[...(source ?? const <Favorite>[])];
+
+  final List<Favorite> _items;
+  final Map<String, StreamController<List<Favorite>>> _streams =
+      <String, StreamController<List<Favorite>>>{};
+
+  StreamController<List<Favorite>> _streamFor(String studentId) {
+    return _streams.putIfAbsent(
+      studentId,
+      () => StreamController<List<Favorite>>.broadcast(),
+    );
+  }
+
+  List<Favorite> _ofStudent(String studentId) {
+    final List<Favorite> mine = _items
+        .where((Favorite favorite) => favorite.studentId == studentId)
+        .toList(growable: false);
+    mine.sort((Favorite a, Favorite b) => b.createdAt.compareTo(a.createdAt));
+    return List<Favorite>.unmodifiable(mine);
+  }
+
+  void _publish(String studentId) =>
+      _streamFor(studentId).add(_ofStudent(studentId));
+
+  int _indexOf(String studentId, FavoriteKind kind, String targetId) {
+    return _items.indexWhere(
+      (Favorite favorite) =>
+          favorite.studentId == studentId &&
+          favorite.kind == kind &&
+          favorite.targetId == targetId,
+    );
+  }
+
+  @override
+  Future<List<Favorite>> listForStudent(String studentId) async =>
+      _ofStudent(studentId);
+
+  @override
+  Stream<List<Favorite>> watchForStudent(String studentId) async* {
+    yield _ofStudent(studentId);
+    yield* _streamFor(studentId).stream;
+  }
+
+  @override
+  Stream<bool> watchIsFavorite({
+    required String studentId,
+    required FavoriteKind kind,
+    required String targetId,
+  }) async* {
+    yield _indexOf(studentId, kind, targetId) >= 0;
+    yield* _streamFor(studentId).stream.map(
+      (List<Favorite> _) => _indexOf(studentId, kind, targetId) >= 0,
+    );
+  }
+
+  @override
+  Future<bool> toggle({
+    required String studentId,
+    required FavoriteKind kind,
+    required String targetId,
+  }) async {
+    if (studentId.trim().isEmpty || targetId.trim().isEmpty) {
+      throw const AppException.invalidInput(
+        debugMessage: 'favorite without student/target',
+        overrideMessage: 'لا يمكن حفظ عنصر بلا معرّف صالح.',
+      );
+    }
+    final int index = _indexOf(studentId, kind, targetId);
+    if (index >= 0) {
+      _items.removeAt(index);
+      _publish(studentId);
+      return false;
+    }
+    _items.add(
+      Favorite(
+        studentId: studentId,
+        kind: kind,
+        targetId: targetId,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _publish(studentId);
+    return true;
   }
 }

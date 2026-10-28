@@ -32,6 +32,8 @@ AppServices _services({List<AppNotification>? notifications}) {
     notifications: repo,
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 

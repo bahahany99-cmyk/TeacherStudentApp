@@ -9,10 +9,12 @@ import 'package:teacher_student_app/core/widgets/error_state.dart';
 import 'package:teacher_student_app/core/widgets/loading_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
+import 'package:teacher_student_app/features/favorites/presentation/favorite_star.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_discovery_controller.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_filter_bar.dart';
@@ -175,6 +177,11 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
           for (final StudyGroup group in controller.groups)
             GroupCard(
               group: group,
+              // المفضلة للطالب (P13): الشاشة استكشاف، فلا حاجة لفحص الدور هنا.
+              favoriteAction: FavoriteStar(
+                kind: FavoriteKind.group,
+                targetId: group.id,
+              ),
               onTap: () => Navigator.of(context).pushNamed(
                 RoutePaths.groupDetails,
                 arguments: group.id,

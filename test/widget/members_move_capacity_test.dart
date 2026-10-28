@@ -26,6 +26,8 @@ class _Harness {
     notifications: DemoNotificationRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 
@@ -221,6 +223,8 @@ void main() {
         notifications: DemoNotificationRepository(),
         schedules: DemoScheduleRepository(),
         messages: DemoMessageRepository(),
+        reviews: DemoReviewRepository(),
+        favorites: DemoFavoriteRepository(),
       );
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);

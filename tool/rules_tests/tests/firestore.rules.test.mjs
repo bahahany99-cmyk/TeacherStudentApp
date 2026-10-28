@@ -32,6 +32,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 
 const RULES = readFileSync(resolve('../../firestore.rules'), 'utf8');
@@ -2757,6 +2758,451 @@ describe('P12 — الإنشاء: لا تزوير ولا إشعار لشخص ب�
         doc(asStudent(), notificationPath('n1')),
         notificationDoc('teacher-1', 'student-1', 'promoMessage', 'b1'),
       ),
+    );
+  });
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P13 — التقييمات والمفضلة: بوابة G7، ومنع التكرار، والتلاعب بالمتوسط
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** تقييم (P13) — معرّفه معرّف الحجز، والاسم منسوخ من الحجز. */
+const reviewDoc = (bookingId, studentId, teacherId, overrides = {}) =>
+  clean({
+    bookingId,
+    teacherId,
+    studentId,
+    studentName: 'طالب',
+    rating: 5,
+    createdAt: now(),
+    ...overrides,
+  });
+
+const reviewPath = (bookingId) => `reviews/${bookingId}`;
+
+/** متوسط تراكمي (P13) — مجموع + عدد، لا متوسط عشري. */
+const ratingDoc = (teacherId, totalReviews, ratingSum, lastReviewId) =>
+  clean({
+    teacherId,
+    totalReviews,
+    ratingSum,
+    lastReviewId,
+    updatedAt: now(),
+  });
+
+const favoritePath = (studentId, kind, targetId) =>
+  `favorites/${studentId}_${kind}_${targetId}`;
+
+const favoriteDoc = (studentId, kind, targetId) =>
+  clean({ studentId, kind, targetId, createdAt: now() });
+
+/** حجز منفّذ بين student-1 وteacher-1 — الأساس الوحيد لأهلية التقييم. */
+const seedCompletedBooking = (overrides = {}) =>
+  seed([
+    {
+      path: 'bookingRequests/b1',
+      data: bookingDoc('student-1', 'teacher-1', {
+        status: 'completed',
+        ...overrides,
+      }),
+    },
+  ]);
+
+/** دفعة واحدة: تقييم جديد + تحديث المتوسط (كما يفعل المستودع). */
+async function submitReview(db, { teacherId, studentId, bookingId, rating, totalReviews, ratingSum }) {
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, reviewPath(bookingId)),
+    reviewDoc(bookingId, studentId, teacherId, { rating }),
+  );
+  batch.set(
+    doc(db, `teacherRatings/${teacherId}`),
+    ratingDoc(teacherId, totalReviews, ratingSum, bookingId),
+  );
+  await batch.commit();
+}
+
+describe('P13 — التقييم: لا يُكتب إلا لحجز منفّذ لصاحبه', () => {
+  it('صاحب الحجز المنفّذ يقيّم مدرسه', async () => {
+    await seedCompletedBooking();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-1', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('حجز غير منفّذ لا يُقيَّم (G7)', async () => {
+    for (const status of ['pending', 'accepted', 'rejected', 'cancelled']) {
+      await seed([
+        {
+          path: 'bookingRequests/b1',
+          data: bookingDoc('student-1', 'teacher-1', { status }),
+        },
+      ]);
+
+      await assertFails(
+        setDoc(
+          doc(asStudent(), reviewPath('b1')),
+          reviewDoc('b1', 'student-1', 'teacher-1'),
+        ),
+      );
+    }
+  });
+
+  it('لا يقيّم الطالب حجز غيره، ولا يقيّم نفسه باسم غيره', async () => {
+    await seedCompletedBooking();
+
+    // طالب آخر يحاول تقييم حجز student-1.
+    await assertFails(
+      setDoc(
+        doc(asOther(), reviewPath('b1')),
+        reviewDoc('b1', 'stranger-9', 'teacher-1', { studentName: 'طالب' }),
+      ),
+    );
+
+    // student-1 يحاول كتابة تقييم باسم طالب آخر.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-2', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('تقييم مدرس آخر غير مدرس الحجز مرفوض', async () => {
+    await seedCompletedBooking();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-1', 'teacher-2'),
+      ),
+    );
+  });
+
+  it('الاسم يجب أن يطابق اسم الحجز، والنجوم من 1 إلى 5', async () => {
+    await seedCompletedBooking();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-1', 'teacher-1', { studentName: 'اسم آخر' }),
+      ),
+    );
+    for (const rating of [0, 6, '5']) {
+      await assertFails(
+        setDoc(
+          doc(asStudent(), reviewPath('b1')),
+          reviewDoc('b1', 'student-1', 'teacher-1', { rating }),
+        ),
+      );
+    }
+  });
+
+  it('معرّف التقييم يجب أن يكون معرّف الحجز (منع التكرار)', async () => {
+    await seedCompletedBooking();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'reviews/r-1'),
+        reviewDoc('b1', 'student-1', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('التقييم المكرر لنفس الحصة مرفوض', async () => {
+    await seedCompletedBooking();
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), reviewPath('b1')),
+        reviewDoc('b1', 'student-1', 'teacher-1'),
+      ),
+    );
+
+    // محاولة الكتابة مرة ثانية على نفس المستند = تحديث، والممنوع ممنوع.
+    for (const rating of [1, 5]) {
+      await assertFails(
+        setDoc(
+          doc(asStudent(), reviewPath('b1')),
+          reviewDoc('b1', 'student-1', 'teacher-1', { rating }),
+        ),
+      );
+    }
+  });
+
+  it('لا تعديل ولا حذف بعد الكتابة', async () => {
+    await seed([
+      {
+        path: reviewPath('b1'),
+        data: reviewDoc('b1', 'student-1', 'teacher-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), reviewPath('b1')), { rating: 1 }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), reviewPath('b1')), { comment: 'تعليق جديد' }),
+    );
+    await assertFails(deleteDoc(doc(asStudent(), reviewPath('b1'))));
+  });
+
+  it('التقييمات مقروءة للمسجّلين فقط', async () => {
+    await seed([
+      {
+        path: reviewPath('b1'),
+        data: reviewDoc('b1', 'student-1', 'teacher-1'),
+      },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), reviewPath('b1'))));
+    await assertSucceeds(getDoc(doc(asTeacher(), reviewPath('b1'))));
+    await assertFails(getDoc(doc(asGuest(), reviewPath('b1'))));
+    await assertFails(
+      getDocs(query(collection(asGuest(), 'reviews'))),
+    );
+  });
+});
+
+describe('P13 — المتوسط التراكمي لا يتحرك بلا تقييم حقيقي', () => {
+  it('أول تقييم ينشئ المتوسط معه بقيمة تقييمه', async () => {
+    await seedCompletedBooking();
+
+    await assertSucceeds(submitReview(asStudent(), {
+      teacherId: 'teacher-1',
+      studentId: 'student-1',
+      bookingId: 'b1',
+      rating: 4,
+      totalReviews: 1,
+      ratingSum: 4,
+    }));
+
+    const stored = await readAsAdmin('teacherRatings/teacher-1');
+    assert.equal(stored.totalReviews, 1);
+    assert.equal(stored.ratingSum, 4);
+  });
+
+  it('زيادة بلا تقييم في نفس الدفعة مرفوضة', async () => {
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b0') },
+    ]);
+
+    // كتابة المتوسط وحدها: لا تقييم جديد ⇒ لا زيادة.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'teacherRatings/teacher-1'),
+        ratingDoc('teacher-1', 4, 17, 'b1'),
+      ),
+    );
+  });
+
+  it('الزيادة يجب أن تساوي تقييم التقييم المنشأ بالضبط', async () => {
+    await seedCompletedBooking();
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b0') },
+    ]);
+
+    // التقييم 5 لكن المجموع زيد 10 ⇒ تلاعب مرفوض.
+    await assertFails(submitReview(asStudent(), {
+      teacherId: 'teacher-1',
+      studentId: 'student-1',
+      bookingId: 'b1',
+      rating: 5,
+      totalReviews: 4,
+      ratingSum: 22,
+    }));
+
+    // والزيادة الصحيحة (12 + 5) تمرّ.
+    await assertSucceeds(submitReview(asStudent(), {
+      teacherId: 'teacher-1',
+      studentId: 'student-1',
+      bookingId: 'b1',
+      rating: 5,
+      totalReviews: 4,
+      ratingSum: 17,
+    }));
+  });
+
+  it('العدّاد لا يزيد بأكثر من واحد، ولا يُعاد استخدام تقييم قديم', async () => {
+    await seedCompletedBooking();
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b0') },
+      { path: 'reviews/b0', data: reviewDoc('b0', 'student-9', 'teacher-1') },
+    ]);
+
+    // قفزة في العدّاد.
+    await assertFails(submitReview(asStudent(), {
+      teacherId: 'teacher-1',
+      studentId: 'student-1',
+      bookingId: 'b1',
+      rating: 5,
+      totalReviews: 5,
+      ratingSum: 17,
+    }));
+
+    // نفس التقييم القديم (b0) لا يُحتسب مرتين.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'teacherRatings/teacher-1'),
+        ratingDoc('teacher-1', 4, 17, 'b0'),
+      ),
+    );
+  });
+
+  it('لا يكتب المتوسط لغير التقييم الذي أنشأه', async () => {
+    await seedCompletedBooking();
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 1, 5, 'b0') },
+    ]);
+
+    await assertFails(submitReview(asOther(), {
+      teacherId: 'teacher-1',
+      studentId: 'student-1',
+      bookingId: 'b1',
+      rating: 5,
+      totalReviews: 2,
+      ratingSum: 10,
+    }));
+  });
+
+  it('المتوسط مقروء للمسجّلين فقط', async () => {
+    await seed([
+      { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 1, 5, 'b0') },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), 'teacherRatings/teacher-1')));
+    await assertFails(getDoc(doc(asGuest(), 'teacherRatings/teacher-1')));
+  });
+});
+
+describe('P13 — المفضلة: خاصة بصاحبها ومعرّفها مشتق', () => {
+  beforeEach(async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'approved' }),
+      },
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 0 }) },
+    ]);
+  });
+
+  it('الطالب يحفظ مدرسًا معتمدًا ومجموعة نشطة', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'teacher', 'teacher-1')),
+        favoriteDoc('student-1', 'teacher', 'teacher-1'),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'group', 'g1')),
+        favoriteDoc('student-1', 'group', 'g1'),
+      ),
+    );
+  });
+
+  it('لا يحفظ أحد عنصرًا في مفضلة غيره', async () => {
+    await assertFails(
+      setDoc(
+        doc(asStudent(), favoritePath('student-2', 'teacher', 'teacher-1')),
+        favoriteDoc('student-2', 'teacher', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('المعرّف المشتق مفروض، والنوع مقيّد', async () => {
+    await assertFails(
+      setDoc(
+        doc(asStudent(), 'favorites/free-form'),
+        favoriteDoc('student-1', 'teacher', 'teacher-1'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'booking', 'b1')),
+        favoriteDoc('student-1', 'booking', 'b1'),
+      ),
+    );
+  });
+
+  it('لا يُحفظ مدرس غير معتمد ولا مجموعة موقوفة ولا هدف غير موجود', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-2', data: teacherDoc('teacher-2') },
+      {
+        path: 'studyGroups/g2',
+        data: groupDoc('teacher-1', { isActive: false }),
+      },
+    ]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'teacher', 'teacher-2')),
+        favoriteDoc('student-1', 'teacher', 'teacher-2'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'group', 'g2')),
+        favoriteDoc('student-1', 'group', 'g2'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), favoritePath('student-1', 'group', 'missing')),
+        favoriteDoc('student-1', 'group', 'missing'),
+      ),
+    );
+  });
+
+  it('المفضلة تُقرأ وتُحذف لصاحبها فقط، ولا تُعدَّل', async () => {
+    await seed([
+      {
+        path: favoritePath('student-1', 'teacher', 'teacher-1'),
+        data: favoriteDoc('student-1', 'teacher', 'teacher-1'),
+      },
+    ]);
+
+    await assertSucceeds(
+      getDoc(doc(asStudent(), favoritePath('student-1', 'teacher', 'teacher-1'))),
+    );
+    await assertFails(
+      getDoc(doc(asOther(), favoritePath('student-1', 'teacher', 'teacher-1'))),
+    );
+    const mine = await assertSucceeds(
+      getDocs(
+        query(
+          collection(asStudent(), 'favorites'),
+          where('studentId', '==', 'student-1'),
+        ),
+      ),
+    );
+    assert.equal(mine.docs.length, 1);
+
+    // استعلام مفضلة غيري مرفوض (القراءة مقيّدة بالمالك في القواعد).
+    await assertFails(
+      getDocs(
+        query(
+          collection(asStudent(), 'favorites'),
+          where('studentId', '==', 'student-2'),
+        ),
+      ),
+    );
+
+    await assertFails(
+      updateDoc(
+        doc(asStudent(), favoritePath('student-1', 'teacher', 'teacher-1')),
+        { targetId: 'teacher-2' },
+      ),
+    );
+    await assertFails(
+      deleteDoc(doc(asOther(), favoritePath('student-1', 'teacher', 'teacher-1'))),
+    );
+    await assertSucceeds(
+      deleteDoc(doc(asStudent(), favoritePath('student-1', 'teacher', 'teacher-1'))),
     );
   });
 });

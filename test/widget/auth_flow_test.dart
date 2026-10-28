@@ -75,6 +75,8 @@ Future<SessionController> _pumpApp(
     notifications: DemoNotificationRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
   final SessionController session = SessionController(auth);
   await session.restore();

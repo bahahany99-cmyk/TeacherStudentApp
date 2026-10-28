@@ -12,12 +12,16 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_request_sheet.dart';
 import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
+import 'package:teacher_student_app/features/favorites/presentation/favorite_star.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/features/reviews/presentation/teacher_reviews_section.dart';
 
 /// ملف مدرس واحد — الصفحة التي يفتحها الطالب من قائمة المدرسين.
 ///
@@ -136,6 +140,12 @@ class _TeacherProfileBody extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // المفضلة (P13): النجمة تُخفي نفسها لغير الطالب.
+                  FavoriteStar(
+                    kind: FavoriteKind.teacher,
+                    targetId: teacher.id,
+                    size: 22,
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
@@ -144,14 +154,7 @@ class _TeacherProfileBody extends StatelessWidget {
                 label: 'المنطقة',
                 value: teacher.area,
               ),
-              DetailRow(
-                icon: Icons.star_rounded,
-                label: 'التقييم',
-                value: teacher.reviewsCount == 0
-                    ? 'لا توجد تقييمات بعد'
-                    : '${teacher.rating.toStringAsFixed(1)} من 5 '
-                          '(${teacher.reviewsCount} تقييم)',
-              ),
+              _RatingSummaryRow(teacher: teacher),
               if (teacher.priceHint != null)
                 DetailRow(
                   icon: Icons.payments_outlined,
@@ -175,6 +178,13 @@ class _TeacherProfileBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sectionGap),
         const SectionHeader(
+          title: 'التقييمات',
+          subtitle: 'من طلاب حصلوا على حصة منفّذة مع هذا المدرس فقط',
+          icon: Icons.reviews_outlined,
+        ),
+        TeacherReviewsSection(teacherId: teacher.id),
+        const SizedBox(height: AppSpacing.sectionGap),
+        const SectionHeader(
           title: 'مجموعات هذا المدرس',
           subtitle: 'افتح المجموعة لإرسال طلب انضمام ينتظر موافقة المدرس',
           icon: Icons.groups_outlined,
@@ -195,6 +205,10 @@ class _TeacherProfileBody extends StatelessWidget {
                   .map(
                     (StudyGroup group) => GroupCard(
                       group: group,
+                      favoriteAction: FavoriteStar(
+                        kind: FavoriteKind.group,
+                        targetId: group.id,
+                      ),
                       onTap: () => Navigator.of(context).pushNamed(
                         RoutePaths.groupDetails,
                         arguments: group.id,
@@ -237,6 +251,40 @@ class _TeacherProfileBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
       ],
+    );
+  }
+}
+
+/// سطر «التقييم» في بطاقة الرأس (P13).
+///
+/// يعرض **المتوسط الحقيقي المحسوب داخل التطبيق** حين يوجد، ولا يعرض رقمًا
+/// مختلقًا: التقييم الذي يكتبه الطلاب هو مصدره مجموع + عدد في `teacherRatings`.
+/// وإذا لم يوجد تقييم حقيقي نقع على الرقم التعريفي في الملف (بيانات قديمة أو
+/// تجريبية) بدل ادّعاء «لا تقييمات» عن مدرس مُقيَّم سابقًا.
+class _RatingSummaryRow extends StatelessWidget {
+  const _RatingSummaryRow({required this.teacher});
+
+  final TeacherProfile teacher;
+
+  @override
+  Widget build(BuildContext context) {
+    final String fallback = teacher.reviewsCount == 0
+        ? 'لا توجد تقييمات بعد'
+        : '${teacher.rating.toStringAsFixed(1)} من 5 '
+              '(${teacher.reviewsCount} تقييم)';
+
+    return StreamBuilder<TeacherRating>(
+      stream: AppServicesScope.of(context).reviews.watchRating(teacher.id),
+      builder: (BuildContext context, AsyncSnapshot<TeacherRating> snapshot) {
+        final TeacherRating? rating = snapshot.data;
+        return DetailRow(
+          icon: Icons.star_rounded,
+          label: 'التقييم',
+          value: rating == null || rating.isEmpty
+              ? fallback
+              : rating.averageLabel,
+        );
+      },
     );
   }
 }

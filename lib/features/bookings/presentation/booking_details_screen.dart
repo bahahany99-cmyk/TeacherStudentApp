@@ -22,6 +22,7 @@ import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
 import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
+import 'package:teacher_student_app/features/reviews/presentation/review_sheet.dart';
 import 'package:teacher_student_app/features/bookings/widgets/slot_picker_sheet.dart';
 
 /// تفاصيل طلب حجز + إجراءات الطرفين (P10).
@@ -449,6 +450,12 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           label: const Text('إعلان التنفيذ'),
         ),
       );
+    }
+
+    // التقييم (P13): يظهر للحجز المنفّذ فقط، والزر نفسه يفحص الأهلية ويعرض
+    // «تقييمك» بدل إعادة الكتابة — فلا يُقيَّم الحجز مرتين.
+    if (booking.status == BookingStatus.completed && !isTeacherView) {
+      buttons.add(ReviewActionButton(booking: booking));
     }
 
     if (canCancel) {

@@ -54,6 +54,8 @@ AppServices _services({
     notifications: notifications,
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 

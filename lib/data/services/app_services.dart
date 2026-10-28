@@ -5,7 +5,9 @@ import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
+import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/notification_repository.dart';
+import 'package:teacher_student_app/data/services/review_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
@@ -25,6 +27,8 @@ class AppServices {
     required this.messages,
     required this.chats,
     required this.notifications,
+    required this.reviews,
+    required this.favorites,
   });
 
   final AuthService auth;
@@ -43,6 +47,12 @@ class AppServices {
 
   /// الإشعارات داخل التطبيق (P12).
   final NotificationRepository notifications;
+
+  /// تقييمات المدرسين ومتوسطاتها (P13).
+  final ReviewRepository reviews;
+
+  /// مفضلة الطالب: مدرسون ومجموعات (P13).
+  final FavoriteRepository favorites;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -73,6 +83,8 @@ class AppServices {
       messages: FirestoreMessageRepository(),
       chats: FirestoreDirectChatRepository(notifications: notifications),
       notifications: notifications,
+      reviews: FirestoreReviewRepository(),
+      favorites: FirestoreFavoriteRepository(),
     );
   }
 
@@ -101,6 +113,9 @@ class AppServices {
         notifications: notifications,
       ),
       notifications: notifications,
+      // التقييم يقرأ الحجز طازجًا من نفس المستودع، فلا يُقيَّم حجز لم يُنفَّذ.
+      reviews: DemoReviewRepository(findBooking: bookings.findById),
+      favorites: DemoFavoriteRepository(),
     );
   }
 }

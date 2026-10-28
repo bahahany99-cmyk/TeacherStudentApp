@@ -26,6 +26,8 @@ AppServices _services(DemoGroupRepository groups) {
     notifications: DemoNotificationRepository(),
     schedules: DemoScheduleRepository(),
     messages: DemoMessageRepository(),
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 

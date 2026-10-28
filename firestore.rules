@@ -30,6 +30,12 @@ rules_version = '2';
 //      الطرف الذي نفّذ الفعل فعلًا (`actorId == uid`)، بعد التحقق من **علاقة
 //      حقيقية** بينه وبين المستلم: حجز يجمعهما، أو محادثة يشاركان فيها، أو
 //      مجموعة يملكها والمستلم عضو فيها. لا يوجد «أرسل إشعارًا لأي أحد».
+//  12. التقييمات (P13): لا يُكتب تقييم إلا لحجز **منفّذ** لصاحبه، ومعرّف
+//      التقييم هو معرّف الحجز — فلا تقييم مكرر ولا تقييم بلا حصة. ولا تعديل
+//      ولا حذف بعد الكتابة. والمتوسط في `teacherRatings` لا يتحرك إلا بمقدار
+//      تقييمٍ أُنشئ في **نفس الكتابة الذرّية** (getAfter)، فلا يمكن نفخه.
+//  13. المفضلة (P13): مستند لكل (طالب، نوع، هدف) بمعرّف مشتق، وقراءته وحذفه
+//      لصاحبه فقط، ولا تعديل أصلًا.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -1092,7 +1098,128 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.recipientId));
     }
 
-    // ── 10) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
+    // ── 10) reviews/{reviewId} — تقييم بعد حصة منفّذة (P13) ──────────────────
+    // **معرّف التقييم = معرّف الحجز** (A-84): به يمنع التكرار بنيويًا، وتقرأ
+    // القواعد الحجز نفسه لتتحقق من بوابة الأهلية G7 بلا استعلام.
+    //
+    // **لماذا لا تعديل ولا حذف؟** لأن التقييم شهادة على حصة عُقدت. ومنع التعديل
+    // يمنع أيضًا «تبديل» تقييم سيئ بآخر بعد ضغط من المدرس.
+    match /reviews/{reviewId} {
+      function bookingOfReview() {
+        return get(/databases/$(database)/documents/bookingRequests/$(reviewId)).data;
+      }
+
+      function reviewKeys() {
+        return ['bookingId', 'teacherId', 'studentId', 'studentName', 'rating',
+                'comment', 'createdAt'];
+      }
+
+      // التقييمات عامة للمسجّلين: ملف المدرس يعرضها لكل من يفكر في الحجز.
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.bookingId == reviewId
+        && request.resource.data.keys().hasOnly(reviewKeys())
+        && request.resource.data.teacherId is string
+        && request.resource.data.teacherId.size() > 0
+        && request.resource.data.teacherId.size() <= 128
+        && request.resource.data.studentName is string
+        && request.resource.data.studentName.size() > 0
+        && request.resource.data.studentName.size() <= 80
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && (!('comment' in request.resource.data.keys())
+            || (request.resource.data.comment is string
+                && request.resource.data.comment.size() > 0
+                && request.resource.data.comment.size() <= 400))
+        && request.resource.data.createdAt is timestamp
+        // G7: الحجز منفّذ، لصاحب التقييم، وبنفس المدرس، وباسم منسوخ منه.
+        && bookingOfReview().status == 'completed'
+        && bookingOfReview().studentId == request.auth.uid
+        && bookingOfReview().teacherId == request.resource.data.teacherId
+        && bookingOfReview().studentName == request.resource.data.studentName;
+
+      allow update: if false;
+
+      allow delete: if isAdmin();
+    }
+
+    // ── 11) teacherRatings/{teacherId} — المتوسط التراكمي (P13) ──────────────
+    // **مجموع + عدد، لا متوسط عشري** (A-85): الحساب العشري لا يُتحقق منه بدقة
+    // في القواعد، والصحيح يُتحقق منه بالمساواة. و`getAfter()` تقرأ التقييم
+    // المنشأ في نفس الدفعة/المعاملة، فتُقارن الزيادة بتقييمه بالضبط.
+    match /teacherRatings/{teacherId} {
+      function reviewOfAggregate() {
+        return getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data;
+      }
+
+      function ratingKeys() {
+        return ['teacherId', 'totalReviews', 'ratingSum', 'lastReviewId',
+                'updatedAt'];
+      }
+
+      allow read: if signedIn();
+
+      // أول تقييم: مستند جديد يبدأ من 1 ومجموعه هو تقييم التقييم نفسه.
+      allow create: if signedIn()
+        && request.resource.data.teacherId == teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.totalReviews == 1
+        && request.resource.data.ratingSum is int
+        && request.resource.data.lastReviewId is string
+        && request.resource.data.updatedAt is timestamp
+        && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+        && reviewOfAggregate().teacherId == teacherId
+        && reviewOfAggregate().studentId == request.auth.uid
+        && reviewOfAggregate().rating == request.resource.data.ratingSum;
+
+      // تقييم لاحق: زيادة **واحدة**، ومجموعها القديم + تقييم التقييم الجديد
+      // وحده. و`!exists()` تمنع إعادة استخدام تقييم قديم لزيادة جديدة.
+      allow update: if signedIn()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.totalReviews == resource.data.totalReviews + 1
+        && request.resource.data.ratingSum
+             == resource.data.ratingSum + reviewOfAggregate().rating
+        && request.resource.data.lastReviewId != resource.data.lastReviewId
+        && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+        && reviewOfAggregate().teacherId == teacherId
+        && reviewOfAggregate().studentId == request.auth.uid;
+    }
+
+    // ── 12) favorites/{favoriteId} — مفضلة الطالب (P13) ──────────────────────
+    // المعرّف مشتق: `{studentId}_{kind}_{targetId}` (A-86)، فلا تكرار، وحذف
+    // بلا بحث. والهدف يجب أن يكون **قائمًا** بالفعل: مدرس معتمد أو مجموعة نشطة.
+    match /favorites/{favoriteId} {
+      function favoriteKeys() {
+        return ['studentId', 'kind', 'targetId', 'createdAt'];
+      }
+
+      allow read: if isAdmin() || (signedIn() && isSelf(resource.data.studentId));
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.keys().hasOnly(favoriteKeys())
+        && request.resource.data.kind in ['teacher', 'group']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && request.resource.data.createdAt is timestamp
+        && favoriteId == request.resource.data.studentId + '_' + request.resource.data.kind + '_' + request.resource.data.targetId
+        && (
+             (request.resource.data.kind == 'teacher'
+              && get(/databases/$(database)/documents/teacherProfiles/$(request.resource.data.targetId)).data.status == 'approved')
+             || (request.resource.data.kind == 'group'
+                 && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data.isActive == true)
+           );
+
+      allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.studentId));
+    }
+
+    // ── 13) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

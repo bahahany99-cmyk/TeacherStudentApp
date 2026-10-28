@@ -7,7 +7,10 @@ import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_rating.dart';
+import 'package:teacher_student_app/data/models/teacher_review.dart';
 
 /// تحويل مستندات Firestore إلى نماذج التطبيق — **دوال نقية** بلا Firebase.
 ///
@@ -462,5 +465,60 @@ AppNotification? notificationFromMap(String id, Map<String, Object?> data) {
         readDate(data['createdAt']) ??
         DateTime.fromMillisecondsSinceEpoch(0),
     readAt: readDate(data['readAt']),
+  );
+}
+
+/// `reviews/{bookingId}` → [TeacherReview] (P13).
+///
+/// يعيد `null` لتقييم بلا طالب أو مدرس أو بنجوم خارج 1..5: سطر مشوّه في قائمة
+/// تقييمات أسوأ من غيابه، لأنه يُفسد المتوسط المعروض.
+TeacherReview? teacherReviewFromMap(String id, Map<String, Object?> data) {
+  final String? teacherId = readString(data['teacherId']);
+  final String? studentId = readString(data['studentId']);
+  final int rating = readInt(data['rating']);
+  if (teacherId == null || studentId == null) {
+    return null;
+  }
+  if (rating < 1 || rating > TeacherRating.maxStars) {
+    return null;
+  }
+  return TeacherReview(
+    bookingId: readString(data['bookingId']) ?? id,
+    teacherId: teacherId,
+    studentId: studentId,
+    studentName: readString(data['studentName']) ?? 'طالب',
+    rating: rating,
+    comment: readString(data['comment']),
+    createdAt:
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
+  );
+}
+
+/// `teacherRatings/{teacherId}` → [TeacherRating] (P13).
+TeacherRating teacherRatingFromMap(String id, Map<String, Object?> data) {
+  final int total = readInt(data['totalReviews']);
+  final int sum = readInt(data['ratingSum']);
+  return TeacherRating(
+    teacherId: readString(data['teacherId']) ?? id,
+    totalReviews: total < 0 ? 0 : total,
+    ratingSum: sum < 0 ? 0 : sum,
+  );
+}
+
+/// `favorites/{favoriteId}` → [Favorite] (P13).
+Favorite? favoriteFromMap(String id, Map<String, Object?> data) {
+  final String? studentId = readString(data['studentId']);
+  final String? targetId = readString(data['targetId']);
+  if (studentId == null || targetId == null) {
+    return null;
+  }
+  return Favorite(
+    studentId: studentId,
+    kind: FavoriteKind.parse(data['kind']),
+    targetId: targetId,
+    createdAt:
+        readDate(data['createdAt']) ??
+        DateTime.fromMillisecondsSinceEpoch(0),
   );
 }

@@ -35,6 +35,8 @@ class _Harness {
     notifications: DemoNotificationRepository(),
     schedules: schedules,
     messages: messages,
+    reviews: DemoReviewRepository(),
+    favorites: DemoFavoriteRepository(),
   );
 }
 

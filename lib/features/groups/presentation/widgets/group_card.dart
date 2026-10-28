@@ -20,12 +20,16 @@ class GroupCard extends StatelessWidget {
     this.onTap,
     this.onJoinTap,
     this.onEditTap,
+    this.favoriteAction,
   });
 
   final StudyGroup group;
   final VoidCallback? onTap;
   final VoidCallback? onJoinTap;
   final VoidCallback? onEditTap;
+
+  /// زر المفضلة (P13) — يُمرَّر من واجهة الطالب فقط، فلا نضع منطق أدوار هنا.
+  final Widget? favoriteAction;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +67,10 @@ class GroupCard extends StatelessWidget {
                             ? AppColors.statusRejected
                             : AppColors.statusAccepted),
                 ),
+                if (favoriteAction != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.xxs),
+                  favoriteAction!,
+                ],
                 if (onEditTap != null) ...<Widget>[
                   const SizedBox(width: AppSpacing.xxs),
                   IconButton(

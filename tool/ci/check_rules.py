@@ -43,6 +43,9 @@ REQUIRED_MATCHES = (
     'match /teacherCalendar/{calendarId}',
     'match /teacherSettings/{teacherId}',
     'match /notifications/{notificationId}',
+    'match /reviews/{reviewId}',
+    'match /teacherRatings/{teacherId}',
+    'match /favorites/{favoriteId}',
     'match /directChats/{chatId}',
     'match /messages/{messageId}',
 )
@@ -61,6 +64,29 @@ def strip_comments(src: str) -> str:
             continue
         lines.append(line)
     return '\n'.join(lines)
+
+
+def match_block(code: str, header: str) -> str | None:
+    """يستخرج جسم `match` بتوازن الأقواس (الحدّ الحقيقي لا أول تعليق بعده)."""
+    start = code.find(header)
+    if start < 0:
+        return None
+    # آخر `{` في سطر العنوان هو جسم القاعدة؛ `{x}` في العنوان اسم متغيّر لا قوس.
+    line_end = code.find('\n', start)
+    if line_end < 0:
+        line_end = len(code)
+    opening = code.rfind('{', start, line_end)
+    if opening < 0:
+        return None
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] == '{':
+            depth += 1
+        elif code[index] == '}':
+            depth -= 1
+            if depth == 0:
+                return code[start:index + 1]
+    return None
 
 
 def main() -> int:
@@ -254,10 +280,39 @@ def main() -> int:
         problems.append('notifications: التعليم يمكنه تغيير حقول أخرى')
 
     # 12) منع الحقول الإدارية في ملف المدرس
-    for field in ('isFeatured', 'rating', 'reviewsCount'):
-        block = code.split('match /teacherProfiles/{uid}')[1].split('// ── 3)')[0]
-        if field in block:
-            problems.append(f'teacherProfiles: الحقل الإداري «{field}» مذكور في القواعد')
+    # الحدّ يُحدَّد بتوازن الأقواس لا بعلامة تعليق: التعليقات تُحذف قبل الفحص،
+    # فكان الحدّ القديم يقع على آخر الملف ويشمل قواعد لاحقة (P13) بلا سبب.
+    teacher_block = match_block(code, 'match /teacherProfiles/{uid}')
+    if teacher_block is None:
+        problems.append('teacherProfiles: تعذّر تحديد كتلة القاعدة')
+    else:
+        for field in ('isFeatured', 'rating', 'reviewsCount'):
+            if field in teacher_block:
+                problems.append(f'teacherProfiles: الحقل الإداري «{field}» مذكور في القواعد')
+
+    # 13) P13: التقييم ببوابة G7، والمتوسط لا يتحرك بلا تقييم، والمفضلة مشتقة
+    if "bookingOfReview().status == 'completed'" not in code:
+        problems.append('reviews: التقييم غير مقيّد بحجز منفّذ (G7)')
+    if 'request.resource.data.bookingId == reviewId' not in code:
+        problems.append('reviews: معرّف التقييم ليس معرّف الحجز (منع التكرار)')
+    if 'bookingOfReview().teacherId == request.resource.data.teacherId' not in code:
+        problems.append('reviews: التقييم قد يخصّ مدرسًا آخر غير مدرس الحجز')
+    reviews_block = match_block(code, 'match /reviews/{reviewId}') or ''
+    if 'allow update: if false;' not in reviews_block:
+        problems.append('reviews: التقييم قابل للتعديل بعد الكتابة')
+    if 'getAfter(' not in code:
+        problems.append('teacherRatings: الزيادة لا تُطابق تقييمًا في نفس الكتابة')
+    if 'request.resource.data.totalReviews == resource.data.totalReviews + 1' not in code:
+        problems.append('teacherRatings: العدّاد يزيد بأكثر من تقييم واحد')
+    if 'request.resource.data.ratingSum\n             == resource.data.ratingSum + reviewOfAggregate().rating' not in code:
+        problems.append('teacherRatings: المجموع لا يساوي القديم + تقييم التقييم الجديد')
+    if "favoriteId == request.resource.data.studentId + '_' + request.resource.data.kind + '_' + request.resource.data.targetId" not in code:
+        problems.append('favorites: المعرّف المشتق غير مفروض')
+    if "request.resource.data.kind in ['teacher', 'group']" not in code:
+        problems.append('favorites: نوع الهدف غير مقيّد بقائمة')
+    favorites_block = match_block(code, 'match /favorites/{favoriteId}') or ''
+    if 'isSelf(resource.data.studentId)' not in favorites_block:
+        problems.append('favorites: القراءة/الحذف غير مقيّدين بصاحب المفضلة')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

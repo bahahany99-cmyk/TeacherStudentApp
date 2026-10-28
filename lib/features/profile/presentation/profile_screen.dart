@@ -146,7 +146,9 @@ class ProfileScreen extends StatelessWidget {
                     _ProfileTile(
                       icon: Icons.favorite_border,
                       label: 'المفضلة',
-                      onTap: () => _showComingSoon(context),
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.favorites),
                     ),
                     const Divider(height: 1),
                     _ProfileTile(

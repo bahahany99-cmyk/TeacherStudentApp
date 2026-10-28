@@ -7,6 +7,7 @@ import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 
 /// ⚠️ بيانات تجريبية وهمية بالكامل.
@@ -215,6 +216,23 @@ abstract final class DemoData {
       durationMinutes: 45,
       decidedAt: DateTime(2026, 10, 12, 10, 0),
       decidedBy: 'demo-teacher-2',
+    ),
+    // حصة **منفّذة** (P13): الأساس الوحيد الذي يسمح بتقييم المدرس (G7).
+    // الموعد في الماضي لأن الإعلان عن التنفيذ لا يسبق انتهاء الحصة.
+    BookingRequest(
+      id: 'demo-booking-4',
+      teacherName: 'أ. سارة الخطيب',
+      studentName: 'طالب تجريبي',
+      teacherId: 'demo-teacher-1',
+      studentId: 'demo-student',
+      subject: 'الرياضيات — المتتابعات',
+      requestedAt: DateTime(2026, 10, 15, 20, 10),
+      status: BookingStatus.completed,
+      dateKey: '2026-10-18',
+      startMinutes: 17 * 60,
+      durationMinutes: 60,
+      decidedAt: DateTime(2026, 10, 15, 21, 0),
+      decidedBy: 'demo-teacher-1',
     ),
   ];
 
@@ -474,4 +492,39 @@ abstract final class DemoData {
         ),
     ]);
   }
+
+  // ── P13: تقييمات ومفضلة تجريبية ──────────────────────────────────────────
+  //
+  // التقييمات لمدرسين **غير** المدرس التجريبي الأول، حتى لا يتعارض متوسطها مع
+  // الأرقام المعروضة في ملفه (4.8 من 126) قبل أن يكتب الطالب تقييمه الفعلي من
+  // الحصة المنفّذة `demo-booking-4`.
+  static final List<TeacherReview> reviews = <TeacherReview>[
+    TeacherReview(
+      bookingId: 'demo-review-1',
+      teacherId: 'demo-teacher-2',
+      studentId: 'demo-student-7',
+      studentName: 'محمود سيد',
+      rating: 5,
+      comment: 'شرح الفيزياء بطريقة بسيطة، وتابعت معي الواجبات بعد الحصة.',
+      createdAt: DateTime(2026, 10, 11, 20, 30),
+    ),
+    TeacherReview(
+      bookingId: 'demo-review-2',
+      teacherId: 'demo-teacher-2',
+      studentId: 'demo-student-8',
+      studentName: 'نور خالد',
+      rating: 4,
+      comment: 'ممتاز، لكن أتمنى مزيدًا من التدريبات داخل الحصة.',
+      createdAt: DateTime(2026, 10, 8, 18, 0),
+    ),
+    TeacherReview(
+      bookingId: 'demo-review-3',
+      teacherId: 'demo-teacher-3',
+      studentId: 'demo-student-7',
+      studentName: 'محمود سيد',
+      rating: 5,
+      comment: 'أسلوب هادئ ومنظّم في النحو.',
+      createdAt: DateTime(2026, 10, 5, 19, 45),
+    ),
+  ];
 }

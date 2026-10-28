@@ -10,6 +10,7 @@ import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
@@ -20,14 +21,19 @@ import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_rating.dart';
+import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
+import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/notification_repository.dart';
+import 'package:teacher_student_app/data/services/review_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
 import 'package:teacher_student_app/data/services/schedule_repository.dart';
 import 'package:teacher_student_app/data/services/teacher_repository.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/data/validation/review_rules.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
@@ -66,7 +72,21 @@ abstract final class FirestoreCollections {
 
   /// إشعارات داخل التطبيق (P12) — مستند لكل إشعار لمستلم واحد.
   static const String notifications = 'notifications';
+
+  /// تقييمات المدرسين (P13) — معرّف المستند = معرّف الحجز (A-84).
+  static const String reviews = 'reviews';
+
+  /// المتوسط التراكمي لكل مدرس (P13) — مجموع + عدد، لا متوسط عشري (A-85).
+  static const String teacherRatings = 'teacherRatings';
+
+  /// مفضلة الطلاب (P13) — معرّف مشتق: `{studentId}_{kind}_{targetId}`.
+  static const String favorites = 'favorites';
 }
+
+/// زوج (معرّف، بيانات) لخرائط التحويل في `firestore_mappers`.
+(String, Map<String, Object?>) _entry(
+  QueryDocumentSnapshot<Map<String, dynamic>> doc,
+) => (doc.id, doc.data());
 
 /// أخطاء Firestore → [AppException] عربية.
 ///
@@ -2861,4 +2881,316 @@ class FirestoreNotificationRepository implements NotificationRepository {
   (String, Map<String, Object?>) _entry(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) => (doc.id, doc.data());
+}
+
+/// تقييمات المدرسين على Firestore (P13).
+///
+/// **لماذا معاملة لا كتابة عادية؟** لأن التقييم والمتوسط يجب أن يتحرّكا معًا:
+/// تقييم بلا تراكم يترك متوسطًا كاذبًا، وتراكم بلا تقييم تلاعب. المعاملة تقرأ
+/// الحجز والمتوسط الحاليين، ثم تكتب المستندين في **التزام واحد**، والقواعد
+/// تقرأ التقييم المنشأ بـ`getAfter` وتقارن به الزيادة (A-85).
+class FirestoreReviewRepository implements ReviewRepository {
+  FirestoreReviewRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _items =>
+      _firestore.collection(FirestoreCollections.reviews);
+
+  CollectionReference<Map<String, dynamic>> get _ratings =>
+      _firestore.collection(FirestoreCollections.teacherRatings);
+
+  @override
+  Future<List<TeacherReview>> listForTeacher(String teacherId) {
+    return _guard(() async {
+      if (teacherId.isEmpty) {
+        return const <TeacherReview>[];
+      }
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _items
+          .where('teacherId', isEqualTo: teacherId)
+          .limit(50)
+          .get();
+      return ReviewRules.newestFirst(
+        mapDocuments(snapshot.docs.map(_entry), teacherReviewFromMap),
+      );
+    });
+  }
+
+  @override
+  Stream<List<TeacherReview>> watchForTeacher(String teacherId) {
+    if (teacherId.isEmpty) {
+      return Stream<List<TeacherReview>>.value(const <TeacherReview>[]);
+    }
+    // شرط واحد ⇒ فهرس أحادي، والترتيب في العميل (نفس سياسة P12).
+    return _items
+        .where('teacherId', isEqualTo: teacherId)
+        .limit(50)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) =>
+              ReviewRules.newestFirst(
+                mapDocuments(snapshot.docs.map(_entry), teacherReviewFromMap),
+              ),
+        );
+  }
+
+  @override
+  Future<TeacherRating> ratingFor(String teacherId) {
+    return _guard(() async {
+      if (teacherId.isEmpty) {
+        return TeacherRating.empty(teacherId);
+      }
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _ratings
+          .doc(teacherId)
+          .get();
+      final Map<String, Object?>? data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        return TeacherRating.empty(teacherId);
+      }
+      return teacherRatingFromMap(teacherId, data);
+    });
+  }
+
+  @override
+  Stream<TeacherRating> watchRating(String teacherId) {
+    if (teacherId.isEmpty) {
+      return Stream<TeacherRating>.value(TeacherRating.empty(teacherId));
+    }
+    return _ratings.doc(teacherId).snapshots().map((
+      DocumentSnapshot<Map<String, dynamic>> snapshot,
+    ) {
+      final Map<String, Object?>? data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        return TeacherRating.empty(teacherId);
+      }
+      return teacherRatingFromMap(teacherId, data);
+    });
+  }
+
+  @override
+  Future<TeacherReview?> findForBooking(String bookingId) {
+    return _guard(() async {
+      if (bookingId.isEmpty) {
+        return null;
+      }
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _items
+          .doc(bookingId)
+          .get();
+      final Map<String, Object?>? data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        return null;
+      }
+      return teacherReviewFromMap(bookingId, data);
+    });
+  }
+
+  @override
+  Future<TeacherReview> submit({
+    required BookingRequest booking,
+    required String studentId,
+    required String studentName,
+    required int rating,
+    String? comment,
+  }) {
+    return _guard(() async {
+      final String teacherId = booking.teacherId ?? '';
+      if (teacherId.isEmpty) {
+        throw const AppException.notFound(
+          debugMessage: 'booking without teacher id (review)',
+          overrideMessage: 'لا يمكن تحديد المدرس من هذا الحجز.',
+        );
+      }
+
+      final String? cleanComment = comment == null
+          ? null
+          : ReviewRules.normalize(comment);
+      final String trimmedComment = cleanComment ?? '';
+      final DateTime now = DateTime.now();
+
+      return _firestore.runTransaction<TeacherReview>((Transaction tx) async {
+        final DocumentReference<Map<String, dynamic>> reviewRef = _items.doc(
+          booking.id,
+        );
+        final DocumentReference<Map<String, dynamic>> ratingRef = _ratings.doc(
+          teacherId,
+        );
+
+        // قراءة طازجة للحجز — لا نثق بالنسخة المعروضة (G7).
+        final DocumentReference<Map<String, dynamic>> bookingRef = _firestore
+            .collection(FirestoreCollections.bookingRequests)
+            .doc(booking.id);
+        final DocumentSnapshot<Map<String, dynamic>> bookingSnap = await tx.get(
+          bookingRef,
+        );
+        final Map<String, Object?>? bookingData = bookingSnap.data();
+        final BookingRequest fresh = (bookingData == null
+                ? null
+                : bookingFromMap(booking.id, bookingData)) ??
+            booking;
+
+        final DocumentSnapshot<Map<String, dynamic>> reviewSnap = await tx.get(
+          reviewRef,
+        );
+
+        final String? blocked = ReviewRules.eligibilityProblem(
+          booking: fresh,
+          studentId: studentId,
+          alreadyReviewed: reviewSnap.exists,
+        );
+        if (blocked != null) {
+          throw AppException(
+            AppErrorKind.permission,
+            overrideMessage: blocked,
+            debugMessage: 'review not eligible',
+          );
+        }
+
+        final String? ratingProblem = ReviewRules.ratingProblem(rating);
+        if (ratingProblem != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: ratingProblem,
+            debugMessage: 'invalid rating',
+          );
+        }
+        final String? commentProblem = ReviewRules.commentProblem(
+          trimmedComment,
+        );
+        if (commentProblem != null) {
+          throw AppException(
+            AppErrorKind.invalidInput,
+            overrideMessage: commentProblem,
+            debugMessage: 'invalid review comment',
+          );
+        }
+
+        final DocumentSnapshot<Map<String, dynamic>> ratingSnap = await tx.get(
+          ratingRef,
+        );
+        final Map<String, Object?>? ratingData = ratingSnap.data();
+        final TeacherRating current = (ratingData == null)
+            ? TeacherRating.empty(teacherId)
+            : teacherRatingFromMap(teacherId, ratingData);
+        final TeacherRating next = current.plus(rating);
+
+        final TeacherReview review = TeacherReview(
+          bookingId: fresh.id,
+          teacherId: teacherId,
+          studentId: studentId,
+          studentName: ReviewRules.normalize(studentName),
+          rating: rating,
+          comment: trimmedComment.isEmpty ? null : trimmedComment,
+          createdAt: now,
+        );
+
+        tx.set(reviewRef, review.toCreateMap());
+        tx.set(
+          ratingRef,
+          next.toMap(lastReviewId: fresh.id, updatedAt: now),
+        );
+        return review;
+      });
+    });
+  }
+}
+
+/// مفضلة الطلاب على Firestore (P13).
+///
+/// كل استعلام مقيّد بـ`studentId == المستخدم الحالي`، والقواعد تفرض الشيء نفسه،
+/// فلا حاجة إلى فهرس مركّب: شرط مساواة واحد.
+class FirestoreFavoriteRepository implements FavoriteRepository {
+  FirestoreFavoriteRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _items =>
+      _firestore.collection(FirestoreCollections.favorites);
+
+  @override
+  Future<List<Favorite>> listForStudent(String studentId) {
+    return _guard(() async {
+      if (studentId.isEmpty) {
+        return const <Favorite>[];
+      }
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _items
+          .where('studentId', isEqualTo: studentId)
+          .get();
+      return _newestFirst(
+        mapDocuments(snapshot.docs.map(_entry), favoriteFromMap),
+      );
+    });
+  }
+
+  @override
+  Stream<List<Favorite>> watchForStudent(String studentId) {
+    if (studentId.isEmpty) {
+      return Stream<List<Favorite>>.value(const <Favorite>[]);
+    }
+    return _items
+        .where('studentId', isEqualTo: studentId)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) => _newestFirst(
+            mapDocuments(snapshot.docs.map(_entry), favoriteFromMap),
+          ),
+        );
+  }
+
+  @override
+  Stream<bool> watchIsFavorite({
+    required String studentId,
+    required FavoriteKind kind,
+    required String targetId,
+  }) {
+    if (studentId.isEmpty || targetId.isEmpty) {
+      return Stream<bool>.value(false);
+    }
+    return _items
+        .doc(Favorite.idFor(studentId: studentId, kind: kind, targetId: targetId))
+        .snapshots()
+        .map((DocumentSnapshot<Map<String, dynamic>> snapshot) => snapshot.exists);
+  }
+
+  @override
+  Future<bool> toggle({
+    required String studentId,
+    required FavoriteKind kind,
+    required String targetId,
+  }) {
+    return _guard(() async {
+      if (studentId.isEmpty || targetId.isEmpty) {
+        throw const AppException.invalidInput(
+          debugMessage: 'favorite without student/target',
+          overrideMessage: 'لا يمكن حفظ عنصر بلا معرّف صالح.',
+        );
+      }
+      final DocumentReference<Map<String, dynamic>> ref = _items.doc(
+        Favorite.idFor(studentId: studentId, kind: kind, targetId: targetId),
+      );
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
+      if (snapshot.exists) {
+        await ref.delete();
+        return false;
+      }
+      final Favorite favorite = Favorite(
+        studentId: studentId,
+        kind: kind,
+        targetId: targetId,
+        createdAt: DateTime.now(),
+      );
+      await ref.set(favorite.toCreateMap());
+      return true;
+    });
+  }
+
+  List<Favorite> _newestFirst(List<Favorite> favorites) {
+    final List<Favorite> sorted = <Favorite>[...favorites];
+    sorted.sort((Favorite a, Favorite b) {
+      final int byDate = b.createdAt.compareTo(a.createdAt);
+      return byDate != 0 ? byDate : a.targetId.compareTo(b.targetId);
+    });
+    return List<Favorite>.unmodifiable(sorted);
+  }
 }
