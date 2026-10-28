@@ -75,7 +75,7 @@ abstract final class AccountDeletionRules {
   static String deleteWarning(DateTime scheduledAt) =>
       'سيُخفى حسابك وملفاتك من البحث مباشرةً، وسيُسجَّل خروجك من التطبيق.\n\n'
       'تبقى لديك ${daysLabel(gracePeriod.inDays)} لاستعادة الحساب: يكفي أن '
-      'تسجّل الدخول مرة أخرى وتختار «${restoreAction}».\n\n'
+      'تسجّل الدخول مرة أخرى وتختار «$restoreAction».\n\n'
       'بعد ${dateLabel(scheduledAt)} يصبح الحساب جاهزًا للحذف النهائي، '
       'ولا يمكن التراجع.';
 

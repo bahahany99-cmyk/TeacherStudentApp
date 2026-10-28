@@ -6,7 +6,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 
 void main() {
-  const DateTime now = DateTime.utc(2026, 10, 28, 12);
+  final DateTime now = DateTime.utc(2026, 10, 28, 12);
 
   group('AccountStatus — قراءة وكتابة القيمة المخزّنة', () {
     test('القيم النصية ثابتة وتطابق firestore.rules', () {

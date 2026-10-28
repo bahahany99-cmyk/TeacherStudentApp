@@ -30,7 +30,9 @@
     لا يتغيّر إلا بحقلَي التمييز وحدهما، وأن صاحب الملف لا يغيّرهما.
 17. أن حذف الحساب (P17) يبقى **ناعمًا ومؤقتًا**: انتقالان فقط لحالة الحساب
     (طلب بموعد داخل سقف المهلة، واستعادة قبل انتهائه بحذف الحقل)، وأن الملف
-    المعلّق حذفه يخرج من الاكتشاف ومن `teacherVerified()`.
+    المخفي (`accountHidden`) يخرج من الاكتشاف ومن `teacherVerified()` — بعلم على
+    الملف لا بقراءة `users` من داخل قاعدة (القواعد تعدّ `get()` على مستند غائب
+    خطأً لا `false`، فيختفي كل ملف بلا مستند مستخدم).
 
 الفحص المنطقي الحقيقي يحتاج `firebase emulators:exec` مع
 `@firebase/rules-unit-testing`، وهو عمل لاحق (T-09) بعد إنشاء المشروع.
@@ -472,17 +474,21 @@ def main() -> int:
             'users: الاستعادة ممكنة بعد انتهاء المهلة',
         ),
         (
-            '!accountPendingDeletion(uid)',
-            'P17: الحساب المجدول للحذف قد يبقى موثّقًا/ظاهرًا',
+            "'accountHidden', false) == false",
+            'P17: علم إخفاء الملف عند الحذف غير مفحوص',
         ),
     ):
         if needle not in code:
             problems.append(message)
     if (
-        "resource.data.status == 'verified' && !accountPendingDeletion(uid)"
-        not in code
+        "resource.data.status == 'verified'" not in code
+        or code.count("'accountHidden', false) == false") < 2
     ):
-        problems.append('teacherProfiles: الاكتشاف لا يستثني الحساب المجدول للحذف')
+        problems.append(
+            'teacherProfiles: الاكتشاف/التوثيق لا يستثني الملف المخفي بحذف الحساب'
+        )
+    if "'reviewedBy', 'accountHidden'" not in code:
+        problems.append('teacherProfiles: accountHidden غير مسموح لصاحب الملف')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

@@ -53,8 +53,10 @@ rules_version = '2';
 //      `status`/`scheduledDeletionAt` في مستنده، وبانتقالات محددة: طلب
 //      (active ← pending_deletion بموعد داخل 8 أيام) أو استعادة
 //      (pending_deletion ← active قبل انتهاء الموعد، بحذف الحقل). ولا تمديد
-//      للمهلة ولا محو للموعد. وأثناء الحذف: الملف يخرج من الاكتشاف،
-//      و`teacherVerified()` يصبح `false` فلا يقبل المدرس أي طلب جديد.
+//      للمهلة ولا محو للموعد. وأثناء الحذف: الملف يخرج من الاكتشاف بعلم
+//      `accountHidden` على الملف نفسه (لا بقراءة مستند المستخدم: القواعد تعدّ
+//      `get()` على مستند غائب خطأً لا `false`)، و`teacherVerified()` يصبح
+//      `false` فلا يقبل المدرس أي طلب جديد.
 //   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
 //      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
 //      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
@@ -84,20 +86,6 @@ service cloud.firestore {
       return signedIn() && request.auth.token.admin == true;
     }
 
-    // هل طلب صاحب الحساب حذفه؟ (P17)
-    //
-    // المصدر هو `users/{uid}.status` لا حالة ملف المدرس: صاحب الملف لا يستطيع
-    // تغيير `status` في `teacherProfiles` (قرار إداري)، ولو جعلنا الحذف يكتب
-    // هناك لاحتاجت الاستعادة إلى قرار إداري جديد — أي أن المستخدم لا يستطيع
-    // التراجع داخل المهلة. الحالة في مستند المستخدم تحلّ ذلك بكتابة واحدة.
-    //
-    // التكلفة: قراءة مستند إضافية. نتحمّلها لأن البديل (إخفاء الظهور في
-    // الواجهة فقط) لا يمنع قراءة الملف مباشرة بالمعرّف.
-    function accountPendingDeletion(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        && get(/databases/$(database)/documents/users/$(uid)).data.get('status', 'active') == 'pending_deletion';
-    }
-
     // هل هذا المدرس **موثّق وحسابه نشط**؟ (P14 + P17)
     //
     // قراءة مستندات بمسار معروف، فتصلح داخل المعاملات أيضًا. الملف الغائب أو
@@ -105,10 +93,17 @@ service cloud.firestore {
     // (P17) وطلب الحذف يوقف كل ما يفعله المدرس (قبول حجز، إنشاء مجموعة، إرسال
     // إشعار…) حتى لو بقي رمز هويته صالحًا على جهاز آخر. الاستعادة تعيد القدرة
     // فورًا (نفس الشرط يُعاد تقييمه).
+    //
+    // ⚠️ **لماذا علم على ملف المدرس لا قراءة مستند المستخدم؟** محرّك القواعد
+    // يعامل `exists()`/`get()` على مستند **غائب** كخطأ تقييم لا كـ`false`، وخطأ
+    // واحد في سلسلة `&&` يُسقط الشرط كله — أي أن قراءة `users/{uid}` من داخل
+    // قاعدة قراءة كانت ستُخفي كل ملف مدرس لا مستند مستخدم له (كشفتها اختبارات
+    // المحاكي في P17). فالحذف الناعم يكتب علم `accountHidden` **في نفس الكتابة
+    // الذرّية** على الملف، والقواعد تقرأه من المستند الذي تُقيّمه أصلًا.
     function teacherVerified(uid) {
       return exists(/databases/$(database)/documents/teacherProfiles/$(uid))
         && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.status == 'verified'
-        && !accountPendingDeletion(uid);
+        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.get('accountHidden', false) == false;
     }
 
     // ── 1) users/{uid} ───────────────────────────────────────────────────────
@@ -179,21 +174,24 @@ service cloud.firestore {
       // هذا شرط **الاكتشاف** الحقيقي: أي استعلام من الطالب على غير الموثّق
       // يُرفض كاملًا، فلا يفيده حذف شرط `status` من التطبيق (P15).
       // (P17) الملف الموثّق لصاحب حساب **غير مجدول للحذف**: الحذف الناعم يُخرج
-      // الملف من الاكتشاف فورًا، مع بقاء المستند (الاستعادة تُعيده بلا فقدان
-      // بيانات). صاحبه يرى ملفه دائمًا، والمسؤول يرى الكل.
+      // الملف من الاكتشاف فورًا (`accountHidden`)، مع بقاء المستند (الاستعادة
+      // تُعيده بلا فقدان بيانات). صاحبه يرى ملفه دائمًا، والمسؤول يرى الكل.
       allow read: if isAdmin()
         || isSelf(uid)
-        || (resource.data.status == 'verified' && !accountPendingDeletion(uid));
+        || (resource.data.status == 'verified'
+            && resource.data.get('accountHidden', false) == false);
 
       // حقول يملكها صاحب الملف: التعريف وطريقة التقديم والمكان (P15).
       // `isFeatured`/`featuredOrder` إداريان، و`reviewNote`… قرار مراجعة —
       // لكنها مذكورة هنا لأن التحديث يقارن المستند كاملًا: صاحب الملف يرسل
       // هذه الحقول كما هي (merge) فيجب أن تُقبل **بلا تغيير** لا أن تُرفض.
+      // (P17) `accountHidden` يملكه صاحب الملف: هو علم «أخفيت ملفي لحذف
+      // الحساب»، لا قرار توثيق. يكفي أن يكتبه هو في نفس كتابة طلب الحذف.
       function profileKeys() {
         return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
                 'stage', 'area', 'bio', 'priceHint', 'isOnline',
                 'governorate', 'district', 'isFeatured', 'featuredOrder',
-                'reviewNote', 'reviewedAt', 'reviewedBy'];
+                'reviewNote', 'reviewedAt', 'reviewedBy', 'accountHidden'];
       }
 
       // حدود الحقول الاختيارية: نص قصير أو غياب، ممنوع أي نوع آخر.
@@ -254,7 +252,7 @@ service cloud.firestore {
         return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
                 'stage', 'area', 'bio', 'priceHint', 'isOnline',
                 'governorate', 'district', 'reviewNote',
-                'reviewedAt', 'reviewedBy'];
+                'reviewedAt', 'reviewedBy', 'accountHidden'];
       }
 
       // قرار إداري (P14): توثيق/رفض. لا يغيّر المالك، والحالة من المجموعة

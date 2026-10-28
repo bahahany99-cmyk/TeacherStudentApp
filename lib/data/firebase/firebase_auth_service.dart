@@ -54,6 +54,13 @@ class FirebaseAuthService implements AuthService {
   /// حقل موعد الحذف المجدول (P17) — `Timestamp` في القاعدة.
   static const String scheduledDeletionField = 'scheduledDeletionAt';
 
+  /// علم إخفاء ملف المدرس عند حذف الحساب (P17) — على `teacherProfiles/{uid}`.
+  ///
+  /// يُكتب في **نفس** حزمة الكتابة مع حالة الحساب، فلا توجد لحظة يظهر فيها ملف
+  /// مدرس محذوفًا في البحث. القواعد تقرأه من الملف نفسه (لا من `users`، لأن
+  /// `get()` على مستند غائب في القواعد خطأ لا `false`).
+  static const String accountHiddenField = 'accountHidden';
+
   /// ملفات المدرسين. يُنشأ المستند تلقائيًا بحالة `pendingReview` عند اختيار
   /// الدور «مدرس» (قرار صاحب المشروع 2026-10-27).
   static const String teacherProfilesCollection = 'teacherProfiles';
@@ -173,10 +180,23 @@ class FirebaseAuthService implements AuthService {
         );
       }
 
-      await doc.update(<String, Object?>{
+      final WriteBatch batch = _firestore.batch();
+      batch.update(doc, <String, Object?>{
         statusField: AccountStatus.pendingDeletionWire,
         scheduledDeletionField: scheduledAt,
       });
+
+      // المدرس: إخفاء الملف في نفس الحزمة الذرّية. غياب الملف ليس خطأً —
+      // الحساب قد يكون طالبًا، أو مدرسًا لم يُنشأ ملفه بعد.
+      final DocumentReference<Map<String, dynamic>> teacherProfile =
+          _firestore.collection(teacherProfilesCollection).doc(uid);
+      if ((await teacherProfile.get()).exists) {
+        batch.update(teacherProfile, <String, Object?>{
+          accountHiddenField: true,
+        });
+      }
+
+      await batch.commit();
       return scheduledAt;
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);
@@ -186,13 +206,26 @@ class FirebaseAuthService implements AuthService {
   @override
   Future<void> restoreAccount({required String uid}) async {
     try {
-      await _firestore.collection(usersCollection).doc(uid).update(
+      final WriteBatch batch = _firestore.batch();
+      batch.update(
+        _firestore.collection(usersCollection).doc(uid),
         <String, Object?>{
           statusField: AccountStatus.activeWire,
           // الحذف (لا `null`) حتى يختفي الحقل: القاعدة ترفض بقاءه مع `active`.
           scheduledDeletionField: FieldValue.delete(),
         },
       );
+
+      // إعادة الملف إلى الاكتشاف في نفس الحزمة (المدرس وحده له ملف).
+      final DocumentReference<Map<String, dynamic>> teacherProfile =
+          _firestore.collection(teacherProfilesCollection).doc(uid);
+      if ((await teacherProfile.get()).exists) {
+        batch.update(teacherProfile, <String, Object?>{
+          accountHiddenField: FieldValue.delete(),
+        });
+      }
+
+      await batch.commit();
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);
     }

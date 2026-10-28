@@ -4183,26 +4183,25 @@ describe('P17 — الاستعادة: داخل المهلة فقط', () => {
   });
 });
 
-describe('P17 — الحساب المعلّق يخرج من الاكتشاف ومن التوثيق', () => {
-  it('ملف مدرس معلّق الحذف لا يُقرأ للطلاب، ويُقرأ لصاحبه', async () => {
+describe('P17 — الملف المخفي بحذف الحساب يخرج من الاكتشاف', () => {
+  it('صاحب الملف يخفيه فيختفي عن الطلاب والزوار ويبقى له وللمسؤول', async () => {
     await seed([
-      {
-        path: 'users/teacher-1',
-        data: {
-          ...userDoc('teacher-1', 'teacher'),
-          status: 'pending_deletion',
-          scheduledDeletionAt: daysFromNow(5),
-        },
-      },
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
     ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        accountHidden: true,
+      }),
+    );
 
     await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
     await assertFails(getDoc(doc(asGuest(), 'teacherProfiles/teacher-1')));
     await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
+    await assertSucceeds(getDoc(doc(asAdmin(), 'teacherProfiles/teacher-1')));
 
-    // الاستعلام لا يعرضه. سلوك Firestore مع شرط `get()` داخل قاعدة القراءة
-    // إمّا استبعاد المستند من النتيجة أو رفض الاستعلام كاملًا — وكلاهما يعني
-    // «غير قابل للاكتشاف»، وهو الوعد الذي نقيسه هنا.
+    // الاستعلام لا يعرضه. مع شرط على المستند نفسه، إمّا يُستبعد أو يُرفض
+    // الاستعلام كاملًا — وكلاهما يعني «غير قابل للاكتشاف».
     let visible = [];
     try {
       const snapshot = await getDocs(
@@ -4221,40 +4220,43 @@ describe('P17 — الحساب المعلّق يخرج من الاكتشاف و�
   it('الاستعادة تُعيد الملف للاكتشاف فورًا', async () => {
     await seed([
       {
-        path: 'users/teacher-1',
-        data: {
-          ...userDoc('teacher-1', 'teacher'),
-          status: 'pending_deletion',
-          scheduledDeletionAt: daysFromNow(5),
-        },
+        path: 'teacherProfiles/teacher-1',
+        data: discoverDoc('teacher-1', { accountHidden: true }),
       },
     ]);
 
     await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
 
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'users/teacher-1'), {
-        status: 'active',
-        scheduledDeletionAt: deleteField(),
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        accountHidden: deleteField(),
       }),
     );
 
     await assertSucceeds(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
   });
 
-  it('المدرس المعلّق لا يقبل حجزًا حتى لو بقي ملفه موثّقًا', async () => {
+  it('مدرس مخفي لا يقبل حجزًا حتى لو بقي ملفه موثّقًا', async () => {
     await seed([
       {
-        path: 'users/teacher-1',
-        data: {
-          ...userDoc('teacher-1', 'teacher'),
-          status: 'pending_deletion',
-          scheduledDeletionAt: daysFromNow(5),
-        },
+        path: 'teacherProfiles/teacher-1',
+        data: discoverDoc('teacher-1', { accountHidden: true }),
       },
       { path: 'bookingRequests/b1', data: bookingDoc('student-1', 'teacher-1') },
     ]);
 
     await assertFails(acceptBooking(asTeacher()));
+  });
+
+  it('الطالب لا يخفي ملف غيره، والمسؤول لا يُغيّر العلم بقرار توثيق', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: discoverDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-1'), {
+        accountHidden: true,
+      }),
+    );
   });
 });

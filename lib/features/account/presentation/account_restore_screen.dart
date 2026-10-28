@@ -195,7 +195,7 @@ class _AccountRestoreScreenState extends State<AccountRestoreScreen> {
                                     ),
                                   )
                                 : const Icon(Icons.restore),
-                            label: Text(
+                            label: const Text(
                               AccountDeletionRules.restoreAction,
                             ),
                           ),
@@ -227,7 +227,7 @@ class _AccountRestoreScreenState extends State<AccountRestoreScreen> {
                       ),
                     ),
                   const SizedBox(height: AppSpacing.md),
-                  InfoNote(
+                  const InfoNote(
                     text:
                         'لا يمكن استخدام التطبيق قبل الاستعادة: الحساب '
                         'المجدول للحذف لا يدخل الواجهة ولا تظهر ملفاته في '
@@ -238,7 +238,7 @@ class _AccountRestoreScreenState extends State<AccountRestoreScreen> {
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _signOut,
                     icon: const Icon(Icons.logout),
-                    label: Text(AccountDeletionRules.signOutAction),
+                    label: const Text(AccountDeletionRules.signOutAction),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                 ],
