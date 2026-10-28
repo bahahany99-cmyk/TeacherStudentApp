@@ -345,6 +345,20 @@ jobs:
 
           ls -l build/app/outputs/flutter-apk/*.apk
 
+          # إثبات أن قيم Firebase دخلت البناء فعلًا: نبحث عن معرّف المشروع
+          # **داخل** الـAPK بلا طباعة قيمته. الغياب يعني أن البناء تجريبي.
+          if [ "$FIREBASE_READY" = "true" ]; then
+            hits=0
+            for apk in build/app/outputs/flutter-apk/*.apk; do
+              if grep -aqF "$FIREBASE_PROJECT_ID" "$apk"; then
+                hits=$((hits + 1))
+              fi
+            done
+            echo "::notice title=Firebase في الـAPK::دُفعت 6 تعريفات — معرّف المشروع مضمّن في $hits من $(ls build/app/outputs/flutter-apk/*.apk | wc -l) ملف APK"
+          else
+            echo "::warning title=Firebase في الـAPK::بُني في الوضع التجريبي (ENABLE_FIREBASE=false)"
+          fi
+
       # الحجم الحقيقي يُنشر كـannotation لأن سجلات Actions محجوبة عن بيئة
       # التطوير؛ هكذا يُقاس الحجم فعليًا لا تقديرًا.
       - name: Report APK sizes
@@ -381,45 +395,41 @@ jobs:
               print(f'::notice title=APK signing::{msg}')
           PYEOF
 
-      # بصمات الشهادة **من داخل الـAPK نفسه** (لا تقديرًا): هذا ما يُسجَّل في
-      # Firebase Console ← Project settings ← Your apps ← SHA certificate fingerprints.
-      - name: Report APK certificate fingerprints (SHA-1 / SHA-256)
+      # بصمة الشهادة التي وُقّع بها الـAPK فعلًا.
+      #
+      # ⚠️ `keytool -printcert -jarfile` لا يقرأ إلا توقيع **v1 (JAR)**، والبناء
+      # هنا يخرج بتوقيعي v2/v3 فقط (minSdk 23)، فيفشل بلا سبب. البديل الصحيح:
+      # نقرأ **الـkeystore الذي استُخدم** — إما مفتاح الإصدار من الأسرار (عبر
+      # key.properties) أو مفتاح debug الذي يُنشئه Gradle — ونطبع بصمته.
+      - name: Report signing certificate fingerprints (SHA-1 / SHA-256)
         if: success()
         run: |
-          python3 - <<'PYEOF'
-          import glob, os, subprocess
-          apks = sorted(glob.glob('build/app/outputs/flutter-apk/*.apk'))
-          if not apks:
-              print('::error title=fingerprints::لا يوجد APK لتقرير البصمة')
-              raise SystemExit(1)
-          for apk in apks:
-              name = os.path.basename(apk)
-              try:
-                  out = subprocess.run(
-                      ['keytool', '-printcert', '-jarfile', apk],
-                      capture_output=True, text=True, check=True,
-                  ).stdout
-              except Exception as error:  # noqa: BLE001
-                  print(f'::warning title=fingerprints::{name}: تعذّر قراءة الشهادة ({error})')
-                  continue
-              sha1 = sha256 = owner = ''
-              for line in out.splitlines():
-                  stripped = line.strip()
-                  if stripped.startswith('Owner:'):
-                      owner = stripped[len('Owner:'):].strip()
-                  elif stripped.startswith('SHA1:'):
-                      sha1 = stripped[len('SHA1:'):].strip()
-                  elif stripped.startswith('SHA256:'):
-                      sha256 = stripped[len('SHA256:'):].strip()
-              if not sha1:
-                  print(f'::warning title=fingerprints::{name}: لا توقيع v1 (JAR) — البصمة موجودة فقط في توقيع v2/v3')
-                  continue
-              print(f'::notice title=SHA-1 ({name})::{sha1}')
-              print(f'::notice title=SHA-256 ({name})::{sha256}')
-              print(f'::notice title=المفتاح ({name})::{owner}')
-              if 'Android Debug' in owner:
-                  print(f'::warning title=مفتاح debug::{name} موقّع بمفتاح debug — بصمته لا تصحّ لبناء جهازك ولا لـPlay. سجّل بصمة مفتاحك الحقيقي.')
-          PYEOF
+          set -euo pipefail
+          if [ -f android/key.properties ]; then
+            STORE=$(grep '^storeFile=' android/key.properties | cut -d= -f2-)
+            ALIAS=$(grep '^keyAlias=' android/key.properties | cut -d= -f2-)
+            PASS=$(grep '^storePassword=' android/key.properties | cut -d= -f2-)
+            KEYPASS=$(grep '^keyPassword=' android/key.properties | cut -d= -f2- || true)
+            KEYPASS="${KEYPASS:-$PASS}"
+            KEYSTORE="android/app/$STORE"
+            echo "::notice title=المفتاح::مفتاح إصدار من الأسرار (release)"
+          else
+            KEYSTORE="$HOME/.android/debug.keystore"
+            ALIAS="androiddebugkey"
+            PASS="android"
+            KEYPASS="android"
+            echo "::warning title=المفتاح::لم تُضبط أسرار keystore — الـAPK موقّع بمفتاح debug مُولَّد على هذا الـrunner، وبصمته تتغيّر في كل بناء ولا تصحّ لـGoogle Sign-In على جهازك."
+          fi
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "::warning title=fingerprints::لم أجد $KEYSTORE"
+            exit 0
+          fi
+          OUT=$(keytool -list -v -keystore "$KEYSTORE" -alias "$ALIAS" \
+                  -storepass "$PASS" -keypass "$KEYPASS" 2>/dev/null)
+          SHA1=$(printf '%s\n' "$OUT" | grep -m1 'SHA1:' | sed 's/.*SHA1: *//')
+          SHA256=$(printf '%s\n' "$OUT" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
+          echo "::notice title=SHA-1::$SHA1"
+          echo "::notice title=SHA-256::$SHA256"
 
       - name: Upload APK artifact
         if: success()
