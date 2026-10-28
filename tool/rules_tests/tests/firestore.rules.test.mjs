@@ -3536,10 +3536,13 @@ describe('P14 — حذف تقييم مخالف: إدارة فقط والمجمو
       { path: 'teacherRatings/teacher-1', data: ratingDoc('teacher-1', 3, 12, 'b1') },
     ]);
 
+    // نسخة واحدة من عميل الإدارة: `asAdmin()` تُنشئ عميلًا جديدًا في كل نداء،
+    // ومرجع من عميل آخر يُرفض داخل المعاملة («different Firestore instance»).
+    const adminDb = asAdmin();
     await assertSucceeds(
-      runTransaction(asAdmin(), async (tx) => {
-        const reviewRef = doc(asAdmin(), 'reviews/b1');
-        const ratingRef = doc(asAdmin(), 'teacherRatings/teacher-1');
+      runTransaction(adminDb, async (tx) => {
+        const reviewRef = doc(adminDb, 'reviews/b1');
+        const ratingRef = doc(adminDb, 'teacherRatings/teacher-1');
         const review = await tx.get(reviewRef);
         tx.delete(reviewRef);
         tx.set(ratingRef, ratingDoc('teacher-1', 2, 12 - review.data().rating, 'b1'));
