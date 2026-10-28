@@ -13,15 +13,35 @@ import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/data/validation/booking_rules.dart';
 
-/// صفحة الحجوزات.
+/// صفحة الحجوزات (P10).
 ///
-/// في المرحلة 2: عرض فقط. لا إنشاء طلب، ولا موافقة/رفض، ولا محادثة.
-/// تنفيذ هذه الإجراءات وربطها بالخادم في المرحلة 8.
-class BookingsScreen extends StatelessWidget {
+/// قائمة طلبات الطرف الحالي، وكل صف يفتح شاشة التفاصيل حيث تُنفَّذ الإجراءات
+/// (قبول/رفض/اقتراح وقت بديل/إلغاء/إعلان تنفيذ). بعد العودة من التفاصيل نُعيد
+/// القراءة، لأن الحالة قد تغيّرت هناك.
+class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key, required this.viewerRole});
 
   final UserRole viewerRole;
+
+  @override
+  State<BookingsScreen> createState() => _BookingsScreenState();
+}
+
+class _BookingsScreenState extends State<BookingsScreen> {
+  /// مفتاح إعادة القراءة بعد أي تغيير يعود من شاشة التفاصيل.
+  int _revision = 0;
+
+  Future<void> _openDetails(String bookingId) async {
+    await Navigator.of(context).pushNamed(
+      RoutePaths.bookingDetails,
+      arguments: bookingId,
+    );
+    if (mounted) {
+      setState(() => _revision++);
+    }
+  }
 
   Color _statusColor(BookingStatus status) {
     return switch (status) {
@@ -46,7 +66,7 @@ class BookingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool isTeacher = viewerRole == UserRole.teacher;
+    final bool isTeacher = widget.viewerRole == UserRole.teacher;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -63,6 +83,7 @@ class BookingsScreen extends StatelessWidget {
                     : 'كل طلب يظل بانتظار موافقة المدرس (C-08)',
               ),
               AsyncView<List<BookingRequest>>(
+                key: ValueKey<int>(_revision),
                 load: () => AppServicesScope.of(context).bookings.listMine(),
                 builder: (BuildContext context, List<BookingRequest> bookings) {
                   if (bookings.isEmpty) {
@@ -79,10 +100,7 @@ class BookingsScreen extends StatelessWidget {
                         Padding(
                           padding: AppSpacing.listGap,
                           child: AppCard(
-                            onTap: () => Navigator.of(context).pushNamed(
-                              RoutePaths.bookingDetails,
-                              arguments: booking.id,
-                            ),
+                            onTap: () => _openDetails(booking.id),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
@@ -113,14 +131,18 @@ class BookingsScreen extends StatelessWidget {
                                 Row(
                                   children: <Widget>[
                                     Icon(
-                                      Icons.schedule_outlined,
+                                      Icons.event_outlined,
                                       size: 14,
                                       color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                     const SizedBox(width: AppSpacing.xxs),
                                     Flexible(
                                       child: Text(
-                                        _formatDateTime(booking.requestedAt),
+                                        booking.hasSchedule
+                                            ? BookingRules.slotLabel(booking)
+                                            : _formatDateTime(
+                                                booking.requestedAt,
+                                              ),
                                         style: theme.textTheme.labelSmall
                                             ?.copyWith(
                                               color: theme
@@ -152,7 +174,7 @@ class BookingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'المحادثات النصية المرتبطة بالحجز تُنفَّذ في مرحلة لاحقة، '
+                'المحادثة المرتبطة بالحجز تُنفَّذ في المرحلة التالية (P11)، '
                 'مقيدة بعضوية الطلب على الخادم.',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,

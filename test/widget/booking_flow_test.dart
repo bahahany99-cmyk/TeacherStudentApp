@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
@@ -11,6 +12,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/bookings/presentation/booking_details_screen.dart';
+import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
 
 import '../helpers/test_app.dart';
 
@@ -236,6 +238,56 @@ void main() {
 
       expect(find.text('منفّذ'), findsWidgets);
       expect(find.textContaining('لا إجراء متاح'), findsOneWidget);
+    });
+  });
+
+  group('قائمة الحجوزات (P10)', () {
+    testWidgets('صف الحجز يعرض الموعد ويفتح شاشة التفاصيل', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+      final _Harness harness = _Harness(
+        bookings: <BookingRequest>[
+          _booking(id: 'b1', status: BookingStatus.pending),
+        ],
+      );
+      final AppServices services = harness.services;
+      final SessionController session = SessionController(services.auth)
+        ..startDemoSession(UserRole.teacher);
+
+      await tester.pumpWidget(
+        AppServicesScope(
+          services: services,
+          child: SessionScope(
+            controller: session,
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: MaterialApp(
+                theme: AppTheme.light,
+                onGenerateRoute: (RouteSettings settings) {
+                  if (settings.name == RoutePaths.bookingDetails) {
+                    return MaterialPageRoute<void>(
+                      builder: (_) => BookingDetailsScreen(
+                        bookingId: settings.arguments! as String,
+                      ),
+                    );
+                  }
+                  return null;
+                },
+                home: const BookingsScreen(viewerRole: UserRole.teacher),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('بانتظار موافقة المدرس'), findsOneWidget);
+
+      await tapVisible(tester, find.text('الرياضيات'));
+      // انتقلنا إلى التفاصيل: العنوان وعنوان الموعد ظاهران.
+      expect(find.text('تفاصيل الطلب'), findsOneWidget);
+      expect(find.text('موعد الحصة'), findsOneWidget);
     });
   });
 }
