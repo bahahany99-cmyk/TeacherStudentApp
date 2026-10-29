@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
+import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';

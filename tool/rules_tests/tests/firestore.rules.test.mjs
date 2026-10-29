@@ -4452,8 +4452,12 @@ describe('P19 — الإدارة: دور الخادم وحده وقرار الت
   const seedDocAdmin = (role = 'admin') =>
     seed([{ path: 'users/admin-doc', data: userDoc('admin-doc', role) }]);
 
-  const pendingTeacher = (uid) =>
-    teacherDoc(uid, { status: 'pendingReview', displayName: 'أ. معلّق' });
+  const pendingTeacher = (uid, overrides = {}) =>
+    teacherDoc(uid, {
+      status: 'pendingReview',
+      displayName: 'أ. معلّق',
+      ...overrides,
+    });
 
   /** قرار التوثيق كما يكتبه التطبيق: الحالة + أثر المراجعة. */
   const approveAs = (db, uid, by = 'admin-doc') =>
@@ -4587,7 +4591,9 @@ describe('P19 — الإدارة: دور الخادم وحده وقرار الت
         data: {
           targetType: 'teacher',
           targetId: 'teacher-2',
-          reporterId: 'student-1',
+          // مُبلِّغ مختلف عن الطالب الذي نختبره: لا يقرأ البلاغ إلا الإدارة
+          // وصاحبه، فلو كان هو نفسه لنجح الاختبار بلا أي علاقة بالصلاحية.
+          reporterId: 'stranger-9',
           reason: 'محتوى مخالف',
           status: 'open',
           createdAt: now(),
@@ -4626,7 +4632,14 @@ describe('P19 — الإدارة: دور الخادم وحده وقرار الت
 
   it('بعد الموافقة يظهر المدرس في بحث الطالب تلقائيًا', async () => {
     await seedDocAdmin('admin');
-    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+    // `accountHidden: false` مطلوب صريحًا: استعلام الاكتشاف يفلتر به،
+    // والمستند بلا الحقل لا يطابق فلتر المساواة حتى لو كان المعنى واحدًا.
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-2',
+        data: pendingTeacher('teacher-2', { accountHidden: false }),
+      },
+    ]);
 
     // قبل الموافقة: غير مرئي لأي طالب.
     await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-2')));
