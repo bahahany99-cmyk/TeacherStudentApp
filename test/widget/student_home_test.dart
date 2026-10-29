@@ -100,6 +100,10 @@ void main() {
         skipOffstage: false,
       );
       expect(homeField, findsOneWidget);
+      // نمسك المتحكم قبل الانتقال: بعد الانتقال يصبح قسم الرئيسية offstage
+      // داخل `IndexedStack`، فلا يصل إليه أي فارز.
+      final TextEditingController homeController =
+          tester.widget<TextField>(homeField).controller!;
       await tester.enterText(homeField, 'رياضيات');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle();
@@ -124,8 +128,7 @@ void main() {
       expect(field.controller?.text, 'رياضيات');
 
       // وحقل الرئيسية أُفرغ، فالعودة إليه لا تُظهر بحثًا قديمًا كأنه محفوظ.
-      final TextField home = tester.widget<TextField>(homeField);
-      expect(home.controller?.text, isEmpty);
+      expect(homeController.text, isEmpty);
     });
 
     testWidgets('الأقسام المطلوب إبرازها ظاهرة وبالترتيب', (
