@@ -50,9 +50,12 @@ class _MyTeacherProfileScreenState extends State<MyTeacherProfileScreen> {
   }
 
   Future<void> _openEditor() async {
-    final bool? saved = await Navigator.of(
+    // بلا معامل نوع: الراوتر يعيد `Route<dynamic>`، وطلب `Route<bool?>`
+    // يُفشل الإرسال (`is not a subtype of Route<bool?>`) في الاختبارات
+    // وفي أي شاشة تعيد قيمة. نقارن الناتج بـ`true` بدل فرض النوع.
+    final Object? saved = await Navigator.of(
       context,
-    ).pushNamed<bool>(RoutePaths.editTeacherProfile);
+    ).pushNamed(RoutePaths.editTeacherProfile);
     if (saved == true && mounted) {
       setState(() => _reloads++);
     }

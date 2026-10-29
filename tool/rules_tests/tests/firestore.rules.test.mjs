@@ -3792,6 +3792,8 @@ describe('P15 — طريقة التقديم والمكان يكتبها صاحب
 // `TeacherProfileDraft.toWriteMap()` — حقول وصفية فقط، بلا status ولا ownerId.
 // الاختبار هنا يثبت أن **شكل الكتابة الحقيقي** مسموح، لا شكلًا نظريًا.
 describe('P18 — حفظ ملف المدرس من التطبيق', () => {
+  // الحمولة التي يرسلها التطبيق فعلًا من `TeacherProfileDraft.toWriteMap()`:
+  // حقول وصفية فقط، بلا status ولا ownerId ولا أي حقل إداري.
   const draftFields = {
     displayName: 'أ. سارة الخطيب',
     subject: 'الرياضيات',
@@ -3827,19 +3829,38 @@ describe('P18 — حفظ ملف المدرس من التطبيق', () => {
   });
 
   it('الإنشاء بحالة pendingReview وبلا حقول إدارية مسموح', async () => {
+    // ⚠️ `beforeEach` العالمي يزرع `teacherProfiles/teacher-1` موثّقًا، فأي
+    // كتابة عليه تكون **تحديثًا** لا إنشاء. لذلك نستخدم سياقًا جديدًا
+    // (`teacher-new`) لا مستند له، فيقع الفحص على `allow create` فعلًا.
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+
     await assertSucceeds(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        ...teacherDoc('teacher-1'),
+      setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
+        ...teacherDoc('teacher-new', { status: 'pendingReview' }),
         accountHidden: false,
       }),
     );
   });
 
   it('لا يستطيع إنشاء ملف بحالة موثّق', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+
     await assertFails(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        ...teacherDoc('teacher-1', { status: 'verified' }),
+      setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
+        ...teacherDoc('teacher-new', { status: 'verified' }),
         accountHidden: false,
+      }),
+    );
+  });
+
+  it('لا يستطيع إنشاء ملف بحقول إدارية (تمييز من عند نفسه)', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+
+    await assertFails(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
+        ...teacherDoc('teacher-new', { status: 'pendingReview' }),
+        accountHidden: false,
+        isFeatured: true,
       }),
     );
   });
@@ -3854,6 +3875,19 @@ describe('P18 — حفظ ملف المدرس من التطبيق', () => {
         ...draftFields,
         isFeatured: true,
         featuredOrder: 1,
+      }),
+    );
+  });
+
+  it('لا يستطيع ترقية حالته إلى موثّق عبر الحفظ العادي', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        ...draftFields,
+        status: 'verified',
       }),
     );
   });

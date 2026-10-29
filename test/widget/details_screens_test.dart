@@ -169,7 +169,7 @@ void main() {
 
       // (P15) النموذج صار أطول من الشاشة، وزر «حفظ» في أسفله. نضغط معالجه
       // مباشرة بدل الاعتماد على إصابة نقطة يحتاج تمريرها — والضغط الحقيقي
-      // على الزر مغطّى في اختبار «النموذج الصالح لا يدّعي الحفظ».
+      // على الزر مغطّى في اختبار «النموذج الصالح يحفظ فعلًا ويُغلق».
       final FilledButton save = tester.widget<FilledButton>(
         find.widgetWithText(FilledButton, 'حفظ'),
       );
@@ -188,15 +188,24 @@ void main() {
       expect(find.text('الاسم مطلوب'), findsOneWidget);
     });
 
-    testWidgets('النموذج الصالح لا يدّعي الحفظ', (WidgetTester tester) async {
+    testWidgets('النموذج الصالح يحفظ فعلًا ويُغلق (P18)', (
+      WidgetTester tester,
+    ) async {
       await _openEditForm(tester);
 
-      // الحقول مسبقة التعبئة من الملف، لذا الحفظ يمرّ من التحقق.
+      // (P18) توقّف عصر «عرض فقط»: الحفظ يكتب في المستودع ثم يعود للشاشة
+      // السابقة. الحقول مسبقة التعبئة من الملف، فالحفظ يمرّ من التحقق.
+      await tester.enterText(
+        find.byKey(const Key('profile-name')),
+        'أ. سارة الخطيب المحدَّثة',
+      );
       await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
 
-      expect(find.textContaining('لم يُحفظ شيء'), findsOneWidget);
-      // ولا تظهر أي رسالة تدّعي نجاح الحفظ.
-      expect(find.textContaining('تم الحفظ'), findsNothing);
+      // عاد إلى «ملفي التعريفي»، ولا نص يدّعي غير ذلك.
+      _expectTitle('ملفي التعريفي');
+      expect(find.textContaining('لم يُحفظ شيء'), findsNothing);
+      // والقيمة الجديدة ظاهرة في الشاشة السابقة (قُرئت من المستودع بعد الحفظ).
+      expect(find.text('أ. سارة الخطيب المحدَّثة'), findsWidgets);
     });
 
     testWidgets('نموذج التعديل يعرض طريقة التقديم وموقع المحاضرة (P15)', (
