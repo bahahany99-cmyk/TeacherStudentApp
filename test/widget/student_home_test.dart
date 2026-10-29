@@ -67,7 +67,9 @@ void main() {
 
       // العطل الأصلي: TextField(enabled: false) يستهلك مساحة بلا وظيفة.
       final Finder disabledFields = find.byWidgetPredicate(
-        (Widget widget) => widget is TextField && !widget.enabled,
+        // `TextField.enabled` من النوع `bool?` (null = مفعّل افتراضيًا)، فالمقارنة
+        // الصريحة بـ`false` تمنع `UNCHECKED_USE_OF_NULLABLE_VALUE`.
+        (Widget widget) => widget is TextField && widget.enabled == false,
         description: 'حقل إدخال معطّل',
       );
       expect(disabledFields, findsNothing);
