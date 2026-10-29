@@ -282,7 +282,14 @@ jobs:
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
           # (P18) معرّف عميل الويب — مطلوب للدخول الأصلي بـGoogle فقط،
           # وليس لتهيئة Firebase نفسها.
-          FIREBASE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
+          #
+          # نقرأ أربعة أماكن محتملة ونأخذ أول قيمة غير فارغة. السبب عملي:
+          # أشيع سبب لظهور السر «غائبًا» هو إضافته في تبويب Variables بدل
+          # Secrets، أو باسم مختلف قليلًا (بدون بادئة FIREBASE_).
+          WEB_CLIENT_ID_SECRET: ${{ secrets.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_VAR: ${{ vars.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_ALIAS_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_ALIAS_VAR: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
         run: |
           missing=0
           report=""
@@ -296,11 +303,29 @@ jobs:
               missing=$((missing + 1))
             fi
           done
-          if [ -n "$FIREBASE_GOOGLE_WEB_CLIENT_ID" ]; then
+          web_id=""
+          web_source=""
+          for pair in \
+              "FIREBASE_GOOGLE_WEB_CLIENT_ID/الأسرار:$WEB_CLIENT_ID_SECRET" \
+              "FIREBASE_GOOGLE_WEB_CLIENT_ID/المتغيرات:$WEB_CLIENT_ID_VAR" \
+              "GOOGLE_WEB_CLIENT_ID/الأسرار:$WEB_CLIENT_ID_ALIAS_SECRET" \
+              "GOOGLE_WEB_CLIENT_ID/المتغيرات:$WEB_CLIENT_ID_ALIAS_VAR"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            where="${name#*/}"
+            if [ -n "$value" ] && [ -z "$web_id" ]; then
+              web_id="$value"
+              web_source="$name"
+            fi
+          done
+          if [ -n "$web_id" ]; then
             report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=موجود"
+            echo "::notice title=Google sign-in::معرّف عميل الويب موجود — سيُمرَّر كـserverClientId لفتح قائمة حسابات Google الأصلية."
+            # نشاركه مع الخطوة التالية عبر GITHUB_ENV (لا يُطبع أبدًا).
+            echo "GOOGLE_WEB_CLIENT_ID_VALUE=$web_id" >> "$GITHUB_ENV"
           else
             report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=غائب"
-            echo "::warning title=Google sign-in::معرّف عميل الويب (FIREBASE_GOOGLE_WEB_CLIENT_ID) غائب — سيبني التطبيق، لكن زر «المتابعة باستخدام Google» سيعرض رسالة إعداد بدل قائمة الحسابات. أضِفه من docs/FIREBASE_SETUP.md §3.8."
+            echo "::warning title=Google sign-in::معرّف عميل الويب غائب — سيبني التطبيق، لكن زر «المتابعة باستخدام Google» سيعرض رسالة إعداد بدل قائمة الحسابات. تحقّق من: (1) الاسم بالحرف FIREBASE_GOOGLE_WEB_CLIENT_ID أو GOOGLE_WEB_CLIENT_ID، (2) أنه في تبويب Secrets لا Variables، (3) أنه في هذا المستودع لا في بيئة محددة. التفاصيل في docs/FIREBASE_SETUP.md §3.8."
           fi
           echo "::notice title=Firebase secrets::$report"
           if [ "$missing" -eq 0 ]; then
@@ -322,7 +347,6 @@ jobs:
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FIREBASE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -o pipefail
           status=0
@@ -341,8 +365,8 @@ jobs:
             )
             # لا نُمرّر قيمة فارغة: عندئذٍ يظهر للمستخدم رسالة إعداد صريحة
             # بدل محاولة دخول تفشل بغموض.
-            if [ -n "$FIREBASE_GOOGLE_WEB_CLIENT_ID" ]; then
-              defines+=("--dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID=$FIREBASE_GOOGLE_WEB_CLIENT_ID")
+            if [ -n "${GOOGLE_WEB_CLIENT_ID_VALUE:-}" ]; then
+              defines+=("--dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_VALUE")
             fi
           fi
 

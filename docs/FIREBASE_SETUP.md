@@ -235,7 +235,14 @@ Google المدمجة في النظام**، ثم نأخذ `idToken` ونمرّر
      `Client ID` الخاص بـ **Web client (auto created by Google Service)**.
    - الشكل: `123456789012-xxxxxxxxxxxxxxxx.apps.googleusercontent.com`.
 
-3. **أضِفه سرًّا في GitHub** (اسم السر بالحرف):
+3. **أضِفه سرًّا في GitHub** (اسم السر بالحرف). يقبل الـworkflow أربعة
+   أماكن بديلة ويأخذ أول قيمة موجودة:
+   `FIREBASE_GOOGLE_WEB_CLIENT_ID` أو `GOOGLE_WEB_CLIENT_ID` — في تبويب
+   **Secrets** أو **Variables** (يُفضَّل Secrets). سبب هذا التسامح العملي:
+   أظهر بناء فعلي `FIREBASE_GOOGLE_WEB_CLIENT_ID=غائب` رغم إضافة المستخدم له،
+   والسببان الأشيع: اسم بلا بادئة `FIREBASE_`، أو إضافته في تبويب Variables.
+   يُمرَّر إلى البناء باسم `--dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID` في كل
+   الأحوال، ولا يُطبع في السجلات أبدًا.
    ```bash
    gh secret set FIREBASE_GOOGLE_WEB_CLIENT_ID --repo bahahany99-cmyk/TeacherStudentApp
    # الصق القيمة ثم Enter (لا تُمرّرها في سطر الأوامر حتى لا تُسجَّل في history)
