@@ -22,7 +22,8 @@
     يتحرك بلا تقييم في نفس الكتابة، وأن المفضلة بمعرّف مشتق لصاحبها.
 12-ب. أن كتل `teacherProfiles`/`reviews`/`favorites`/`contentReports` تُقرأ
     بالقوس المتوازن لا بعلامة تعليق (كان الحارس القديم يمتد إلى نهاية الملف).
-14. أن كل إجراء إداري (P14) مشروط بـ`isAdmin()` ومقيّد بحقول معلنة، وأن
+14. أن كل إجراء إداري (P14/P19) مشروط بـ`isAdminWriter()` (الادعاء أو دور
+    المستند `role == 'admin'`) ومقيّد بحقول معلنة، وأن
     المدرس غير الموثّق لا يقبل حجزًا ولا طلب انضمام ولا ترقية منتظر، وأن
     البلاغ يُنشأ مفتوحًا ولا يُحذف، وأن الحالة المخزّنة صارت `verified`.
 15. أن الاكتشاف (P15) لا يُقرأ إلا للموثّقين، وأن حقول طريقة التقديم والمكان
@@ -224,7 +225,7 @@ def main() -> int:
         problems.append('messages: لا يوجد منع لانتحال المرسل')
     if 'request.resource.data.text.size() <= 500' not in code:
         problems.append('messages: طول الرسالة غير مقيّد')
-    if 'allow update, delete: if isAdmin();' not in code:
+    if 'allow update, delete: if isAdminWriter();' not in code:
         problems.append('messages: الرسائل قابلة للتعديل/الحذف من التطبيق')
 
     # 9) P9: إدارة الأعضاء وقائمة الانتظار
@@ -232,7 +233,7 @@ def main() -> int:
         problems.append('studyGroups: إزالة العضو لا تنقص المقعد')
     if 'request.resource.data.seatsTaken >= 0' not in code:
         problems.append('studyGroups: المقعد يمكن أن يصبح سالبًا')
-    if 'allow delete: if isAdmin() || (signedIn() && request.auth.uid == parentTeacherId());' not in code:
+    if 'allow delete: if isAdminWriter() || (signedIn() && request.auth.uid == parentTeacherId());' not in code:
         problems.append('members: المالك لا يستطيع إزالة عضو')
     if 'groupIsFull(' not in code:
         problems.append('groupWaitlist: القائمة غير مقيّدة بالمجموعة المكتملة')
@@ -418,7 +419,7 @@ def main() -> int:
     else:
         if "request.resource.data.status == 'open'" not in reports_block:
             problems.append('contentReports: الإنشاء غير مقيّد بحالة open')
-        if 'allow update: if isAdmin()' not in reports_block:
+        if 'allow update: if isAdminWriter()' not in reports_block:
             problems.append('contentReports: الحسم غير مقيّد بالإدارة')
         if 'allow delete: if false;' not in reports_block:
             problems.append('contentReports: البلاغ قابل للحذف')

@@ -4,11 +4,13 @@ import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_select_field.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
+import 'package:teacher_student_app/data/constants/academic_options.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
@@ -110,13 +112,18 @@ class _ProfileForm extends StatefulWidget {
 class _ProfileFormState extends State<_ProfileForm> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
-  late final TextEditingController _subject;
-  late final TextEditingController _stage;
   late final TextEditingController _area;
   late final TextEditingController _bio;
   late final TextEditingController _price;
-  late final TextEditingController _governorate;
   late final TextEditingController _district;
+
+  /// (P19) المادة والمرحلة والمحافظة صارت **اختيارًا من قائمة معتمدة** لا
+  /// نصًا حرًا: قيمة واحدة لكل مفهوم، فلا تتفرّق نتائج البحث بين «رياضيات»
+  /// و«الرياضيات». تُحفظ كما تُختار، والقيمة القديمة غير المعتمدة تبقى
+  /// معروضةً وقابلةً للحفظ حتى يعيد المدرس اختيارها بنفسه.
+  String? _subject;
+  String? _stage;
+  String? _governorate;
   late bool _isOnline;
 
   bool _saving = false;
@@ -128,27 +135,31 @@ class _ProfileFormState extends State<_ProfileForm> {
     _name = TextEditingController(
       text: initial?.displayName ?? widget.initialName,
     );
-    _subject = TextEditingController(text: initial?.subject ?? '');
-    _stage = TextEditingController(text: initial?.stage ?? '');
     _area = TextEditingController(text: initial?.area ?? '');
     _bio = TextEditingController(text: initial?.bio ?? '');
     _price = TextEditingController(text: initial?.priceHint ?? '');
-    _governorate = TextEditingController(text: initial?.governorate ?? '');
     _district = TextEditingController(text: initial?.district ?? '');
     _isOnline = initial?.isOnline ?? false;
+
+    // القيم المحفوظة تُحمَّل كما هي حتى لو لم تعد في القائمة المعتمدة.
+    _subject = _blankToNull(initial?.subject);
+    _stage = _blankToNull(initial?.stage);
+    _governorate = _blankToNull(initial?.governorate);
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _subject.dispose();
-    _stage.dispose();
     _area.dispose();
     _bio.dispose();
     _price.dispose();
-    _governorate.dispose();
     _district.dispose();
     super.dispose();
+  }
+
+  static String? _blankToNull(String? raw) {
+    final String text = (raw ?? '').trim();
+    return text.isEmpty ? null : text;
   }
 
   Future<void> _save() async {
@@ -166,13 +177,13 @@ class _ProfileFormState extends State<_ProfileForm> {
 
     final TeacherProfileDraft draft = TeacherProfileDraft(
       displayName: _name.text,
-      subject: _subject.text,
-      stage: _stage.text,
+      subject: _subject ?? '',
+      stage: _stage ?? '',
       area: _area.text,
       bio: _bio.text,
       isOnline: _isOnline,
       priceHint: _price.text,
-      governorate: _isOnline ? null : _governorate.text,
+      governorate: _isOnline ? null : _governorate,
       district: _isOnline ? null : _district.text,
     );
 
@@ -293,19 +304,25 @@ class _ProfileFormState extends State<_ProfileForm> {
             },
           ),
           const SizedBox(height: AppSpacing.sm),
-          TextFormField(
+          // (P19) قائمة منسدلة بدل نص حر: قيمة واحدة لكل مادة.
+          AppSelectField(
             key: const Key('profile-subject'),
-            controller: _subject,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'المادة'),
+            label: 'المادة',
+            value: _subject,
+            options: AcademicOptions.subjects,
+            isRequired: true,
+            helperText: 'من قائمة معتمدة حتى تتوافق نتائج البحث',
+            onChanged: (String? next) => setState(() => _subject = next),
             validator: (String? value) => _required(value, 'المادة'),
           ),
           const SizedBox(height: AppSpacing.sm),
-          TextFormField(
+          AppSelectField(
             key: const Key('profile-stage'),
-            controller: _stage,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'المرحلة الدراسية'),
+            label: 'المرحلة الدراسية',
+            value: _stage,
+            options: AcademicOptions.stages,
+            isRequired: true,
+            onChanged: (String? next) => setState(() => _stage = next),
             validator: (String? value) => _required(value, 'المرحلة'),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -342,14 +359,15 @@ class _ProfileFormState extends State<_ProfileForm> {
                   'التعليم عن بُعد. يمكنك تركهما فارغين.',
             )
           else ...<Widget>[
-            TextFormField(
+            // (P19) المحافظة من قائمة الـ27 محافظة، فتُطابق فلتر الطالب حرفيًا.
+            AppSelectField(
               key: const Key('profile-governorate'),
-              controller: _governorate,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'المحافظة (اختياري)',
-                helperText: 'فلتر البحث الأساسي للطلاب — مثل: القاهرة',
-              ),
+              label: 'المحافظة (اختياري)',
+              value: _governorate,
+              options: AcademicOptions.governorates,
+              helperText: 'فلتر البحث الأساسي للطلاب',
+              onChanged: (String? next) =>
+                  setState(() => _governorate = next),
               validator: (String? value) =>
                   _optionalPlace(value, 'المحافظة', 40),
             ),

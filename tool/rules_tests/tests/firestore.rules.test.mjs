@@ -4437,3 +4437,211 @@ describe('P17 — الملف المخفي بحذف الحساب يخرج من ا
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P19 — الإدارة: الادعاء أو دور المستند، ولا ترقية ذاتية من التطبيق
+//
+// القاعدة التي نحميها هنا **أمنية بحتة**: لوحة الإدارة وقرار التوثيق ليسا
+// مخفيَّين في التطبيق فقط، بل مرفوضَين في الخادم. وكل اختبار هنا يفترض أن
+// التطبيق قد تم التلاعب به (عميل معدَّل يرسل الطلب مباشرة).
+// ═════════════════════════════════════════════════════════════════════════════
+describe('P19 — الإدارة: دور الخادم وحده وقرار التوثيق', () => {
+  /** مسؤول بدور المستند فقط: بلا Custom Claim إطلاقًا. */
+  const asDocAdmin = () => testEnv.authenticatedContext('admin-doc').firestore();
+
+  const seedDocAdmin = (role = 'admin') =>
+    seed([{ path: 'users/admin-doc', data: userDoc('admin-doc', role) }]);
+
+  const pendingTeacher = (uid) =>
+    teacherDoc(uid, { status: 'pendingReview', displayName: 'أ. معلّق' });
+
+  /** قرار التوثيق كما يكتبه التطبيق: الحالة + أثر المراجعة. */
+  const approveAs = (db, uid, by = 'admin-doc') =>
+    updateDoc(doc(db, `teacherProfiles/${uid}`), {
+      status: 'verified',
+      reviewedAt: now(),
+      reviewedBy: by,
+    });
+
+  it('مسؤول يحمل Claim يوافق على ملف معلّق', async () => {
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    await assertSucceeds(approveAs(asAdmin(), 'teacher-2', 'admin-1'));
+  });
+
+  it('مسؤول بدور المستند (بلا Claim) يوافق أيضًا — وهذا هو شرط role == admin', async () => {
+    await seedDocAdmin('admin');
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    await assertSucceeds(approveAs(asDocAdmin(), 'teacher-2'));
+  });
+
+  it('مستخدم بدور student لا يوافق حتى لو كان معرّفه هو نفسه', async () => {
+    await seedDocAdmin('student');
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    await assertFails(approveAs(asDocAdmin(), 'teacher-2'));
+  });
+
+  it('حساب بلا مستخدم إطلاقًا لا يوافق (exists لا يُسقط التقييم)', async () => {
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    await assertFails(approveAs(asDocAdmin(), 'teacher-2'));
+  });
+
+  it('المدرس يوثّق نفسه: مرفوض', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: pendingTeacher('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), { status: 'verified' }),
+    );
+  });
+
+  it('الطالب يوثّق مدرسًا آخر أو يرفضه: مرفوض', async () => {
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    await assertFails(approveAs(asStudent(), 'teacher-2', 'student-1'));
+    await assertFails(
+      updateDoc(doc(asStudent(), 'teacherProfiles/teacher-2'), {
+        status: 'rejected',
+        reviewNote: 'سبب رفض طويل بما يكفي',
+      }),
+    );
+  });
+
+  it('المستخدم العادي لا يرقّي نفسه إلى admin (إنشاء أو تحديث)', async () => {
+    // (أ) إنشاء بدور admin مرفوض على مستوى القيم المسموحة.
+    await assertFails(
+      setDoc(doc(asStudent(), 'users/student-1'), userDoc('student-1', 'admin')),
+    );
+
+    // (ب) الترقية بعد الإنشاء مرفوضة لأن الدور ثابت.
+    await seed([
+      { path: 'users/student-1', data: userDoc('student-1') },
+      { path: 'users/stranger-9', data: userDoc('stranger-9') },
+    ]);
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { role: 'admin' }),
+    );
+
+    // (ج) كتابة دور غيره مرفوضة أصلًا (ليست مستنده).
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/stranger-9'), { role: 'admin' }),
+    );
+
+    // (د) حقول إدارية ملفّقة مرفوضة، فلا مسار بديل للصلاحية.
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { isAdmin: true }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { claims: { admin: true } }),
+    );
+  });
+
+  it('لا يستطيع منح نفسه admin ثم استخدامه في نفس الطلب (دفعة ذرّية)', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    const db = asStudent();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'users/student-1'), { role: 'admin' });
+    batch.update(doc(db, 'teacherProfiles/teacher-2'), { status: 'verified' });
+
+    await assertFails(batch.commit());
+
+    // ولا نالت الكتابة الأولى موافقةً جزئية: الطلب كله ذرّي.
+    const after = await readAsAdmin('users/student-1');
+    assert.equal(after.role, 'student');
+  });
+
+  it('مسؤول بدور المستند يقرأ طابور 15 ملفًا معلّقًا (سقف get() لا يُسقط الاستعلام)', async () => {
+    await seedDocAdmin('admin');
+    const writes = [];
+    for (let i = 1; i <= 15; i += 1) {
+      writes.push({
+        path: `teacherProfiles/pending-${i}`,
+        data: pendingTeacher(`pending-${i}`),
+      });
+    }
+    await seed(writes);
+
+    const snapshot = await getDocs(
+      query(
+        collection(asDocAdmin(), 'teacherProfiles'),
+        where('status', '==', 'pendingReview'),
+      ),
+    );
+
+    // 15 ملفًا + الملف الموثّق الأساسي لا يطابق الفلتر.
+    assert.equal(snapshot.size, 15);
+  });
+
+  it('مسؤول بدور المستند يرى ما يراه المسؤول في البلاغات، والطالب لا', async () => {
+    await seedDocAdmin('admin');
+    await seed([
+      { path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') },
+      {
+        path: 'contentReports/r1',
+        data: {
+          targetType: 'teacher',
+          targetId: 'teacher-2',
+          reporterId: 'student-1',
+          reason: 'محتوى مخالف',
+          status: 'open',
+          createdAt: now(),
+        },
+      },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asDocAdmin(), 'contentReports/r1')));
+    await assertFails(getDoc(doc(asStudent(), 'contentReports/r1')));
+  });
+
+  it('القرار الإداري مقيّد بالحقول: لا تمرير اسم أو مالك أو تمييز مع التوثيق', async () => {
+    await seedDocAdmin('admin');
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    const db = asDocAdmin();
+    await assertFails(
+      updateDoc(doc(db, 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+        ownerId: 'admin-doc',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+        isFeatured: true,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'teacherProfiles/teacher-2'), {
+        status: 'verified',
+        rating: 5,
+      }),
+    );
+  });
+
+  it('بعد الموافقة يظهر المدرس في بحث الطالب تلقائيًا', async () => {
+    await seedDocAdmin('admin');
+    await seed([{ path: 'teacherProfiles/teacher-2', data: pendingTeacher('teacher-2') }]);
+
+    // قبل الموافقة: غير مرئي لأي طالب.
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-2')));
+
+    await assertSucceeds(approveAs(asDocAdmin(), 'teacher-2'));
+
+    // بعد الموافقة: اكتشاف عادي بلا أي تغيير في التطبيق.
+    await assertSucceeds(getDoc(doc(asStudent(), 'teacherProfiles/teacher-2')));
+    const found = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.ok(found.docs.some((item) => item.id === 'teacher-2'));
+  });
+});

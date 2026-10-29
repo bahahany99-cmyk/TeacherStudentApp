@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
@@ -12,7 +10,7 @@ import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
-import 'package:teacher_student_app/data/validation/admin_rules.dart';
+import 'package:teacher_student_app/features/admin/presentation/widgets/verification_actions.dart';
 
 /// «طابور التوثيق» (P14): قرار المسؤول على كل ملف مدرس.
 ///
@@ -31,60 +29,21 @@ class _TeacherVerificationScreenState extends State<TeacherVerificationScreen> {
   /// يتغيّر بعد كل قرار لإجبار [AsyncView] على إعادة القراءة من المصدر.
   int _revision = 0;
 
+  /// ينفّذ القرار المشترك ثم يعيد القراءة عند النجاح.
+  ///
+  /// المنطق نفسه في لوحة الإدارة (قائمة سريعة) عبر `verification_actions.dart`،
+  /// فنسخه هنا ثانية كان يعني تباعد الرسائل ومعالجة الأخطاء بين الشاشتين.
   Future<void> _verify(TeacherProfile profile) async {
-    try {
-      await AppServicesScope.of(context).admin.verifyTeacher(profile.id);
-      if (!mounted) {
-        return;
-      }
+    final bool done = await approveTeacherProfile(context, profile);
+    if (done && mounted) {
       setState(() => _revision++);
-      AppSnackBar.show(
-        context,
-        'تم توثيق «${profile.displayName}» — الملف ظاهر الآن في البحث.',
-        type: AppMessageType.success,
-      );
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      AppSnackBar.show(
-        context,
-        toAppException(error).message,
-        type: AppMessageType.error,
-      );
     }
   }
 
   Future<void> _reject(TeacherProfile profile) async {
-    final String? reason = await showDialog<String>(
-      context: context,
-      builder: (BuildContext dialogContext) => _RejectDialog(profile: profile),
-    );
-    if (reason == null || !mounted) {
-      return;
-    }
-    try {
-      await AppServicesScope.of(
-        context,
-      ).admin.rejectTeacher(teacherId: profile.id, reason: reason);
-      if (!mounted) {
-        return;
-      }
+    final bool done = await rejectTeacherProfile(context, profile);
+    if (done && mounted) {
       setState(() => _revision++);
-      AppSnackBar.show(
-        context,
-        'تم رفض «${profile.displayName}» وإبلاغ السبب.',
-        type: AppMessageType.warning,
-      );
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      AppSnackBar.show(
-        context,
-        toAppException(error).message,
-        type: AppMessageType.error,
-      );
     }
   }
 
@@ -243,78 +202,6 @@ class _QueueCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// نافذة سبب الرفض — لا تُغلق إلا بسبب صالح (نفس حدّ القواعد).
-class _RejectDialog extends StatefulWidget {
-  const _RejectDialog({required this.profile});
-
-  final TeacherProfile profile;
-
-  @override
-  State<_RejectDialog> createState() => _RejectDialogState();
-}
-
-class _RejectDialogState extends State<_RejectDialog> {
-  final TextEditingController _controller = TextEditingController();
-  String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final String reason = _controller.text;
-    final String? problem = AdminRules.reasonProblem(reason);
-    if (problem != null) {
-      setState(() => _error = problem);
-      return;
-    }
-    Navigator.of(context).pop(reason.trim());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('رفض ملف ${widget.profile.displayName}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(
-            'اكتب سببًا واضحًا يظهر للمدرس. الرفض بدون سبب لا يُرسل.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            maxLines: 3,
-            maxLength: AdminRules.maxReasonLength,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              labelText: 'سبب الرفض',
-              errorText: _error,
-            ),
-            onChanged: (String value) {
-              if (_error != null) {
-                setState(() => _error = null);
-              }
-            },
-          ),
-        ],
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('إلغاء'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('تأكيد الرفض')),
-      ],
     );
   }
 }

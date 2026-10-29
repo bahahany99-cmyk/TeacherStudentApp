@@ -80,10 +80,57 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // حساب إداري: يُمنح فقط عبر Custom Claim يُضبط بمفتاح خدمة خارج التطبيق.
-    // التطبيق لا يستطيع منح نفسه هذا الادعاء إطلاقًا.
+    // ── الصلاحية الإدارية: مصدران لا ثالث لهما ────────────────────────────
+    //
+    // 1) **Custom Claim** (`request.auth.token.admin`) يُضبط بمفتاح خدمة خارج
+    //    التطبيق (Admin SDK). التطبيق لا يستطيع منح نفسه هذا الادعاء إطلاقًا.
+    // 2) **دور المستند** `users/{uid}.role == 'admin'` (P19) — يُضبط أيضًا من
+    //    خارج التطبيق (Console / Admin SDK). ولا يمكن للتطبيق كتابته:
+    //    `allow create` على `users` يقبل `student|teacher` فقط، و`allow update`
+    //    يشترط `role == resource.data.role`، فلا مسار لترقية نفسه.
+    //
+    // 🔒 **لماذا فصلنا دالة القراءة عن دالة الكتابة؟**
+    // `get()` في القواعد محكوم بسقف (10 نداءات لكل طلب/استعلام). لو استُخدمت
+    // دالة الدور في قواعد **القراءة** لَما استطاع مسؤول بلا Claim قراءة
+    // استعلام يعيد أكثر من عشرة مستندات (تُرفض النتيجة كلها). لذلك:
+    // - `isAdmin()` للقراءة: الادعاء فقط، بلا `get()` إطلاقًا.
+    // - `isAdminWriter()` للكتابة: الادعاء أو دور المستند. كل كتابة تخص مستندًا
+    //   واحدًا (أو دفعة صغيرة) فتبقى داخل السقف.
+    //
+    // الاختبارات والأثر العملي في `tool/rules_tests` §P19.
     function isAdmin() {
       return signedIn() && request.auth.token.admin == true;
+    }
+
+    /// دور المستند — يُقرأ بـ`get()` على مسار معروف، ويُحصَر بفحص الوجود حتى
+    /// لا يتحوّل «المستخدم بلا مستند» إلى خطأ تقييم في القاعدة.
+    function userRoleDoc() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? ''
+        : get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('role', '');
+    }
+
+    /// **دور المستند وحده** (بلا Claim): المسار الذي يجعل «المسؤول» معرّفًا
+    /// داخل قاعدة البيانات لا في رمز الهوية. يُستخدم في ثلاث قراءات إدارية
+    /// محدودة (طابور التوثيق، البلاغات، مستندات المستخدمين) لا في الاكتشاف
+    /// العام — انظر التعليق أدناه.
+    function isAdminDoc() {
+      return signedIn() && userRoleDoc() == 'admin';
+    }
+
+    /// صلاحية **الكتابة** الإدارية: الادعاء أولًا (`||` يقطع، فلا `get()`
+    /// لمسؤول يحمل Claim)، ثم دور المستند كمسار بديل موثّق.
+    ///
+    /// ⚠️ **لماذا لا نستخدمها في القراءة؟** لأن قواعد القراءة تُقيَّم لكل
+    /// مستند يُعيده استعلام، وكل `get()` فيها يُحسب ضمن سقف عشرة نداءات لكل
+    /// استعلام. وضع فحص المستند هناك كان سيُعطّل بحث الطلاب نفسه (استعلام
+    /// `teacherProfiles` الموثّق) لأي مستخدم عادي يحاول تجاوز عشرة نتائج.
+    /// فالقراءة الإدارية (لوحة الإدارة/طابور التوثيق) تحتاج **الادعاء**،
+    /// والكتابة الإدارية تقبل الادعاء **أو** دور المستند.
+    function isAdminWriter() {
+      return signedIn()
+        && (request.auth.token.admin == true || userRoleDoc() == 'admin');
     }
 
     // هل هذا المدرس **موثّق وحسابه نشط**؟ (P14 + P17)
@@ -108,7 +155,10 @@ service cloud.firestore {
 
     // ── 1) users/{uid} ───────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isSelf(uid) || isAdmin();
+      // (P19) المسؤول بدور المستند يقرأ مستندات المستخدمين أيضًا (الواجهة
+      // تعرض أسماء أصحاب الملفات في الطابور). `isAdminDoc()` آخرًا حتى لا
+      // يُستدعى `get()` إلا إذا فشل الشرطان الأرخص.
+      allow read: if isSelf(uid) || isAdmin() || isAdminDoc();
 
       // (P18) `phone` و`stage` حقول شخصية يحرّرها صاحب الحساب من «بياناتي».
       // حدودهما هنا هي نفس حدود التحقق في التطبيق (`ProfileRules`)، فلا
@@ -182,7 +232,7 @@ service cloud.firestore {
         && validAccountStateChange();
 
       // لا حذف من التطبيق: حذف الحساب إجراء إداري (سياسة الاحتفاظ T-10).
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 2) teacherProfiles/{uid} ─────────────────────────────────────────────
@@ -193,10 +243,17 @@ service cloud.firestore {
       // (P17) الملف الموثّق لصاحب حساب **غير مجدول للحذف**: الحذف الناعم يُخرج
       // الملف من الاكتشاف فورًا (`accountHidden`)، مع بقاء المستند (الاستعادة
       // تُعيده بلا فقدان بيانات). صاحبه يرى ملفه دائمًا، والمسؤول يرى الكل.
-      allow read: if isAdmin()
-        || isSelf(uid)
+      // (P19) ترتيب الشروط مقصود: الشرطان الأرخص أولًا حتى لا يُستدعى `get()`
+      // لمستخدم عادي أصلًا (اكتشاف الطالب يُحلّ من المستند نفسه). المسؤول
+      // بدور المستند يحتاج `get()` واحدًا، ونتيجته مُخبَّأة داخل الطلب الواحد
+      // لأن المسار ثابت (`users/{uid}` الخاص بالمتصل) — فلا يتضخّم مع عدد
+      // مستندات الاستعلام. اختبار «15 ملفًا معلّقًا» في `tool/rules_tests`
+      // يثبت ذلك عمليًا على المحاكي.
+      allow read: if isSelf(uid)
         || (resource.data.status == 'verified'
-            && resource.data.get('accountHidden', false) == false);
+            && resource.data.get('accountHidden', false) == false)
+        || isAdmin()
+        || isAdminDoc();
 
       // حقول يملكها صاحب الملف: التعريف وطريقة التقديم والمكان (P15).
       // `isFeatured`/`featuredOrder` إداريان، و`reviewNote`… قرار مراجعة —
@@ -294,7 +351,7 @@ service cloud.firestore {
       // - الملف يجب أن يكون موثّقًا: تمييز مسودة يعني إبراز ملف لا يُقرأ للطلاب.
       // - الترتيب عدد صحيح 0..999، والأصغر يظهر أولًا في شريط الرئيسية.
       function validAdminCuration() {
-        return request.auth.token.admin == true
+        return isAdminWriter()
           && resource.data.status == 'verified'
           && request.resource.data.status == 'verified'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
@@ -309,7 +366,7 @@ service cloud.firestore {
       // والمسؤول يصدر قرارًا مقيّدًا أو يُميّز عبر المسار المخصّص.
       // - status و ownerId ثابتان لصاحب الملف (يُضبطان إداريًا أو عند الإنشاء).
       // - rating و reviewsCount غير مذكورة في أي قائمة ⇒ لا يكتبها أحد يدويًا.
-      allow update: if (isAdmin()
+      allow update: if (isAdminWriter()
           && (validAdminDecision() || validAdminCuration()))
         || (
         isSelf(uid)
@@ -320,7 +377,7 @@ service cloud.firestore {
       );
 
       // لا حذف من التطبيق.
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 3) studyGroups/{groupId} ─────────────────────────────────────────────
@@ -386,7 +443,7 @@ service cloud.firestore {
 
       // (أ) تعديل البيانات العادي: المالك فقط، ولا يغيّر المالك ولا المقاعد
       // المشغولة. قبول الطلبات له قاعدة منفصلة (ب) لأن القواعد تُقيَّم كـOR.
-      allow update: if isAdmin() || (
+      allow update: if isAdminWriter() || (
         isGroupOwner()
         && request.resource.data.teacherId == resource.data.teacherId
         && request.resource.data.seatsTaken == resource.data.seatsTaken
@@ -422,7 +479,7 @@ service cloud.firestore {
         && request.resource.data.seatsTaken == resource.data.seatsTaken - 1
         && request.resource.data.seatsTaken >= 0;
 
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
 // (نص scheduleNote الفارغ مقبول: يعني «بلا موعد محدد».)
 
       // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
@@ -452,7 +509,7 @@ service cloud.firestore {
           return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken <= get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
         }
 
-        allow create: if isAdmin() || (
+        allow create: if isAdminWriter() || (
           signedIn()
           && request.auth.uid == parentTeacherId()
           && memberId == request.resource.data.studentId
@@ -474,12 +531,12 @@ service cloud.firestore {
         );
 
         // التعديل إداري فقط (لا حالة عضو تُكتب من التطبيق).
-        allow update: if isAdmin();
+        allow update: if isAdminWriter();
 
         // الإزالة (P9): صاحب المجموعة أو الإدارة. الحذف وحده لا يكفي — التطبيق
         // ينقص seatsTaken في المعاملة نفسها، وقاعدة studyGroups (ج) تسمح بمقعد
         // واحد فقط، فلا يمكن «حذف عضو» دون تحرير مقعده ولا العكس.
-        allow delete: if isAdmin() || (signedIn() && request.auth.uid == parentTeacherId());
+        allow delete: if isAdminWriter() || (signedIn() && request.auth.uid == parentTeacherId());
       }
 
       // ── P9: الجدول الأسبوعي ──────────────────────────────────────────────
@@ -538,7 +595,7 @@ service cloud.firestore {
           && validSession();
 
         // لا حذف من التطبيق: الإلغاء عبر isCancelled يحفظ سجل الجدول.
-        allow delete: if isAdmin();
+        allow delete: if isAdminWriter();
       }
 
       // ── P9: محادثة المجموعة ──────────────────────────────────────────────
@@ -576,7 +633,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 500
           && request.resource.data.sentAt is timestamp;
 
-        allow update, delete: if isAdmin();
+        allow update, delete: if isAdminWriter();
       }
     }
 
@@ -672,7 +729,7 @@ service cloud.firestore {
       // التي تُخرجه من العضوية (تحقّق على المحاكي). وشرط الحالة بلا أي قراءة
       // مستندات: يحمي تاريخ الطلبات المغلقة (مرفوض/ملغى) من المحو، ويترك
       // الصفوف المفتوحة للمالك ينظّفها.
-      allow delete: if isAdmin() || (
+      allow delete: if isAdminWriter() || (
         signedIn()
         && resource.data.teacherId == request.auth.uid
         && resource.data.status in ['pending', 'accepted']
@@ -765,7 +822,7 @@ service cloud.firestore {
       // حذف الصف (P9): صاحب المجموعة، وفقط للصفوف المفتوحة
       // (`waiting`/`promoted`). نفس منطق طلبات الانضمام وسيببه نفسه (قراءة
       // المعاملة تسبق الكتابة)، ولا أثر على المقاعد.
-      allow delete: if isAdmin() || (
+      allow delete: if isAdminWriter() || (
         signedIn()
         && resource.data.teacherId == request.auth.uid
         && resource.data.status in ['waiting', 'promoted']
@@ -947,7 +1004,7 @@ service cloud.firestore {
         && changedOnly(decisionKeys());
 
       // لا حذف: سجل الحجز يبقى بعد الإلغاء.
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 5-ب) teacherCalendar/{teacherId_dateKey} — تقويم يومي (P10) ──────────
@@ -989,7 +1046,7 @@ service cloud.firestore {
                 )
            );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 6) teacherSettings/{teacherId} — خصوصية المدرس (P11) ─────────────────
@@ -1007,7 +1064,7 @@ service cloud.firestore {
         && request.resource.data.allowDirectMessages is bool
         && request.resource.data.updatedAt is timestamp;
 
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 7) directChats/{chatId} — محادثات مباشرة (P11) ───────────────────────
@@ -1144,7 +1201,7 @@ service cloud.firestore {
              ['lastMessageAt', 'lastMessageText', 'lastSenderId']);
 
       // لا حذف من التطبيق: المحادثة سجل، والحذف قرار إداري.
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
 
       // ── 7-ب) رسائل المحادثة ─────────────────────────────────────────────
       // القراءة للطرفين فقط، والكتابة لمرسِل يساوي معرّفه `uid`، وبشرط أن
@@ -1187,7 +1244,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 500
           && request.resource.data.sentAt is timestamp;
 
-        allow update, delete: if isAdmin();
+        allow update, delete: if isAdminWriter();
       }
     }
 
@@ -1310,7 +1367,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().size() > 0
         && request.resource.data.readAt is timestamp;
 
-      allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.recipientId));
+      allow delete: if isAdminWriter() || (signedIn() && isSelf(resource.data.recipientId));
     }
 
     // ── 10) reviews/{reviewId} — تقييم بعد حصة منفّذة (P13) ──────────────────
@@ -1358,7 +1415,7 @@ service cloud.firestore {
 
       allow update: if false;
 
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 11) teacherRatings/{teacherId} — المتوسط التراكمي (P13) ──────────────
@@ -1407,7 +1464,7 @@ service cloud.firestore {
       // حذف إداري لتقييم مخالف (P14): **نقصان فقط**، بمقدار بين 1 و5، وبعدد
       // تقييمات ينقص واحدًا بالضبط. المسؤول لا يستطيع نفخ المتوسط ولا حذف
       // تقييمين بحذف واحد، والقرار يُسجَّل في `contentReports`.
-      allow update: if isAdmin()
+      allow update: if isAdminWriter()
         && request.resource.data.teacherId == resource.data.teacherId
         && request.resource.data.keys().hasOnly(ratingKeys())
         && request.resource.data.totalReviews == resource.data.totalReviews - 1
@@ -1415,7 +1472,7 @@ service cloud.firestore {
         && resource.data.ratingSum - request.resource.data.ratingSum <= 5;
 
       // لا تقييمات متبقية ⇒ المستند يُحذف (لا يبقى صفر مضلّل).
-      allow delete: if isAdmin();
+      allow delete: if isAdminWriter();
     }
 
     // ── 12) favorites/{favoriteId} — مفضلة الطالب (P13) ──────────────────────
@@ -1447,7 +1504,7 @@ service cloud.firestore {
                  && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data.isActive == true)
            );
 
-      allow delete: if isAdmin() || (signedIn() && isSelf(resource.data.studentId));
+      allow delete: if isAdminWriter() || (signedIn() && isSelf(resource.data.studentId));
     }
 
     // ── 14) contentReports/{reportId} — بلاغات المحتوى (P14) ─────────────────
@@ -1472,7 +1529,8 @@ service cloud.firestore {
 
       // البلاغ يقرأه صاحبه والإدارة فقط: لا يرى الطلاب بلاغات بعضهم.
       allow read: if isAdmin()
-        || (signedIn() && request.auth.uid == resource.data.reporterId);
+        || (signedIn() && request.auth.uid == resource.data.reporterId)
+        || isAdminDoc();
 
       allow create: if signedIn()
         && request.resource.data.reporterId == request.auth.uid
@@ -1499,7 +1557,7 @@ service cloud.firestore {
 
       // الحسم إداري: من open إلى resolved/dismissed، والهدف لا يتغيّر (فلا
       // يُعاد توجيه بلاغ حُسم إلى محتوى آخر).
-      allow update: if isAdmin()
+      allow update: if isAdminWriter()
         && resource.data.status == 'open'
         && request.resource.data.status in ['resolved', 'dismissed']
         && request.resource.data.reporterId == resource.data.reporterId

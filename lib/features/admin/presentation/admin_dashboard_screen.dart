@@ -6,6 +6,7 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
+import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -14,6 +15,7 @@ import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/features/admin/presentation/widgets/verification_actions.dart';
 
 /// أرقام لوحة الإدارة — تُقرأ مرة واحدة عند فتح الشاشة.
 class _AdminOverview {
@@ -37,8 +39,30 @@ class _AdminOverview {
 /// **لماذا شاشة أرقام لا جدول؟** لأن عمل المسؤول في هذا التطبيق قرارَان لا
 /// أكثر: توثيق ملف، وحسم بلاغ. الأرقام تجيب «هل يوجد ما ينتظرني؟» قبل فتح
 /// أي قائمة، وكل بطاقة تقود إلى الشاشة المتخصصة.
-class AdminDashboardScreen extends StatelessWidget {
+class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
+
+  @override
+  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  /// يُزاد بعد كل قرار ليُعيد `AsyncView` القراءة من المصدر (الطابور والأرقام).
+  int _revision = 0;
+
+  Future<void> _approve(TeacherProfile profile) async {
+    final bool done = await approveTeacherProfile(context, profile);
+    if (done && mounted) {
+      setState(() => _revision++);
+    }
+  }
+
+  Future<void> _reject(TeacherProfile profile) async {
+    final bool done = await rejectTeacherProfile(context, profile);
+    if (done && mounted) {
+      setState(() => _revision++);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +84,9 @@ class AdminDashboardScreen extends StatelessWidget {
                   const DemoBanner(),
                   const SizedBox(height: AppSpacing.sm),
                   AsyncView<_AdminOverview>(
+                    // (P19) مفتاح المراجعة: بعد أي قرار يُعاد القراءة، فيظهر
+                    // الملف التالي في القائمة العددية فورًا بدل رقم قديم.
+                    key: ValueKey<int>(_revision),
                     load: () async {
                       // نقرأ الخدمات مرة واحدة **قبل** أي `await`: لا نستخدم
                       // `BuildContext` بعد فجوة غير متزامنة.
@@ -144,6 +171,18 @@ class AdminDashboardScreen extends StatelessWidget {
                                 onTap: () => Navigator.of(
                                   context,
                                 ).pushNamed(RoutePaths.adminFeatured),
+                              ),
+                              // (P19) قائمة المعلّقين مع قرار مباشر: المسؤول
+                              // يوثّق من اللوحة بنقرة واحدة بلا فتح شاشة أخرى،
+                              // والرفض يفتح سببًا مكتوبًا (لا رفض صامت).
+                              const SizedBox(height: AppSpacing.md),
+                              _PendingTeachersSection(
+                                overview: overview,
+                                onApprove: _approve,
+                                onReject: _reject,
+                                onOpenQueue: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminVerification),
                               ),
                             ],
                           );
@@ -239,6 +278,128 @@ class _OverviewTile extends StatelessWidget {
           StatusChip(label: value, color: accent),
         ],
       ),
+    );
+  }
+}
+
+/// قائمة سريعة للملفات المنتظرة قرارًا، مع إجراء مباشر لكل ملف (P19).
+///
+/// **لماذا هنا وفي «طابور التوثيق» معًا؟** لأن مسار المسؤول اليومي هو: افتح
+/// اللوحة ← «هل يوجد ما ينتظرني؟» ← قرّر. إجباره على فتح شاشة ثانية لكل ملف
+/// يضيف خطوة بلا فائدة. القرار نفسه ليس مكررًا منطقيًا: كلاهما يستدعي
+/// `approveTeacherProfile` / `rejectTeacherProfile` المشتركتين.
+///
+/// نعرض أول ثلاثة ملفات فقط: القائمة الكاملة (مع كل التفاصيل) في شاشة الطابور،
+/// فلا تتحوّل اللوحة إلى جدول طويل.
+class _PendingTeachersSection extends StatelessWidget {
+  const _PendingTeachersSection({
+    required this.overview,
+    required this.onApprove,
+    required this.onReject,
+    required this.onOpenQueue,
+  });
+
+  final _AdminOverview overview;
+  final ValueChanged<TeacherProfile> onApprove;
+  final ValueChanged<TeacherProfile> onReject;
+  final VoidCallback onOpenQueue;
+
+  /// أقصى عدد ملفات معروضة في اللوحة.
+  static const int _visibleLimit = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<TeacherProfile> queue = overview.queue;
+
+    if (queue.isEmpty) {
+      return const EmptyState(
+        icon: Icons.task_alt,
+        title: 'لا ملفات بانتظار التوثيق',
+        message: 'كل من أرسل ملفه رُوجع. سيظهر هنا أي ملف جديد فورًا.',
+      );
+    }
+
+    final List<TeacherProfile> visible = queue
+        .take(_visibleLimit)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SectionHeader(
+          title: 'بانتظار التوثيق',
+          subtitle: 'التوثيق يفتح الملف للطلاب فورًا',
+          icon: Icons.verified_user_outlined,
+        ),
+        for (final TeacherProfile profile in visible) ...<Widget>[
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        profile.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    StatusChip(
+                      label: profile.status.label,
+                      color: AppColors.demoForeground,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  '${profile.subject} • ${profile.stage} • ${profile.locationLabel}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: FilledButton.icon(
+                        key: Key('dashboard-approve-${profile.id}'),
+                        onPressed: () => onApprove(profile),
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('توثيق'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: Key('dashboard-reject-${profile.id}'),
+                        onPressed: () => onReject(profile),
+                        icon: const Icon(Icons.block_outlined, size: 18),
+                        label: const Text('رفض'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (queue.length > visible.length)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const Key('dashboard-open-queue'),
+              onPressed: onOpenQueue,
+              icon: const Icon(Icons.list_alt_outlined, size: 18),
+              label: Text('عرض كل الطابور (${queue.length})'),
+            ),
+          ),
+      ],
     );
   }
 }
