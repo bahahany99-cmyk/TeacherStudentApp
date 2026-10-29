@@ -410,13 +410,23 @@ jobs:
           else
             echo "::warning title=Android permissions::إذن INTERNET غير موجود في البيان المدموج (${merged_manifest:-لم يُعثر على البيان}) — كل طلبات الشبكة ستفشل في نسخة release."
           fi
-          internet_apks=0
-          for apk in build/app/outputs/flutter-apk/*.apk; do
-            if grep -aq 'android.permission.INTERNET' "$apk"; then
-              internet_apks=$((internet_apks + 1))
-            fi
-          done
-          echo "::notice title=Android permissions::نص إذن INTERNET موجود داخل $internet_apks من $(ls build/app/outputs/flutter-apk/*.apk | wc -l) ملف APK."
+          # داخل الـAPK يكون البيان بصيغة XML ثنائية، وقد تُخزَّن النصوص بترميز
+          # UTF-16LE لا UTF-8 — لذلك نبحث بالترميزين. (المحاولة الأولى بالبحث
+          # عن UTF-8 فقط أعطت «0 من 2» رغم أن الإذن موجود: إيجابية سالبة كاذبة.)
+          python3 - <<'APKPERM'
+          import glob
+
+          ascii_form = b'android.permission.INTERNET'
+          utf16_form = ascii_form.decode().encode('utf-16-le')
+          found, total = 0, 0
+          for apk in sorted(glob.glob('build/app/outputs/flutter-apk/*.apk')):
+              total += 1
+              with open(apk, 'rb') as handle:
+                  blob = handle.read()
+              if ascii_form in blob or utf16_form in blob:
+                  found += 1
+          print(f'::notice title=Android permissions::إذن INTERNET موجود داخل {found} من {total} ملف APK.')
+          APKPERM
 
           # إثبات أن **الـمعرّف نفسه** دخل البناء، لا مجرد نص اللاحقة.
           #

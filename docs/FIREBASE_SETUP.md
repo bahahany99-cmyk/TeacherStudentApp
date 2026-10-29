@@ -308,6 +308,28 @@ adb shell dumpsys package com.darsly.app | grep -i permission
 # يجب أن يظهر android.permission.INTERNET
 ```
 
+### 3.10 إن استمر `network-request-failed` بعد §3.9
+
+الاحتمال التالي بالترتيب هو **تقييد مفتاح API** في Google Cloud Console
+(APIs & Services ← Credentials ← عنصر `Android key (auto created by Firebase)`
+← *Application restrictions*). إن كان مضبوطًا على Android مع اسم حزمة/بصمة
+مختلفة عن بصمة توقيعنا، فسيرد Google على الطلبات بـ403، ويظهر ذلك في التطبيق
+كرسالة شبكة لا كرسالة إعداد.
+
+**الفحص:** اسم الحزمة يجب أن يكون `com.darsly.app`، والبصمة المسجّلة يجب أن
+تكون إحدى هذه:
+
+| مفتاح | SHA-1 |
+|---|---|
+| الإصدار الدائم (CI) | `47:48:68:E2:9D:D9:AD:49:B2:FC:08:4F:CA:10:D5:46:84:8B:E8:6F` |
+| debug محلي (`~/.android/debug.keystore`) | يظهر من `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android` |
+
+**حلّ سريع للتحقق (مؤقت):** ضع التقييد على *None* ثم أعد المحاولة؛ إن نجح
+الدخول فالمشكلة في التقييد لا في الكود، ثم أعد التقييد بعد إضافة البصمة.
+
+**تأكيد من الجهاز:** `adb logcat | grep -i "FirebaseAuth\|googleusercontent\|403"`
+يعرض رمز HTTP الحقيقي.
+
 ## 4. أسئلة مفتوحة (تحتاج قرارك قبل الإنتاج)
 
 | السؤال | الأثر |
