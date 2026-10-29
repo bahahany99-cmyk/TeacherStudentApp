@@ -194,7 +194,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        InfoNote(
+                        const InfoNote(
                           text:
                               'كل قرار في هذه اللوحة (توثيق، رفض، حسم بلاغ، '
                               'حذف تقييم) يُفحص في قواعد Firestore بشرط '

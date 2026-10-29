@@ -92,13 +92,25 @@ jobs:
           echo "❌ analyze فشل — الرسائل:"
           cat /tmp/analyze.txt
 
-          head -10 /tmp/analyze.txt | while IFS='|' read -r sev type code file line col len msg; do
-            case "$sev" in
-              ERROR)   echo "::error file=$file,line=$line,col=$col::$code: $msg" ;;
-              WARNING) echo "::warning file=$file,line=$line,col=$col::$code: $msg" ;;
-              INFO)    echo "::notice file=$file,line=$line,col=$col::$code: $msg" ;;
-            esac
-          done
+          # **الترتيب مقصود:** التحذيرات والأخطاء هي التي تُفشل الأمر، والملاحظات
+          # (lints) لا تُفشله. نشر أول عشرة أسطر كما هي كان يملأ الـannotations
+          # بملاحظات `prefer_const_constructors` ويحجب `unused_import` (تحذير)
+          # فيبدو الفشل بلا سبب. ننشر الفئة المُفشِلة أولًا ثم الملاحظات.
+          grep -E '^(ERROR|WARNING)\|' /tmp/analyze.txt \
+            | head -20 \
+            | while IFS='|' read -r sev type code file line col len msg; do
+                if [ "$sev" = "ERROR" ]; then
+                  echo "::error file=$file,line=$line,col=$col::$code: $msg"
+                else
+                  echo "::warning file=$file,line=$line,col=$col::$code: $msg"
+                fi
+              done
+
+          grep -E '^INFO\|' /tmp/analyze.txt \
+            | head -10 \
+            | while IFS='|' read -r sev type code file line col len msg; do
+                echo "::notice file=$file,line=$line,col=$col::$code: $msg"
+              done
 
           exit "$status"
 
