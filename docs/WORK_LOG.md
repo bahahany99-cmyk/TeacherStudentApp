@@ -2196,3 +2196,43 @@ showsGovernorates = governorates.isNotEmpty &&
 و`flutter test` **لم يُشغَّلا**، ونتائجهما غير معروفة. المتحقق محليًا فقط:
 `tool/ci/check_structure.py` ⇒ OK (207 ملف Dart). لا يُدّعى أي «نجاح» قبل
 تشغيلهما في بناء لاحق بإذن صاحب المشروع.
+
+### 22) الدفع والبناء الفعلي (2026-10-29) — CI أخضر وAPKrelease
+
+بناءً على طلب صاحب المشروع «Push & Build Release APK» نُفِّذ البناء عبر وسم
+`[build-release]` في رسالة الدفعة (الطريق المعتمد في `.github/workflows/build.yml`).
+
+**التشغيل الناجح النهائي: `40918594913`** (الدفعة `c41d60e` تقريبًا):
+
+| المهمة | النتيجة |
+|---|---|
+| `analyze · test` | ✅ نجحت — `dart analyze` بلا أخطاء، وكل اختبارات الويدجت/الوحدة ناجحة |
+| `firestore rules (emulator)` | ✅ 209/209 |
+| `build apk (عند الطلب)` | ✅ نجحت |
+
+**دليل الناتج (منشور كـannotations لأن سجلات Actions محجوبة):**
+
+- `app-arm64-v8a-release.apk` = **20.6 MiB** · `app-armeabi-v7a-release.apk` = **18.3 MiB**
+- التوقيع: **release keystore** (لا debug).
+- SHA-1 للشهادتين: `47:48:68:E2:9D:D9:AD:49:B2:FC:08:4F:CA:10:D5:46:84:8B:E8:6F`
+  (مطابق للبصمة المسجّلة في Firebase).
+- `INTERNET` موجود في البيان المدموج **وداخل 2 من 2 APK** (بعد فكّ الضغط).
+- Firebase: 6 تعريفات مدفوعة، ومعرّف المشروع مضمّن في 2 من 2 APK.
+- Google: معرّف عميل الويب (من `FirebasePublicDefaults`) مضمّن في 2 من 2 APK.
+- edge-to-edge: `values` و`values-night` مطابقان (شريط شفاف).
+
+**أخطاء الطريق (كلها في الاختبارات، لا في كود الإنتاج):**
+
+1. `UNCHECKED_USE_OF_NULLABLE_VALUE` — `TextField.enabled` من النوع `bool?`،
+   فصُحّحت المقارنة إلى `enabled == false`.
+2. `Bad state: Too many elements` في `navigation_test` — صار في الرئيسية زرّا
+   «عرض الكل» (المميزون + مجموعاتي)؛ حُدِّد الأول منهما صراحةً.
+3. `Bad state: No element` مرتين في `student_home_test` — قسم غير معروض داخل
+   `IndexedStack` يكون **offstage** ولا يصله أي فارز (حتى مع
+   `skipOffstage: false`، لأن فارز `of:` نفسه افتراضيًا يتخطى offstage).
+   الحل: أمسكنا `TextEditingController` قبل الانتقال.
+
+⚠️ **لا يُدَّعى أن عطل الدخول بـGoogle (`network-request-failed`) حُلّ**: هذا
+البناء يثبت فقط أن التطبيق يُبنى ويجتاز كل الاختبارات وأن معرّف عميل الويب
+وإذن الشبكة داخل الـAPK. الحكم على الدخول يبقى من تجربة الجهاز + الفارق
+التشخيصي في `docs/diagnostics/P18_google_signin_network_failure.md` §5.
