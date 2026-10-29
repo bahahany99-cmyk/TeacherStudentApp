@@ -223,11 +223,11 @@ void main() {
       // (P15) علم واحد لطريقة التقديم، ثم المحافظة والحي للمحاضرة الحضورية.
       expect(find.widgetWithText(SwitchListTile, 'أدرّس عن بُعد'), findsOneWidget);
 
-      final Finder governorate = find.descendant(
-        of: find.byType(TextFormField),
-        matching: find.text('المحافظة (اختياري)'),
-      );
-      expect(governorate, findsOneWidget);
+      // (P19) المحافظة صارت **قائمة منسدلة** لا `TextFormField` نصيًا، فالبحث
+      // داخل `TextFormField` لم يعد صالحًا. نتحقق من الحقل بمفتاحه ثم من
+      // عنوانه الظاهر.
+      expect(find.byKey(const Key('profile-governorate')), findsOneWidget);
+      expect(find.text('المحافظة (اختياري)'), findsWidgets);
       expect(find.text('الحي / المركز (اختياري)'), findsOneWidget);
     });
 
