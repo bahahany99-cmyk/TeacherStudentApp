@@ -400,6 +400,24 @@ jobs:
 
           ls -l build/app/outputs/flutter-apk/*.apk
 
+          # (P18) إثبات إذن الإنترنت في **البيان المدموج** (ملف نصي من Gradle)
+          # وفي ملف APK نفسه. بلا INTERNET يفشل كل طلب شبكي في release، ويظهر
+          # للمستخدم «لا يوجد اتصال بالإنترنت» رغم أن الشبكة تعمل.
+          merged_manifest="$(find build/app/intermediates -name AndroidManifest.xml \
+            -path '*release*' 2>/dev/null | head -1)"
+          if [ -n "$merged_manifest" ] && grep -q 'android.permission.INTERNET' "$merged_manifest"; then
+            echo "::notice title=Android permissions::إذن INTERNET موجود في البيان المدموج ($merged_manifest)."
+          else
+            echo "::warning title=Android permissions::إذن INTERNET غير موجود في البيان المدموج (${merged_manifest:-لم يُعثر على البيان}) — كل طلبات الشبكة ستفشل في نسخة release."
+          fi
+          internet_apks=0
+          for apk in build/app/outputs/flutter-apk/*.apk; do
+            if grep -aq 'android.permission.INTERNET' "$apk"; then
+              internet_apks=$((internet_apks + 1))
+            fi
+          done
+          echo "::notice title=Android permissions::نص إذن INTERNET موجود داخل $internet_apks من $(ls build/app/outputs/flutter-apk/*.apk | wc -l) ملف APK."
+
           # إثبات أن **الـمعرّف نفسه** دخل البناء، لا مجرد نص اللاحقة.
           #
           # ⚠️ خطأ سابق (اكتُشف 2026-10-29): البحث عن

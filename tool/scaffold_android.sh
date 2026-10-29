@@ -77,6 +77,62 @@ open(path, 'w', encoding='utf-8').write(new)
 PY
 fi
 
+# ---------------------------------------------------------------------------
+# إذن الإنترنت في البيان الرئيسي (P18) — عطل حقيقي اكتُشف على جهاز فعلي.
+#
+# قالب Flutter يضع <uses-permission android:name="android.permission.INTERNET"/>
+# في src/debug/AndroidManifest.xml و src/profile/AndroidManifest.xml **فقط**.
+# النتيجة: نسخة release (وهي ما نوزّعه) تخرج بلا إذن إنترنت، فيفشل كل طلب شبكي
+# بـ network-request-failed، ويظهر للمستخدم «لا يوجد اتصال بالإنترنت» رغم أن
+# الشبكة تعمل — وهذا ما حدث بالضبط عند اختيار حساب Google ثم استدعاء Firebase.
+#
+# نضيفه هنا فيبقى ثابتًا في كل بناء، مع ACCESS_NETWORK_STATE لتشخيص حالة الشبكة.
+# ---------------------------------------------------------------------------
+if [[ -f "$MANIFEST" ]]; then
+  python3 - "$MANIFEST" <<'PERMISSIONS'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+
+needed = [
+    'android.permission.INTERNET',
+    'android.permission.ACCESS_NETWORK_STATE',
+]
+
+added = []
+for permission in needed:
+    if permission in src:
+        continue
+    if '<application' in src:
+        # نحافظ على المسافة البادئة لسطر <application> نفسه.
+        index = src.index('<application')
+        line_start = src.rfind('\n', 0, index) + 1
+        indent = src[line_start:index]
+        entry = f'{indent}<uses-permission android:name="{permission}"/>\n'
+        src = src[:line_start] + entry + src[line_start:]
+    else:
+        # بلا <application>: نُدرج قبل إغلاق <manifest>
+        entry = f'    <uses-permission android:name="{permission}"/>\n'
+        src = src.replace('</manifest>', entry + '</manifest>', 1)
+    added.append(permission)
+
+if added:
+    open(path, 'w', encoding='utf-8').write(src)
+    print('✓ أُضيف إلى البيان الرئيسي: ' + '، '.join(added))
+else:
+    print('✓ أذونات الشبكة موجودة مسبقًا في البيان الرئيسي')
+PERMISSIONS
+
+  # تحقق صريح: بلا INTERNET يفشل كل شيء شبكي في release.
+  if grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+    echo "✓ إذن INTERNET مثبّت في البيان الرئيسي (لا debug فقط)"
+  else
+    echo "خطأ: إذن INTERNET غير موجود في $MANIFEST" >&2
+    exit 1
+  fi
+fi
+
 # رفع أدنى إصدار أندرويد إلى 23.
 # السبب: firebase_auth / cloud_firestore (P4) يتطلبان minSdk 23 على الأقل؛
 # القيمة الافتراضية في Flutter قد تكون 21 فتظهر أخطاء بناء متأخرة.

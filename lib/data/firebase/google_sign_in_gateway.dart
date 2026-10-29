@@ -5,6 +5,7 @@ import 'package:teacher_student_app/core/config/firebase_config.dart';
 import 'package:teacher_student_app/core/config/firebase_public_defaults.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/google_sign_in_error_mapper.dart';
+import 'package:teacher_student_app/data/firebase/google_id_token.dart';
 
 /// عقد الحصول على `idToken` من Google عبر الـSDK الأصلي.
 ///
@@ -112,6 +113,25 @@ class GoogleSignInGateway implements GoogleIdTokenProvider {
             'وبصمة SHA-1 (docs/FIREBASE_SETUP.md §3.8).',
       );
     }
+
+    // فحص تشخيصي (P18): هل صدر الرمز لعميل **ويب** مطابق للمُعدّ؟
+    // لو كان المُعدّ معرّف عميل أندرويد (`client_type: 1`)، فسيرفضه Firebase
+    // برسالة غامضة. هنا نقول السبب صراحةً قبل إضاعة محاولة على الشبكة.
+    if (GoogleIdToken.hasForeignAudience(
+      token: idToken,
+      expectedClientId: _webClientId,
+    )) {
+      throw const AppException(
+        AppErrorKind.unavailable,
+        debugMessage: 'idToken audience does not match the configured client id',
+        overrideTitle: 'رمز Google صادر لعميل آخر',
+        overrideMessage:
+            'الرمز الذي أصدره Google ليس لمعرّف عميل الويب المُعدّ في التطبيق '
+            '(غالبًا لُصق معرّف عميل أندرويد، client_type 1، بدل عميل الويب '
+            'client_type 3). راجع docs/FIREBASE_SETUP.md §3.8.',
+      );
+    }
+
     return idToken;
   }
 

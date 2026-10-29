@@ -2061,3 +2061,25 @@ Firebase. لا يمكن للوكيل تنفيذ أيهما (لا صلاحية ع
 حتى لا تُترجم أخطاء Google إلى «تحقّق من البريد وكلمة المرور».
 وعدّلت تحذير التقرير: يقول الآن «(القيمة العامة في الكود)» بدل «غائب» الذي كان
 مضلِّلًا بعد نقل الاعتماد إلى الكود.
+
+### P18 — العطل الجذري: إذن INTERNET غائب من بيان release (2026-10-29)
+
+**من الجهاز:** نافذة Google الأصلية ظهرت واختيار الحساب نجح، ثم فشل الاتصال
+بـFirebase برسالة «لا يوجد اتصال بالإنترنت» — أي أن `signInWithCredential` رمى
+`network-request-failed`، وهذا **ليس** خطأ `serverClientId` (ذاك يعطي
+`invalid-idp-response`).
+
+**السبب المؤكد بالفحص:** `tool/scaffold_android.sh` لم يضف
+`android.permission.INTERNET` إلى `android/app/src/main/AndroidManifest.xml`
+إطلاقًا (المطابقة: 0). قالب Flutter يضعه في `debug/` و`profile/` فقط، فنسخة
+**release** تخرج بلا إذن شبكة ⇒ كل طلب شبكي يفشل. هذا يفسّر أيضًا فشل مسار
+`signInWithProvider` سابقًا بالرسالة نفسها، ولا علاقة له بـGoogle أو Firebase.
+
+**الإصلاح:**
+- `tool/scaffold_android.sh`: إضافة `INTERNET` و`ACCESS_NETWORK_STATE` للبيان
+  الرئيسي (idempotent، مع محافظة على المسافة البادئة) + فحص يفشل البناء إن غابا.
+- CI: إثبات من **البيان المدموج** (`build/app/intermediates/**/release/AndroidManifest.xml`)
+  ومن داخل كل APK.
+- `GoogleIdToken` + فحص `aud`: يكشف حالة لصق معرّف عميل أندرويد بدل الويب
+  برسالة صريحة («رمز Google صادر لعميل آخر») قبل إهدار محاولة شبكة.
+- `firebase_error_mapper`: رسائل `invalid-idp-response` / `invalid-provider-id`.

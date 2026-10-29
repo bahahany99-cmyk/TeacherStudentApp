@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/core/config/firebase_config.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/google_sign_in_error_mapper.dart';
+import 'package:teacher_student_app/core/config/firebase_public_defaults.dart';
+import 'package:teacher_student_app/data/firebase/google_id_token.dart';
 import 'package:teacher_student_app/data/firebase/google_sign_in_gateway.dart';
 
 /// (P18) اختبارات مسار الدخول الأصلي بـGoogle بلا جهاز ولا خدمة Google.
@@ -121,6 +123,8 @@ void main() {
     });
   });
 
+  group('جمهور رمز Google (aud)', _audienceTests);
+
   group('ترتيب أسبقية قيمة معرّف عميل الويب', () {
     test('القيمة المضمّنة تُقرأ من القيم العامة حين لا يوجد dart-define', () {
       // في هذه البيئة لا يوجد --dart-define، فالمصدر هو القيم العامة.
@@ -140,5 +144,63 @@ void main() {
         );
       }
     });
+  });
+}
+
+/// (P18) قراءة `aud` من رمز Google: تشخيص «عميل أندرويد بدل عميل ويب».
+void _audienceTests() {
+  // رموز مصطنعة: التوقيع غير صالح عن قصد (لا نتحقق منه أصلًا).
+  const String webToken =
+      'eyJhbGciOiJSUzI1NiJ9.'
+      'eyJhdWQiOiAiOTU0NjgzMTI3MDAxLXYwc3A2M2IzOTdrcnUyMDY2aDgxYnRhOTh1bjQwdjJk'
+      'LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwgImVtYWlsIjogImFAYi5jIn0.'
+      'c2ln';
+  const String androidToken =
+      'eyJhbGciOiJSUzI1NiJ9.'
+      'eyJhdWQiOiAiOTU0NjgzMTI3MDAxLW90aGVyYXBwaGFzaC5hcHBzLmdvb2dsZXVzZXJjb250'
+      'ZW50LmNvbSJ9.'
+      'c2ln';
+
+  test('يستخرج aud من رمز سليم', () {
+    expect(
+      GoogleIdToken.audience(webToken),
+      FirebasePublicDefaults.googleWebClientId,
+    );
+  });
+
+  test('رمز غير قابل للقراءة يعيد null ولا يرمي', () {
+    expect(GoogleIdToken.audience('not-a-jwt'), isNull);
+    expect(GoogleIdToken.audience('a.b'), isNull);
+    expect(GoogleIdToken.audience('a.!!!.c'), isNull);
+  });
+
+  test('يرصد جمهورًا مختلفًا (عميل أندرويد بدل عميل الويب)', () {
+    expect(
+      GoogleIdToken.hasForeignAudience(
+        token: androidToken,
+        expectedClientId: FirebasePublicDefaults.googleWebClientId,
+      ),
+      isTrue,
+    );
+  });
+
+  test('لا يعترض على رمز مطابق', () {
+    expect(
+      GoogleIdToken.hasForeignAudience(
+        token: webToken,
+        expectedClientId: FirebasePublicDefaults.googleWebClientId,
+      ),
+      isFalse,
+    );
+  });
+
+  test('عدم القدرة على القراءة لا يمنع المحاولة (Firebase يحكم)', () {
+    expect(
+      GoogleIdToken.hasForeignAudience(
+        token: 'garbage',
+        expectedClientId: FirebasePublicDefaults.googleWebClientId,
+      ),
+      isFalse,
+    );
   });
 }
