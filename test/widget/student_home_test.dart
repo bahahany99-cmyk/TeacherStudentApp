@@ -92,9 +92,12 @@ void main() {
 
       // الرئيسية: حقل بحث واحد فعّال. (نحدّد الشاشة لأن `IndexedStack` تبني
       // كل الأقسام، فحقل المدرسين موجود في الشجرة أيضًا.)
+      // `skipOffstage: false` ضروري: بعد الانتقال يصبح قسم الرئيسية offstage
+      // داخل `IndexedStack`، والفارز الافتراضي لا يراه.
       final Finder homeField = find.descendant(
         of: find.byType(StudentHomeScreen),
         matching: find.byType(TextField),
+        skipOffstage: false,
       );
       expect(homeField, findsOneWidget);
       await tester.enterText(homeField, 'رياضيات');
@@ -115,6 +118,7 @@ void main() {
         find.descendant(
           of: find.byType(TeachersScreen),
           matching: find.byType(TextField),
+          skipOffstage: false,
         ),
       );
       expect(field.controller?.text, 'رياضيات');

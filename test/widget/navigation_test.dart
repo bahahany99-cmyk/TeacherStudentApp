@@ -106,7 +106,12 @@ void main() {
     ) async {
       await _enterStudentShell(tester);
 
-      await tapVisible(tester, find.widgetWithText(TextButton, 'عرض الكل'));
+      // (P18) صار في الرئيسية زرّا «عرض الكل»: للمميزين ولـ«مجموعاتي».
+      // الأول في الشجرة هو زر قسم المميزين، وهو المقصود هنا.
+      await tapVisible(
+        tester,
+        find.widgetWithText(TextButton, 'عرض الكل').first,
+      );
 
       _expectTab('المدرسون');
     });
