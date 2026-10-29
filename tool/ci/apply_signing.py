@@ -54,7 +54,10 @@ KTS_SIGNING_BLOCK = """
     // ── توقيع الإصدار (يُضاف آليًا من tool/ci/apply_signing.py) ──────────────
     // كلمة المرور تُقرأ من android/key.properties الذي يُنشأ من أسرار CI فقط،
     // ولا يوجد أي سر في المستودع.
-    val keystoreProperties = java.util.Properties()
+    // ⚠️ في Kotlin DSL يشير `java` إلى امتداد JavaPluginExtension لا إلى الحزمة،
+    // فـ`java.util.Properties()` يفشل («Unresolved reference 'util'»). نستورد
+    // الصنف أعلى الملف ونستخدمه باسمه (انظر ensure_kts_import).
+    val keystoreProperties = Properties()
     val keystorePropertiesFile = rootProject.file("key.properties")
     if (keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
@@ -95,6 +98,20 @@ GROOVY_SIGNING_BLOCK = """
 """
 
 
+KTS_PROPERTIES_IMPORT = 'import java.util.Properties'
+
+
+def ensure_kts_import(source: str) -> str:
+    """يضمن `import java.util.Properties` أعلى ملف Kotlin DSL.
+
+    لماذا أعلى الملف؟ لأن الاستيرادات في Kotlin تسبق كل التصريحات (بما فيها
+    `plugins { }`)، وتكرارها يُبقي الملف صالحًا عند إعادة الحقن.
+    """
+    if KTS_PROPERTIES_IMPORT in source:
+        return source
+    return KTS_PROPERTIES_IMPORT + '\n\n' + source
+
+
 def patch(gradle: pathlib.Path) -> int:
     source = gradle.read_text(encoding='utf-8')
     is_kts = gradle.suffix == '.kts'
@@ -111,6 +128,9 @@ def patch(gradle: pathlib.Path) -> int:
 
     block = KTS_SIGNING_BLOCK if is_kts else GROOVY_SIGNING_BLOCK
     source = source.replace(anchor, block.strip('\n') + '\n\n    ' + anchor, 1)
+
+    if is_kts:
+        source = ensure_kts_import(source)
 
     # استبدال توقيع debug بتوقيع release داخل buildTypes.release فقط.
     patterns = (
