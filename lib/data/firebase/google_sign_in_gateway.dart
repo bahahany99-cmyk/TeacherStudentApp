@@ -63,7 +63,8 @@ class GoogleSignInGateway implements GoogleIdTokenProvider {
   Future<String> obtainIdToken() async {
     if (!_hasWebClientId) {
       // إعداد ناقص: رسالة صريحة الآن أفضل من فشل غامض داخل السكربت.
-      throw const AppException(
+      // ليس `const`: الرسالة تُبنى من شرط على قيمة وقت التشغيل.
+      throw AppException(
         AppErrorKind.unavailable,
         debugMessage: _webClientId.isEmpty
             ? 'web client id is empty'
