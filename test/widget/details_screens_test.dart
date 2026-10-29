@@ -199,7 +199,14 @@ void main() {
         find.byKey(const Key('profile-name')),
         'أ. سارة الخطيب المحدَّثة',
       );
-      await tapVisible(tester, find.widgetWithText(FilledButton, 'حفظ'));
+      // نضغط المعالج مباشرة: النموذج أطول من الشاشة، و`tapVisible` قد يصيب
+      // نقطة خارج منطقة العرض فتضيع النقرة بلا فشل صريح (نفس السبب الموثّق
+      // في اختبار الاسم الفارغ أعلاه).
+      final FilledButton save = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'حفظ'),
+      );
+      save.onPressed!();
+      await tester.pumpAndSettle();
 
       // عاد إلى «ملفي التعريفي»، ولا نص يدّعي غير ذلك.
       _expectTitle('ملفي التعريفي');

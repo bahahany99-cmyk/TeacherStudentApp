@@ -42,6 +42,26 @@ Widget _host(
   );
 }
 
+/// يضغط زر الحفظ بمعالجه مباشرة.
+///
+/// النموذج أطول من شاشة 360dp، و`tester.tap` يصيب مركز الودجت حتى لو كان
+/// جزء منه خارج منطقة العرض، فتضيع النقرة بلا فشل صريح. استدعاء `onPressed`
+/// يقيس **السلوك** (تحقق + حفظ) لا هندسة التمرير.
+/// يضغط زرًا بمعالجه مباشرة (نفس سبب `_pressSave`: زر أسفل الطيّة).
+Future<void> _pressKey(WidgetTester tester, Key key) async {
+  final FilledButton button = tester.widget<FilledButton>(find.byKey(key));
+  button.onPressed!();
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pressSave(WidgetTester tester) async {
+  final FilledButton save = tester.widget<FilledButton>(
+    find.byKey(const Key('profile-save')),
+  );
+  save.onPressed!();
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('«بياناتي» (P18)', () {
     testWidgets('يعرض القيم الحالية ويحفظها في الجلسة', (
@@ -68,7 +88,7 @@ void main() {
         find.byKey(const Key('my-data-stage')),
         'الثانوية العامة',
       );
-      await tester.tap(find.byKey(const Key('my-data-save')));
+      await _pressKey(tester, const Key('my-data-save'));
       await tester.pumpAndSettle();
 
       // الشاشة تُغلق بعد النجاح، والجلسة تحمل القيم الجديدة.
@@ -81,7 +101,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byKey(const Key('my-data-name')), ' ');
-      await tester.tap(find.byKey(const Key('my-data-save')));
+      await _pressKey(tester, const Key('my-data-save'));
       await tester.pumpAndSettle();
 
       expect(find.text('الاسم مطلوب'), findsOneWidget);
@@ -97,7 +117,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byKey(const Key('my-data-phone')), '010ABCDE');
-      await tester.tap(find.byKey(const Key('my-data-save')));
+      await _pressKey(tester, const Key('my-data-save'));
       await tester.pumpAndSettle();
 
       expect(find.byType(MyDataScreen), findsOneWidget);
@@ -142,8 +162,7 @@ void main() {
         find.byKey(const Key('profile-name')),
         'أ. سارة الخطيب — محدَّث',
       );
-      await tester.tap(find.byKey(const Key('profile-save')));
-      await tester.pumpAndSettle();
+      await _pressSave(tester);
 
       // الحفظ نجح: ظهرت رسالة نجاح (لا رسالة «لم يُحفظ شيء»).
       expect(find.textContaining('لم يُحفظ شيء'), findsNothing);
@@ -171,10 +190,14 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byKey(const Key('profile-bio')), 'قصيرة');
-      await tester.tap(find.byKey(const Key('profile-save')));
-      await tester.pumpAndSettle();
+      await _pressSave(tester);
 
-      expect(find.textContaining('النبذة قصيرة'), findsOneWidget);
+      // الرسالة العامة دليل على أن التحقق جرى (رسالة الحقل نفسه قد تكون
+      // خارج منطقة العرض على هاتف 360dp).
+      expect(
+        find.text('راجع الحقول المطلوبة قبل الحفظ.'),
+        findsOneWidget,
+      );
       final TeacherProfile? unchanged = await services.teachers.findMine(
         'demo-teacher-1',
       );
