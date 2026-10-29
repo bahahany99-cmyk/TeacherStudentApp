@@ -384,20 +384,36 @@ jobs:
 
           ls -l build/app/outputs/flutter-apk/*.apk
 
-          # إثبات رياضي أن معرّف عميل الويب **دخل** البناء فعلًا: نبحث عن
-          # اللاحقة المميّزة `.apps.googleusercontent.com` داخل الـAPK.
-          # (لا نطبع القيمة، والقيمة العامة في الكود تُغني عن السر أصلًا.)
-          google_hits=0
-          for apk in build/app/outputs/flutter-apk/*.apk; do
-            if grep -aqF 'apps.googleusercontent.com' "$apk"; then
-              google_hits=$((google_hits + 1))
-            fi
-          done
-          total_apks=$(ls build/app/outputs/flutter-apk/*.apk | wc -l)
-          if [ "$google_hits" -eq "$total_apks" ] && [ "$google_hits" -gt 0 ]; then
-            echo "::notice title=Google sign-in::معرّف عميل الويب مضمّن في $google_hits من $total_apks ملف APK — زر Google سيفتح قائمة الحسابات الأصلية (لا متصفح)."
+          # إثبات أن **الـمعرّف نفسه** دخل البناء، لا مجرد نص اللاحقة.
+          #
+          # ⚠️ خطأ سابق (اكتُشف 2026-10-29): البحث عن
+          # `apps.googleusercontent.com` وحدها يعطي **إيجابية كاذبة**، لأن هذا
+          # النص موجود أصلًا داخل مكتبة google_sign_in_android. لذلك نستخرج
+          # القيمة الفعّالة (من السر إن وُجد، وإلا من القيمة العامة في الكود)
+          # ثم نبحث عنها **كاملة** داخل كل APK. وإن كانت فارغة نصرّح بذلك.
+          effective_id="${GOOGLE_WEB_CLIENT_ID_VALUE:-}"
+          id_source="الأسرار"
+          if [ -z "$effective_id" ]; then
+            effective_id="$(sed -n "s/.*googleWebClientId = '\([^']*\)';.*/\1/p" \
+              lib/core/config/firebase_public_defaults.dart | head -1)"
+            id_source="القيمة العامة في الكود"
+          fi
+
+          if [ -z "$effective_id" ]; then
+            echo "::warning title=Google sign-in::لا معرّف عميل ويب في هذا البناء (لا سر ولا قيمة عامة) ⇒ زر Google سيعرض «تسجيل الدخول بـGoogle غير مُهيّأ» ولن تظهر قائمة الحسابات."
           else
-            echo "::warning title=Google sign-in::لم يُعثر على معرّف عميل الويب داخل $((total_apks - google_hits)) من $total_apks ملف APK — يتطلب السر السادس أو لصق القيمة في FirebasePublicDefaults."
+            google_hits=0
+            total_apks=$(ls build/app/outputs/flutter-apk/*.apk | wc -l)
+            for apk in build/app/outputs/flutter-apk/*.apk; do
+              if grep -aqF "$effective_id" "$apk"; then
+                google_hits=$((google_hits + 1))
+              fi
+            done
+            if [ "$google_hits" -eq "$total_apks" ] && [ "$google_hits" -gt 0 ]; then
+              echo "::notice title=Google sign-in::المعرّف الفعّال (من $id_source) مضمّن في $google_hits من $total_apks ملف APK — زر Google سيفتح قائمة الحسابات الأصلية (لا متصفح)."
+            else
+              echo "::warning title=Google sign-in::المعرّف الفعّال (من $id_source) غير موجود داخل $((total_apks - google_hits)) من $total_apks ملف APK — راجع خطوة البناء."
+            fi
           fi
 
           # إثبات أن قيم Firebase دخلت البناء فعلًا: نبحث عن معرّف المشروع
