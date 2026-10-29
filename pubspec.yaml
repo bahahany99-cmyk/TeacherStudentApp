@@ -46,22 +46,36 @@ dev_dependencies:
   # مئات ملفات PNG في المستودع بلا حاجة.
   flutter_launcher_icons: ^0.14.4
 
-# (P18) هوية أيقونة التطبيق — «درسلي».
+# هوية أيقونة التطبيق — «درسلي» (P20: الهوية البصرية الجديدة).
 #
-# مصدر واحد لكل المنصّتين:
-# - `image_path`: الأيقونة الكاملة (خلفية + علامة) لـiOS والأيقونات القديمة.
-# - `adaptive_icon_background`: لون الهوية نفسه بدل صورة، فيبقى الحجم صغيرًا.
-# - `adaptive_icon_foreground`: العلامة وحدها داخل المنطقة الآمنة (66%)، فلا
-#   تقطعها أقنعة أندرويد الدائرية/المربعة.
+# **لماذا أربعة ملفات لا صورة واحدة؟** لأن كل منصّة تقصّ الأيقونة بشكل مختلف:
+# أندرويد التكيّفي يقصّ الشكل (دائرة/مربع مستدير/قطرة) ويُحرّك الخلفية بتكبير
+# 1.5×، وiOS يضع القناع بنفسه. صورة واحدة مسطّحة تُقصّ أطرافها في منصّة
+# وتظهر سليمة في أخرى، لذلك نفصل الطبقات:
+#
+# - `image_path`: الأيقونة الكاملة (خلفية + علامة) — لـiOS والأيقونات القديمة
+#   (`mipmap-*/ic_launcher.png`) وأي منصّة لا تدعم التكيّفي.
+# - `adaptive_icon_background`: **التدرّج نفسه** (لا لون مسطّح) لطبقة الخلفية،
+#   فيبدو العمق كما في التصميم الأصلي. صورة 1024² مموّهة عمدًا حتى لا يُظهر
+#   التكبير 1.5× أي حِدّة أو كتلة.
+# - `adaptive_icon_foreground`: العلامة وحدها بخلفية شفافة، متمركزة في 58.6%
+#   من اللوحة — داخل المنطقة الآمنة (66%) بهامش، فلا يقطعها أي قناع.
+# - `adaptive_icon_monochrome`: صورة ظلّية أحادية اللون لأيقونات أندرويد 13+
+#   «Themed icons» (تُلوَّن بلوحة النظام). بلا هذا الملف تظهر الأيقونة
+#   الملوّنة وسط أيقونات النظام الأحادية، فتبدو غريبة.
 # - `remove_alpha_ios`: App Store يرفض شفافية في أيقونة iOS.
+#
+# إعادة التوليد: `dart run flutter_launcher_icons` (يتطلب `pub get` أولًا).
+# اشتقاق الطبقات من الصورة الأم موثّق في `tool/icon/build_icon_assets.py`.
 flutter_launcher_icons:
   image_path: assets/icon/app_icon.png
   android: true
   ios: true
   remove_alpha_ios: true
   min_sdk_android: 23
-  adaptive_icon_background: '#8E465F'
+  adaptive_icon_background: assets/icon/app_icon_background.png
   adaptive_icon_foreground: assets/icon/app_icon_foreground.png
+  adaptive_icon_monochrome: assets/icon/app_icon_monochrome.png
   web:
     generate: false
 
