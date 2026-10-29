@@ -257,8 +257,11 @@ Google المدمجة في النظام**، ثم نأخذ `idToken` ونمرّر
      --dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID=…
    ```
 
-**البديل الدائم (بلا أي سر):** القيمة تُلصق مرة واحدة في
-`lib/core/config/firebase_public_defaults.dart` → `googleWebClientId`.
+**البديل الدائم (بلا أي سر) — المستخدم فعلًا:** القيمة موجودة الآن في
+`lib/core/config/firebase_public_defaults.dart` → `googleWebClientId` =
+`954683127001-v0sp63b397kru2066h81bta98un40v2d.apps.googleusercontent.com`
+(رقم مشروع Firebase: `954683127001`). هي القيمة اللازمة، وتُحقِّق الشرط الذي
+تفرضه الحزمة (جمهور `idToken` = عميل **ويب** من نفس مشروع Firebase).
 هي معرّف عام يظهر داخل كل APK أصلًا، وإضافتها هناك تجعل الدخول يعمل في أي
 بناء (CI أو محلي أو نسخة تُعطى لشخص آخر). الأولوية تبقى لقيمة
 `--dart-define` إن وُجدت.

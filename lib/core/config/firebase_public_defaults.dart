@@ -21,7 +21,11 @@ abstract final class FirebasePublicDefaults {
   ///
   /// فارغ يعني: لم يُلصق بعد ⇒ `hasGoogleWebClientId == false` ويظهر للمستخدم
   /// تنبيه إعداد واضح بدل فشل غامض.
-  static const String googleWebClientId = '';
+  /// المصدر: `google-services.json` → عنصر `oauth_client` ذو
+  /// `"client_type": 3` (عميل الويب)، لصقه صاحب المشروع 2026-10-29.
+  // سطر واحد عن قصد (والسطر طويل): خطوة CI تستخرج القيمة من هذا الملف
+  // بتعبير نمطي. أي تقسيم على سطرين يجعل الاستخراج يفشل.
+  static const String googleWebClientId = '954683127001-v0sp63b397kru2066h81bta98un40v2d.apps.googleusercontent.com';
 
   /// لاحقة معرّفات عميل Google الصحيحة — تُستخدم للتحقق من أن القيمة الملصوقة
   /// ليست معرّف تطبيق أندرويد (الذي ينتهي بـ`.apps.googleusercontent.com` أيضًا

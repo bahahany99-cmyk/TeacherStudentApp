@@ -70,6 +70,21 @@ AppException firebaseCodeToException(String code, {String? debugMessage}) {
             'Console (Authentication ← Sign-in method).',
       );
 
+    // (P18) أخطاء خاصة ببيانات اعتماد Google لا بالبريد/كلمة المرور.
+    // وجودها هنا يمنع رسالة مضلِّلة مثل «تحقّق من البريد وكلمة المرور» لمن
+    // سجّل الدخول بـGoogle أصلًا.
+    case 'invalid-idp-response':
+    case 'invalid-provider-id':
+      return AppException(
+        AppErrorKind.unavailable,
+        debugMessage: debugMessage,
+        overrideTitle: 'تعذّر التحقق من حساب Google',
+        overrideMessage:
+            'بيانات اعتماد Google لم تُقبل. تحقّق أن معرّف عميل الويب هو '
+            '«Web client» من نفس مشروع Firebase، وأن بصمة SHA-1 مسجّلة '
+            '(docs/FIREBASE_SETUP.md §3.8).',
+      );
+
     case 'account-exists-with-different-credential':
       return AppException(
         AppErrorKind.invalidInput,

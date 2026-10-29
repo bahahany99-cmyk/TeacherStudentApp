@@ -319,6 +319,14 @@ jobs:
             fi
           done
           if [ -n "$web_id" ]; then
+            # (P18) فحص مشروعية سريع: رقم المشروع في مقدّمة معرّف العميل يجب أن
+            # يطابق FIREBASE_MESSAGING_SENDER_ID. عدم التطابق يعني معرّف عميل
+            # من مشروع Firebase آخر ⇒ فشل الدخول برسالة إعداد.
+            id_project="${web_id%%-*}"
+            if [ -n "$FIREBASE_MESSAGING_SENDER_ID" ] && \
+               [ "$id_project" != "$FIREBASE_MESSAGING_SENDER_ID" ]; then
+              echo "::warning title=Google sign-in::رقم المشروع في معرّف عميل الويب ($id_project) لا يطابق FIREBASE_MESSAGING_SENDER_ID ($FIREBASE_MESSAGING_SENDER_ID) — غالبًا معرّف من مشروع آخر."
+            fi
             report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=موجود"
             echo "::notice title=Google sign-in::معرّف عميل الويب موجود — سيُمرَّر كـserverClientId لفتح قائمة حسابات Google الأصلية."
             # نشاركه مع الخطوة التالية عبر GITHUB_ENV (لا يُطبع أبدًا).
@@ -394,8 +402,10 @@ jobs:
           effective_id="${GOOGLE_WEB_CLIENT_ID_VALUE:-}"
           id_source="الأسرار"
           if [ -z "$effective_id" ]; then
-            effective_id="$(sed -n "s/.*googleWebClientId = '\([^']*\)';.*/\1/p" \
-              lib/core/config/firebase_public_defaults.dart | head -1)"
+            # نقرأ الملف كسطر واحد أولًا حتى ينجح الاستخراج سواء كانت القيمة
+            # في سطرها أو مقسومة على سطرين.
+            effective_id="$(tr '\n' ' ' < lib/core/config/firebase_public_defaults.dart \
+              | sed -n "s/.*googleWebClientId *= *'\([^']*\)'.*/\1/p" | head -1)"
             id_source="القيمة العامة في الكود"
           fi
 
