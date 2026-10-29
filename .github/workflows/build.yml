@@ -410,22 +410,32 @@ jobs:
           else
             echo "::warning title=Android permissions::إذن INTERNET غير موجود في البيان المدموج (${merged_manifest:-لم يُعثر على البيان}) — كل طلبات الشبكة ستفشل في نسخة release."
           fi
-          # داخل الـAPK يكون البيان بصيغة XML ثنائية، وقد تُخزَّن النصوص بترميز
-          # UTF-16LE لا UTF-8 — لذلك نبحث بالترميزين. (المحاولة الأولى بالبحث
-          # عن UTF-8 فقط أعطت «0 من 2» رغم أن الإذن موجود: إيجابية سالبة كاذبة.)
+          # داخل الـAPK يكون البيان بصيغة XML ثنائية **ومضغوطًا**، فالـgrep على
+          # الملف الخام لا يراه (أعطى «0 من 2» زورًا مرتين: مرة لترميز UTF-16،
+          # ومرة للضغط). نفكّ ضغط المدخل ثم نبحث بالترميزين.
           python3 - <<'APKPERM'
           import glob
+          import zipfile
 
-          ascii_form = b'android.permission.INTERNET'
-          utf16_form = ascii_form.decode().encode('utf-16-le')
+          target = 'android.permission.INTERNET'
+          forms = (target.encode(), target.encode('utf-16-le'))
           found, total = 0, 0
           for apk in sorted(glob.glob('build/app/outputs/flutter-apk/*.apk')):
               total += 1
-              with open(apk, 'rb') as handle:
-                  blob = handle.read()
-              if ascii_form in blob or utf16_form in blob:
-                  found += 1
-          print(f'::notice title=Android permissions::إذن INTERNET موجود داخل {found} من {total} ملف APK.')
+              ok = False
+              try:
+                  with zipfile.ZipFile(apk) as bundle:
+                      for name in bundle.namelist():
+                          if not name.endswith('AndroidManifest.xml'):
+                              continue
+                          blob = bundle.read(name)
+                          if any(form in blob for form in forms):
+                              ok = True
+                              break
+              except zipfile.BadZipFile:
+                  ok = False
+              found += 1 if ok else 0
+          print(f'::notice title=Android permissions::إذن INTERNET موجود داخل {found} من {total} ملف APK (بعد فكّ الضغط).')
           APKPERM
 
           # إثبات أن **الـمعرّف نفسه** دخل البناء، لا مجرد نص اللاحقة.
