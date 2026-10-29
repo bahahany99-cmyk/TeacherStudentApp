@@ -60,6 +60,14 @@ class _RealSessionAuthService implements AuthService {
   Future<void> restoreAccount({required String uid}) async {}
 
   @override
+  Future<void> updateProfile({
+    required String uid,
+    required String displayName,
+    String? phone,
+    String? stage,
+  }) async {}
+
+  @override
   Future<AppUser> assignRole({
     required String uid,
     required String displayName,

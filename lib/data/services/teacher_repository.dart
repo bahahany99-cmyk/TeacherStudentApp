@@ -1,5 +1,6 @@
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 
 /// عقد قراءة ملفات المدرسين.
 ///
@@ -18,6 +19,30 @@ abstract interface class TeacherRepository {
   /// استكشاف المدرسين بفلتر (P15): بحث نصي + مادة/مرحلة + عن بُعد/حضوري
   /// بمحافظة. النتيجة تحمل إجمالي الموثّقين قبل فلاتر العميل.
   Future<TeacherSearchResult> search(TeacherFilter filter);
+
+  /// **ملفي أنا** (P18): ملف المدرس الخاص بصاحب الجلسة، بأي حالة.
+  ///
+  /// يختلف عن [findById] جوهريًا: `findById` يُخفي غير الموثّق عن الطلاب، أما
+  /// هنا فالقارئ هو صاحب الملف، وقواعد Firestore تسمح له بقراءته دائمًا
+  /// (`isSelf(uid)`). لذلك يعيد المسودة والمرفوض أيضًا — وإلا لكان المدرس لا
+  /// يستطيع رؤية ملفه بعد الرفض ليعرف السبب ويصحّحه.
+  ///
+  /// `null` تعني «لا ملف بعد» ⇒ الشاشة تعرض نموذج **الإنشاء**.
+  Future<TeacherProfile?> findMine(String uid);
+
+  /// إنشاء ملف المدرس أو تحديث حقوله الوصفية (P18).
+  ///
+  /// - **الإنشاء** (لا مستند): `status = pendingReview` و`ownerId = uid`
+  ///   بانياً على `createdAt`، كما تفرض القاعدة `allow create`.
+  /// - **التحديث**: الحقول الوصفية فقط، والحالة والمالك والحقول الإدارية تبقى
+  ///   كما هي (**merge** لا استبدال كامل) — وهذا ما تقارنه القاعدة عبر
+  ///   `unchangedAdminFields`.
+  ///
+  /// يعيد الملف بعد الكتابة، فتعرضه الشاشة من نفس المصدر بلا قراءة إضافية.
+  Future<TeacherProfile> saveMyProfile({
+    required String uid,
+    required TeacherProfileDraft draft,
+  });
 
   /// ملف مدرس واحد بالمعرّف.
   ///

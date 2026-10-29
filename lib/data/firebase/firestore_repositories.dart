@@ -24,6 +24,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/services/admin_repository.dart';
@@ -195,6 +196,75 @@ class FirestoreTeacherRepository implements TeacherRepository {
         mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
         filter,
       );
+    });
+  }
+
+  @override
+  Future<TeacherProfile?> findMine(String uid) {
+    return _guard(() async {
+      // قراءة مباشرة للمستند: القاعدة تسمح لصاحبه بأي حالة (`isSelf`)، فلا
+      // نحتاج استعلامًا ولا شرط `status` — وإلا لما رأى المدرس مسودته.
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _profiles
+          .doc(uid)
+          .get();
+      final Map<String, Object?>? data = doc.data();
+      if (!doc.exists || data == null) {
+        return null;
+      }
+      return teacherProfileFromMap(doc.id, data);
+    });
+  }
+
+  @override
+  Future<TeacherProfile> saveMyProfile({
+    required String uid,
+    required TeacherProfileDraft draft,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _profiles.doc(uid);
+      final DocumentSnapshot<Map<String, dynamic>> existing = await ref.get();
+
+      if (existing.exists) {
+        // تعديل: الحقول الوصفية فقط. `update` ترفض المستند الغائب — وهذا
+        // مطلوب: لو حُذف الملف بين القراءة والكتابة لا نُنشئه بلا فحص.
+        final Map<String, Object?> changes = draft.toWriteMap();
+        // تفريغ حقل اختياري = **حذفه**، لا تركه بقيمته القديمة. `merge`
+        // وحدها لا تحذف مفاتيح، فالحذف يحتاج `FieldValue.delete()` صريحًا.
+        for (final String field in <String>[
+          'priceHint',
+          'governorate',
+          'district',
+        ]) {
+          if (!changes.containsKey(field)) {
+            changes[field] = FieldValue.delete();
+          }
+        }
+        await ref.update(changes);
+      } else {
+        // إنشاء: الحقول التي تفرضها القاعدة `allow create` حرفيًا.
+        await ref.set(<String, Object?>{
+          ...draft.toWriteMap(),
+          'ownerId': uid,
+          'status': TeacherProfileStatus.pendingReview.wireValue,
+          // (P17) الحقل موجود منذ الإنشاء: استعلامات الاكتشاف تفلتر عليه،
+          // ومستند بلا الحقل لا يظهر في `where(accountHidden == false)`.
+          'accountHidden': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // نقرأ بعد الكتابة بدل تركيب النموذج محليًا: `createdAt` وقت الخادم
+      // والحقول الإدارية لا نعرفها، فالعرض من المصدر أصدق.
+      final DocumentSnapshot<Map<String, dynamic>> saved = await ref.get();
+      final Map<String, Object?> data = saved.data() ?? <String, Object?>{};
+      final TeacherProfile? profile = teacherProfileFromMap(uid, data);
+      if (profile == null) {
+        throw const AppException(
+          AppErrorKind.unavailable,
+          debugMessage: 'teacher profile saved but unreadable',
+        );
+      }
+      return profile;
     });
   }
 

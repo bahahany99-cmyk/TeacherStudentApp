@@ -16,60 +16,131 @@ import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
-/// «ملفي» — الملف التعريفي كما يراه المدرس صاحبه.
+/// «ملفي» — الملف التعريفي كما يراه المدرس صاحبه (P18: حقيقي لا تجريبي).
 ///
-/// نقرأ الملف التجريبي المرتبط بحساب المعاينة ([DemoData.demoTeacherId])، ونعرض
-/// حالته الحقيقية من البيانات بدل وسم ثابت. التعديل يفتح نموذجًا لا يحفظ على
-/// أي خادم (انظر [RoutePaths.editTeacherProfile]).
-class MyTeacherProfileScreen extends StatelessWidget {
+/// - يقرأ **ملف صاحب الجلسة** عبر `findMine(uid)`، لا ملفًا تجريبيًا ثابتًا.
+///   و`findMine` يُعيد ملفه بأي حالة (مسودة/قيد المراجعة/مرفوض/موثّق)، لأن
+///   القواعد تسمح لصاحبه بالقراءة دائمًا.
+/// - **لا ملف بعد** ⇒ زر «إنشاء ملف تعريفي» يفتح النموذج مباشرة.
+/// - بعد أي حفظ يعود النموذج بـ`true` فتُعاد القراءة من الخادم (لا نثق بقيمة
+///   محلية قد تكون كُتبت ثم رُفضت).
+///
+/// حالة الملف تُعرض بوسم صريح مع سبب الرفض إن وُجد — وإلا لن يعرف المدرس
+/// لماذا لا يظهر ملفه للطلاب.
+class MyTeacherProfileScreen extends StatefulWidget {
   const MyTeacherProfileScreen({super.key});
 
   @override
+  State<MyTeacherProfileScreen> createState() => _MyTeacherProfileScreenState();
+}
+
+class _MyTeacherProfileScreenState extends State<MyTeacherProfileScreen> {
+  String? _teacherId;
+
+  /// يُغيَّر بعد كل حفظ ناجح لإجبار `AsyncView` على القراءة من جديد.
+  int _reloads = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _teacherId ??= CurrentTeacher.idOf(SessionScope.read(context));
+  }
+
+  Future<void> _openEditor() async {
+    final bool? saved = await Navigator.of(
+      context,
+    ).pushNamed<bool>(RoutePaths.editTeacherProfile);
+    if (saved == true && mounted) {
+      setState(() => _reloads++);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final String? teacherId = _teacherId;
+
     return Scaffold(
-        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
-        backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('ملفي التعريفي')),
+      // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('ملفي التعريفي'),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('my-profile-edit-action'),
+            tooltip: 'تعديل',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: teacherId == null
+                ? null
+                : () async {
+                    await _openEditor();
+                  },
+          ),
+        ],
+      ),
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            ResponsiveContent(
-              child: AsyncView<TeacherProfile?>(
-                load: () => AppServicesScope.of(
-                  context,
-                ).teachers.findById(DemoData.demoTeacherId),
-                emptyBuilder: (BuildContext context) => const EmptyState(
-                  icon: Icons.person_off_outlined,
-                  title: 'لا يوجد ملف تعريفي',
-                  message: 'لم يُنشأ ملف المدرس بعد.',
-                ),
-                builder: (BuildContext context, TeacherProfile? profile) {
-                  if (profile == null) {
-                    return const EmptyState(
-                      icon: Icons.person_off_outlined,
-                      title: 'لا يوجد ملف تعريفي',
-                    );
-                  }
-                  return _MyProfileBody(profile: profile);
-                },
+        child: teacherId == null
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: EdgeInsets.zero,
+                children: <Widget>[
+                  ResponsiveContent(
+                    child: AsyncView<TeacherProfile?>(
+                      key: ValueKey<String>('$teacherId-$_reloads'),
+                      load: () => AppServicesScope.of(
+                        context,
+                      ).teachers.findMine(teacherId),
+                      builder:
+                          (BuildContext context, TeacherProfile? profile) {
+                            if (profile == null) {
+                              return _NoProfileYet(onCreate: _openEditor);
+                            }
+                            return _MyProfileBody(
+                              profile: profile,
+                              onEdit: _openEditor,
+                            );
+                          },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
+/// لا ملف بعد: حالة فراغ **قابلة للتنفيذ** بدل رسالة صامتة.
+class _NoProfileYet extends StatelessWidget {
+  const _NoProfileYet({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        const DemoBanner(),
+        EmptyState(
+          icon: Icons.person_add_alt_1_outlined,
+          title: 'لا يوجد ملف تعريفي بعد',
+          message:
+              'أنشئ ملفك الآن: المادة والمرحلة والمنطقة ونبذة قصيرة. يظهر '
+              'ملفك للطلاب بعد توثيق الإدارة.',
+          actionLabel: 'إنشاء ملف تعريفي',
+          onActionTap: onCreate,
+        ),
+      ],
+    );
+  }
+}
+
 class _MyProfileBody extends StatelessWidget {
-  const _MyProfileBody({required this.profile});
+  const _MyProfileBody({required this.profile, required this.onEdit});
 
   final TeacherProfile profile;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -159,20 +230,31 @@ class _MyProfileBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
+        // سبب الرفض — يظهر لصاحبه فقط (هنا) لا للطلاب.
+        if (profile.status == TeacherProfileStatus.rejected &&
+            (profile.reviewNote ?? '').isNotEmpty) ...<Widget>[
+          InfoNote(
+            text:
+                'سبب الرفض: ${profile.reviewNote} — صحّح ما يلزم ثم أعد '
+                'الحفظ؛ يعود الملف للمراجعة.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (profile.status != TeacherProfileStatus.verified) ...<Widget>[
+          InfoNote(
+            text:
+                'ملفك لا يظهر للطلاب بعد. حالته «${profile.status.label}» وستظهر '
+                'في البحث بعد توثيق الإدارة.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         SizedBox(
           width: double.infinity,
           child: FilledButton(
-            onPressed: () => Navigator.of(context).pushNamed(
-              RoutePaths.editTeacherProfile,
-            ),
+            key: const Key('my-profile-edit'),
+            onPressed: onEdit,
             child: const Text('تعديل المعلومات'),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        const InfoNote(
-          text:
-              'الحفظ على الخادم غير منفّذ: النموذج يتحقق من المدخلات فقط ولا '
-              'يرسل أي شيء. ربط الحفظ بـFirestore يتم في مرحلة لاحقة.',
         ),
         const SizedBox(height: AppSpacing.sectionGap),
         const SectionHeader(

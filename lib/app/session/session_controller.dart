@@ -142,6 +142,37 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// حفظ الحقول الشخصية (الاسم/الهاتف/المرحلة) ثم تحديث الجلسة.
+  ///
+  /// الترتيب مقصود: **الكتابة أولًا ثم الحالة**. لو حدّثنا الواجهة قبل نجاح
+  /// الكتابة لعرضنا قيمة لم تُحفظ، وهو نفس الخطأ الذي نرفضه في أي شاشة.
+  /// تُرمى الأخطاء كما هي لتعرضها الشاشة.
+  Future<void> updatePersonalInfo({
+    required String displayName,
+    String? phone,
+    String? stage,
+  }) async {
+    final AppUser? current = _user;
+    if (current == null) {
+      throw StateError('لا توجد جلسة نشطة.');
+    }
+
+    final String name = displayName.trim();
+    await _auth.updateProfile(
+      uid: current.id,
+      displayName: name,
+      phone: phone,
+      stage: stage,
+    );
+
+    _user = current.withPersonalInfo(
+      displayName: name,
+      phone: (phone ?? '').trim().isEmpty ? null : phone!.trim(),
+      stage: (stage ?? '').trim().isEmpty ? null : stage!.trim(),
+    );
+    notifyListeners();
+  }
+
   /// بدء جلسة معاينة محلية بدور محدد (طالب/مدرس/إدارة).
   ///
   /// هذه ليست مصادقة ولا تُنشئ حسابًا؛ معطّلة عندما تعمل المصادقة الحقيقية.

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
-import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
@@ -39,10 +38,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _switchRole(UserRole role) {
     SessionScope.read(context).switchDemoRole(role);
-  }
-
-  void _showComingSoon() {
-    AppSnackBar.show(context, AppStrings.comingSoon);
   }
 
   /// تسجيل الخروج: تأكيد ← إنهاء الجلسة ← شاشة الدخول.
@@ -211,9 +206,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'البيانات أعلاه من الجلسة الحالية فقط. عند ربط Firebase '
-                'Authentication ستأتي من حساب Google، وسيُقرأ الدور من مستند '
-                'المستخدم في Firestore — لا يختاره التطبيق.',
+                session.isDemoSession
+                    ? 'هذه جلسة معاينة محلية: البيانات لا تُحفظ على خادم، '
+                          'والدور تختاره أنت للتصفح فقط.'
+                    : 'الاسم والبريد من حسابك، ونوع الحساب مقروء من مستند '
+                          'المستخدم في Firestore — لا يختاره التطبيق.',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -255,9 +252,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const Divider(height: 1),
                     _ProfileTile(
+                      key: const Key('profile-my-data'),
                       icon: Icons.person_outline,
                       label: 'بياناتي',
-                      onTap: _showComingSoon,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.myData),
                     ),
                     const Divider(height: 1),
                     // المفضلة للطالب (P13): المدرس لا يحفظ مدرسين ولا مجموعات.
@@ -282,13 +282,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _ProfileTile(
                       icon: Icons.help_outline,
                       label: 'المساعدة والدعم',
-                      onTap: _showComingSoon,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.support),
                     ),
                     const Divider(height: 1),
                     _ProfileTile(
                       icon: Icons.privacy_tip_outlined,
                       label: 'الشروط وسياسة الخصوصية',
-                      onTap: _showComingSoon,
+                      onTap: () => Navigator.of(
+                        context,
+                      ).pushNamed(RoutePaths.legal),
                     ),
                     const Divider(height: 1),
                     // (P17) زر الخروج داخل «إعدادات الحساب»: نفس المكان في

@@ -21,6 +21,7 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -98,6 +99,17 @@ class DemoAuthService implements AuthService {
   @override
   Future<void> restoreAccount({required String uid}) => throw _notConnected;
 
+  /// الوضع التجريبي: لا مستند ليُحدَّث. لا نرمي خطأ هنا لأن الجلسة نفسها
+  /// تحفظ القيم محليًا (`SessionController.updatePersonalInfo`)، فالتجربة
+  /// تبقى قابلة للاستخدام مع تصريح واضح بأن شيئًا لم يُحفظ على خادم.
+  @override
+  Future<void> updateProfile({
+    required String uid,
+    required String displayName,
+    String? phone,
+    String? stage,
+  }) async {}
+
   @override
   Future<AppUser> assignRole({
     required String uid,
@@ -109,7 +121,9 @@ class DemoAuthService implements AuthService {
 
 class DemoTeacherRepository implements TeacherRepository {
   DemoTeacherRepository({List<TeacherProfile>? source})
-    : _source = source ?? DemoData.teachers;
+    // نسخة **قابلة للنمو** حين لا تُمرَّر قائمة: `DemoData.teachers` ثابتة
+    // (`const`)، وإضافة ملف جديد إليها كانت سترمي `UnsupportedError`.
+    : _source = source ?? <TeacherProfile>[...DemoData.teachers];
 
   /// **نفس القائمة** التي تعدّلها لوحة الإدارة (P14)، ولذلك لا نُخزّن نتيجة
   /// استعلام مؤقتًا: اعتماد ملف يجب أن يظهر في البحث فورًا في الوضع التجريبي.
@@ -139,6 +153,76 @@ class DemoTeacherRepository implements TeacherRepository {
       }
     }
     return Future<TeacherProfile?>.value(null);
+  }
+
+  /// ملفي: بحث بالمعرّف **بأي حالة** (مسودة/مرفوض أيضًا) — مثل صلاحية
+  /// `isSelf` في القواعد، وإلا لما أمكن للمدرس معاينة ملفه قبل التوثيق.
+  @override
+  Future<TeacherProfile?> findMine(String uid) {
+    for (final TeacherProfile teacher in _source) {
+      if (teacher.id == uid) {
+        return Future<TeacherProfile?>.value(teacher);
+      }
+    }
+    return Future<TeacherProfile?>.value(null);
+  }
+
+  /// الحفظ في الوضع التجريبي يعدّل **القائمة المشتركة** نفسها التي يقرأ منها
+  /// البحث ولوحة الإدارة، فالتعديل يظهر فورًا في كل الشاشات (وهو الفرق بين
+  /// معاينة صادقة ومعاينة تكذب). التغيير محلي ويُفقد عند الإغلاق.
+  @override
+  Future<TeacherProfile> saveMyProfile({
+    required String uid,
+    required TeacherProfileDraft draft,
+  }) async {
+    final int index = _source.indexWhere((TeacherProfile t) => t.id == uid);
+
+    if (index < 0) {
+      // ملف جديد يبدأ `pendingReview` تمامًا كالخادم: لا يظهر للطلاب قبل
+      // التوثيق، ولا يمنح المدرس تمييزًا أو تقييمًا من عنده.
+      final TeacherProfile created = TeacherProfile(
+        id: uid,
+        displayName: draft.displayName.trim(),
+        subject: draft.subject.trim(),
+        stage: draft.stage.trim(),
+        area: draft.area.trim(),
+        bio: draft.bio.trim(),
+        status: TeacherProfileStatus.pendingReview,
+        isOnline: draft.isOnline,
+        priceHint: draft.priceHint,
+        governorate: draft.governorate,
+        district: draft.district,
+      );
+      _source.add(created);
+      return created;
+    }
+
+    final TeacherProfile current = _source[index];
+    // بناء صريح لا `copyWith`: `copyWith(x: null)` تعني «بلا تغيير» هناك،
+    // بينما المطلوب هنا أن **يُمحى** الحقل الاختياري إذا فرّغه المدرس —
+    // وهو نفس أثر `FieldValue.delete` على الخادم.
+    final TeacherProfile updated = TeacherProfile(
+      id: current.id,
+      displayName: draft.displayName.trim(),
+      subject: draft.subject.trim(),
+      stage: draft.stage.trim(),
+      area: draft.area.trim(),
+      bio: draft.bio.trim(),
+      // كل ما يملكه الخادم/الإدارة يبقى كما هو حرفيًا.
+      status: current.status,
+      isFeatured: current.isFeatured,
+      featuredOrder: current.featuredOrder,
+      isOnline: draft.isOnline,
+      governorate: draft.governorate,
+      district: draft.district,
+      isAccountHidden: current.isAccountHidden,
+      rating: current.rating,
+      reviewsCount: current.reviewsCount,
+      priceHint: draft.priceHint,
+      reviewNote: current.reviewNote,
+    );
+    _source[index] = updated;
+    return updated;
   }
 }
 

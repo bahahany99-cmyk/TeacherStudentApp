@@ -15,6 +15,8 @@ class AppUser {
     this.hasAdminClaim = false,
     this.status = AccountStatus.active,
     this.scheduledDeletionAt,
+    this.phone,
+    this.stage,
   });
 
   final String id;
@@ -44,8 +46,40 @@ class AppUser {
   /// يُكتب مرة واحدة عند الطلب، ويُحذف عند الاستعادة.
   final DateTime? scheduledDeletionAt;
 
+  /// رقم الهاتف (P18) — يكتبه صاحبه من «بياناتي»، و`null` إن لم يُدخله.
+  ///
+  /// لا يُستخدم للتحقق من الهوية ولا للدخول: مجرد وسيلة تواصل يراها صاحب
+  /// الحساب والمسؤول. القواعد تفرض حدوده (8..20 محرفًا رقميًا).
+  final String? phone;
+
+  /// المرحلة الدراسية للطالب (P18) — اختيارية، تُستخدم في تخصيص العرض لاحقًا.
+  final String? stage;
+
   /// هل الحساب مجدول للحذف؟
   bool get isPendingDeletion => status == AccountStatus.pendingDeletion;
+
+  /// نسخة بعدّل الحقول الشخصية التي يحرّرها صاحب الحساب.
+  ///
+  /// لا نكشف `copyWith` عامًا: الدور والادعاء الإداري وحالة الحذف **ليست**
+  /// حقولًا يحرّرها المستخدم، وتوقيع صريح يمنع تعديلها بالخطأ.
+  AppUser withPersonalInfo({
+    required String displayName,
+    required String? phone,
+    required String? stage,
+  }) {
+    return AppUser(
+      id: id,
+      displayName: displayName,
+      role: role,
+      email: email,
+      isDemoAccount: isDemoAccount,
+      hasAdminClaim: hasAdminClaim,
+      status: status,
+      scheduledDeletionAt: scheduledDeletionAt,
+      phone: phone,
+      stage: stage,
+    );
+  }
 
   /// نسخة بحالة حساب أخرى، مع ضبط الموعد أو محوه.
   ///
@@ -66,6 +100,8 @@ class AppUser {
       scheduledDeletionAt: next == AccountStatus.active
           ? null
           : scheduledDeletionAt,
+      phone: phone,
+      stage: stage,
     );
   }
 

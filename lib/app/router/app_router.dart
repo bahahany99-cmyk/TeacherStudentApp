@@ -25,6 +25,8 @@ import 'package:teacher_student_app/features/groups/presentation/group_members_s
 import 'package:teacher_student_app/features/groups/presentation/group_timetable_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/join_requests_screen.dart';
 import 'package:teacher_student_app/features/notifications/presentation/notifications_screen.dart';
+import 'package:teacher_student_app/features/profile/presentation/my_data_screen.dart';
+import 'package:teacher_student_app/features/profile/presentation/support_screens.dart';
 import 'package:teacher_student_app/features/splash/presentation/splash_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/my_teacher_profile_screen.dart';
@@ -108,6 +110,12 @@ abstract final class AppRouter {
         return _page(BookingDetailsScreen(bookingId: bookingId), settings);
       case RoutePaths.notifications:
         return _page(const NotificationsScreen(), settings);
+      case RoutePaths.myData:
+        return _page(const MyDataScreen(), settings);
+      case RoutePaths.support:
+        return _page(const SupportScreen(), settings);
+      case RoutePaths.legal:
+        return _page(const LegalScreen(), settings);
       case RoutePaths.favorites:
         return _page(const FavoritesScreen(), settings);
       case RoutePaths.directChats:

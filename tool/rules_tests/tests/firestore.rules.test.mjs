@@ -267,6 +267,79 @@ describe('users/{uid} — صاحب الحساب فقط والدور ثابت', (
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// (P18) «بياناتي»: الهاتف والمرحلة يكتبهما صاحبهما، ولا يفتحان بابًا لغيره.
+describe('P18 — users: الهاتف والمرحلة', () => {
+  it('صاحب الحساب يكتب هاتفًا ومرحلة صحيحين', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        displayName: 'طالب محدَّث',
+        phone: '01012345678',
+        stage: 'الثانوية العامة',
+      }),
+    );
+  });
+
+  it('هاتف بحروف مرفوض', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { phone: '010ABC' }),
+    );
+  });
+
+  it('هاتف أقصر من 8 مرفوض، وأطول من 20 مرفوض', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { phone: '0101' }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        phone: '1'.repeat(21),
+      }),
+    );
+  });
+
+  it('مرحلة بحرف واحد مرفوضة', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { stage: 'ث' }),
+    );
+  });
+
+  it('لا يكتب هاتفًا لمستخدم آخر', async () => {
+    await seed([
+      { path: 'users/student-1', data: userDoc('student-1') },
+      { path: 'users/other-1', data: userDoc('other-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asOther(), 'users/student-1'), { phone: '01012345678' }),
+    );
+  });
+
+  it('كتابة الهاتف لا تفتح تغيير الدور ولا حقولًا مجهولة', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        phone: '01012345678',
+        role: 'teacher',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), {
+        phone: '01012345678',
+        isAdmin: true,
+      }),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
   it('الملف غير المعتمد مخفي عن الطلاب والزوار', async () => {
     await seed([
@@ -3709,6 +3782,78 @@ describe('P15 — طريقة التقديم والمكان يكتبها صاحب
     await assertFails(
       updateDoc(doc(asStudent(), 'teacherProfiles/teacher-1'), {
         isOnline: true,
+      }),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// (P18) «ملفي التعريفي»: الحمولة التي يرسلها التطبيق فعلًا من
+// `TeacherProfileDraft.toWriteMap()` — حقول وصفية فقط، بلا status ولا ownerId.
+// الاختبار هنا يثبت أن **شكل الكتابة الحقيقي** مسموح، لا شكلًا نظريًا.
+describe('P18 — حفظ ملف المدرس من التطبيق', () => {
+  const draftFields = {
+    displayName: 'أ. سارة الخطيب',
+    subject: 'الرياضيات',
+    stage: 'الثانوية العامة',
+    area: 'المعادي',
+    bio: 'شرح مبسّط للتفاضل مع تدريبات أسبوعية.',
+    isOnline: true,
+    priceHint: '150 ج.م',
+  };
+
+  it('تحديث الحقول الوصفية وحدها مسموح لصاحب الملف', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), draftFields),
+    );
+  });
+
+  it('حذف حقل اختياري (FieldValue.delete) مسموح', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        priceHint: deleteField(),
+        governorate: deleteField(),
+        district: deleteField(),
+      }),
+    );
+  });
+
+  it('الإنشاء بحالة pendingReview وبلا حقول إدارية مسموح', async () => {
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        ...teacherDoc('teacher-1'),
+        accountHidden: false,
+      }),
+    );
+  });
+
+  it('لا يستطيع إنشاء ملف بحالة موثّق', async () => {
+    await assertFails(
+      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        ...teacherDoc('teacher-1', { status: 'verified' }),
+        accountHidden: false,
+      }),
+    );
+  });
+
+  it('لا يستطيع منح نفسه تمييزًا أثناء الحفظ العادي', async () => {
+    await seed([
+      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        ...draftFields,
+        isFeatured: true,
+        featuredOrder: 1,
       }),
     );
   });

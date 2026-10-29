@@ -17,7 +17,6 @@ abstract final class AppStrings {
   /// النص الكامل أعلاه يبقى لقارئ الشاشة (صدق المعلومة بلا إزعاج بصري).
   static const String demoBannerShort = 'وضع الزائر · بيانات تجريبية';
 
-  static const String comingSoon = 'غير مفعّل في هذه المرحلة';
   static const String retry = 'إعادة المحاولة';
   static const String loading = 'جارٍ التحميل…';
   static const String unknownRoute = 'الصفحة غير موجودة';

@@ -179,6 +179,39 @@ class FirebaseAuthService implements AuthService {
   }
 
   @override
+  Future<void> updateProfile({
+    required String uid,
+    required String displayName,
+    String? phone,
+    String? stage,
+  }) async {
+    final String name = displayName.trim();
+    final String? cleanPhone = _clean(phone);
+    final String? cleanStage = _clean(stage);
+
+    try {
+      // `update` لا `set`: المستند موجود بحكم أن المستخدم مسجّل ومعه دور،
+      // و`update` يفشل بوضوح لو اختفى المستند بدل أن ينشئ مستندًا بلا دور.
+      await _firestore.collection(usersCollection).doc(uid).update(
+        <String, Object?>{
+          'displayName': name,
+          // الحذف لا `null`: القاعدة تقرأ الحقول المسموحة فقط، والحقل الفارغ
+          // يجب أن يختفي بدل أن يُخزَّن كـnull في كل قراءة.
+          'phone': cleanPhone ?? FieldValue.delete(),
+          'stage': cleanStage ?? FieldValue.delete(),
+        },
+      );
+    } on FirebaseException catch (error) {
+      throw firebaseCodeToException(error.code, debugMessage: error.message);
+    }
+  }
+
+  String? _clean(String? value) {
+    final String text = (value ?? '').trim();
+    return text.isEmpty ? null : text;
+  }
+
+  @override
   Future<DateTime> requestAccountDeletion({required String uid}) async {
     final DocumentReference<Map<String, dynamic>> doc = _firestore
         .collection(usersCollection)
@@ -397,6 +430,10 @@ class FirebaseAuthService implements AuthService {
       hasAdminClaim: await _readAdminClaim(user),
       status: status,
       scheduledDeletionAt: scheduledDeletionAt,
+      // (P18) الحقول الشخصية الاختيارية: القراءة متسامحة — مستند قديم بلا
+      // الحقلين يعمل كما هو، فلا حاجة إلى ترحيل بيانات.
+      phone: _clean(doc.data()?['phone'] as String?),
+      stage: _clean(doc.data()?['stage'] as String?),
     );
 
     // حساب مجدول للحذف لا يدخل التطبيق: يُوجَّه إلى شاشة الاستعادة.

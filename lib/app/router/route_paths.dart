@@ -63,6 +63,15 @@ abstract final class RoutePaths {
   /// تعديل معلومات الملف (واجهة المدرس — نموذج عرض لا يحفظ).
   static const String editTeacherProfile = '/me/teacher-profile/edit';
 
+  /// «بياناتي» (P18): تعديل الاسم والهاتف والمرحلة في `users/{uid}`.
+  static const String myData = '/me/data';
+
+  /// المساعدة والدعم (P18) — محتوى إرشادي وقناة تواصل.
+  static const String support = '/support';
+
+  /// الشروط وسياسة الخصوصية (P18).
+  static const String legal = '/legal';
+
   /// لوحة الإدارة (P14) — محمية بـ[AdminGuard] وتُخفي عن غير المسؤول.
   static const String adminDashboard = '/admin';
 

@@ -269,6 +269,59 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # (P18) أيقونة التطبيق: تُولَّد من مصدر واحد (assets/icon/*.png) بعد حل
+      # التبعيات وقبل البناء، فلا نُخزّن مئات ملفات PNG في المستودع.
+      # نفشل البناء لو بقيت أيقونة Flutter الافتراضية: عرض أيقونة خاطئة على
+      # جهاز المستخدم أسوأ من فشل بناء صريح.
+      - name: Generate app icon (flutter_launcher_icons)
+        run: |
+          dart run flutter_launcher_icons
+
+      # تحقّق مستقل: أيقونة التطبيق ليست الافتراضية.
+      #
+      # نفصل التحقق عن التوليد: لو فشل التوليد تظهر رسالته وحدها بلا ضجيج، ولو
+      # «نجح» بلا أثر (خطأ إعداد) يمسكه هذا الفحص. أيقونة خاطئة على جهاز
+      # المستخدم أسوأ من بناء يفشل بصراحة.
+      - name: Verify app icon replaced the default
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          ok = True
+          for density in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
+              path = pathlib.Path(
+                  f'android/app/src/main/res/mipmap-{density}/ic_launcher.png'
+              )
+              if not path.exists():
+                  print(f'::error title=app icon::مفقود {path}')
+                  ok = False
+                  continue
+              size = path.stat().st_size
+              print(f'::notice title=app icon::mipmap-{density} = {size} بايت')
+              # أيقونة Flutter الافتراضية ملف مسطّح صغير؛ أيقونتنا صورة كثيفة.
+              if size < 400:
+                  print(f'::error title=app icon::{path} أصغر من أيقونة حقيقية')
+                  ok = False
+
+          if not list(
+              pathlib.Path('android/app/src/main/res').glob(
+                  'mipmap-anydpi-v26/ic_launcher.xml'
+              )
+          ):
+              print('::warning title=app icon::لا يوجد adaptive icon (anydpi-v26)')
+
+          ios_icon = pathlib.Path(
+              'ios/Runner/Assets.xcassets/AppIcon.appiconset/'
+              'Icon-App-1024x1024@1x.png'
+          )
+          if ios_icon.exists():
+              print('::notice title=app icon::أيقونة iOS 1024 مولَّدة')
+          else:
+              print('::warning title=app icon::أيقونة iOS 1024 غير موجودة')
+
+          sys.exit(0 if ok else 1)
+          PYEOF
+
       # (P17) قيم Firebase الخمس تُمرَّر وقت البناء — لا ملف google-services.json.
       # القيم ليست أسرارًا بالمعنى الدقيق (تظهر داخل أي تطبيق Firebase)، لكنها
       # تبقى في Secrets حتى لا يرتبط المستودع بمشروع بعينه.

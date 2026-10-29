@@ -47,7 +47,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 echo "→ توليد مشروع هيكلي في مجلد مؤقت…"
 flutter create \
-  --platforms=android \
+  --platforms=android,ios \
   --org "$ORG" \
   --project-name "$PROJECT_NAME" \
   --description "scaffold only" \
@@ -60,6 +60,19 @@ fi
 
 echo "→ نسخ مجلد المنصة فقط…"
 cp -r "$TMP_DIR/scaffold/android" ./android
+# (P18) iOS أيضًا: مجلد الهيكل فقط، ليكتب فيه مُولِّد الأيقونات
+# (AppIcon.appiconset). لا يُبنى على CI، لكن الأيقونة تبقى جزءًا من المشروع
+# كما يفرضه طلب دعم المنصّتين.
+cp -r "$TMP_DIR/scaffold/ios" ./ios
+
+# ---------------------------------------------------------------------------
+# (P18) أيقونة التطبيق: لا تُولَّد هنا.
+#
+# السبب: توليدها يحتاج `flutter pub get` (لتوفّر حزمة flutter_launcher_icons)،
+# وهذا السكربت يعمل **قبل** حل التبعيات في CI. لذلك خطوة مستقلة في
+# `.github/workflows/build.yml` تنفّذ `dart run flutter_launcher_icons` بعد
+# `flutter pub get`، ومصدر الحقيقة يبقى `assets/icon/*.png` + إعداد pubspec.
+# ---------------------------------------------------------------------------
 
 # ضبط اسم التطبيق الظاهر (مؤقت).
 MANIFEST="android/app/src/main/AndroidManifest.xml"

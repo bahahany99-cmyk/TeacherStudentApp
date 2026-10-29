@@ -1,75 +1,113 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/session/current_teacher.dart';
+import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
-import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
-import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
-/// نموذج تعديل معلومات الملف — **عرض فقط، لا يحفظ**.
+/// نموذج ملف المدرس — **إنشاء أو تعديل، ويحفظ فعلًا** (P18).
 ///
-/// الغرض في هذه المرحلة: تثبيت شكل النموذج وقواعد التحقق (طول الاسم، النبذة،
-/// السعر) قبل بناء الحفظ الفعلي. بعد الضغط على «حفظ» نتحقق ثم نقول الحقيقة:
-/// لم يُرسل شيء إلى أي خادم.
+/// ## ما تغيّر
 ///
-/// سبب مهم: لا نكتب قيمة محلية ونعرضها لاحقًا كأنها محفوظة، لأن ذلك يعطي
-/// انطباعًا خاطئًا بأن التعديل نُفِّذ.
-class EditTeacherProfileScreen extends StatelessWidget {
+/// كان النموذج عرضًا فقط: يتحقق من المدخلات ثم يقول «لم يُحفظ شيء». الآن:
+/// - يقرأ **ملف صاحب الجلسة** (`findMine(uid)`)، لا ملفًا تجريبيًا ثابتًا.
+/// - إن لم يوجد ملف ⇒ يُنشئه بحالة `pendingReview` (نفس ما تفرضه القاعدة).
+/// - إن وُجد ⇒ يُحدّث الحقول الوصفية فقط (merge)، والحالة والحقول الإدارية
+///   تبقى كما هي.
+/// - يعيد `true` عند النجاح حتى تُعيد الشاشة السابقة القراءة.
+///
+/// الحدود مطابقة لـ`firestore.rules`: الطول الأقصى للاسم 80، والنبذة 300،
+/// والمحافظة 40، والحي 60 — فالرفض يحدث هنا أولًا برسالة عربية مفهومة.
+class EditTeacherProfileScreen extends StatefulWidget {
   const EditTeacherProfileScreen({super.key});
 
   @override
+  State<EditTeacherProfileScreen> createState() =>
+      _EditTeacherProfileScreenState();
+}
+
+class _EditTeacherProfileScreenState extends State<EditTeacherProfileScreen> {
+  /// معرّف المدرس يُقرأ مرة واحدة من الجلسة (uid الحقيقي، أو معرّف المعاينة).
+  String? _teacherId;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _teacherId ??= CurrentTeacher.idOf(SessionScope.read(context));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final String? teacherId = _teacherId;
+
     return Scaffold(
-        // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
-        backgroundColor: Colors.transparent,
+      // شفاف لعرض تدرّج الخلفية العالمي.
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('تعديل المعلومات')),
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            ResponsiveContent(
-              child: AsyncView<TeacherProfile?>(
-                load: () => AppServicesScope.of(
-                  context,
-                ).teachers.findById(DemoData.demoTeacherId),
-                emptyBuilder: (BuildContext context) => const EmptyState(
-                  icon: Icons.person_off_outlined,
-                  title: 'لا يوجد ملف تعريفي',
-                  message: 'لا يمكن تعديل ملف غير موجود.',
-                ),
-                builder: (BuildContext context, TeacherProfile? profile) {
-                  if (profile == null) {
-                    return const EmptyState(
-                      icon: Icons.person_off_outlined,
-                      title: 'لا يوجد ملف تعريفي',
-                    );
-                  }
-                  return _EditProfileForm(profile: profile);
-                },
+        child: teacherId == null
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: EdgeInsets.zero,
+                children: <Widget>[
+                  ResponsiveContent(
+                    child: AsyncView<TeacherProfile?>(
+                      // المفتاح يجعل إعادة الفتح تُعيد القراءة بعد أي حفظ.
+                      key: ValueKey<String>(teacherId),
+                      load: () => AppServicesScope.of(
+                        context,
+                      ).teachers.findMine(teacherId),
+                      builder:
+                          (BuildContext context, TeacherProfile? profile) {
+                            // لا ملف ⇒ نموذج إنشاء بقيم مبدئية من الحساب.
+                            return _ProfileForm(
+                              teacherId: teacherId,
+                              initial: profile == null
+                                  ? null
+                                  : TeacherProfileDraft.fromProfile(profile),
+                              initialName:
+                                  SessionScope.read(
+                                    context,
+                                  ).user?.displayName ??
+                                  '',
+                            );
+                          },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
-class _EditProfileForm extends StatefulWidget {
-  const _EditProfileForm({required this.profile});
+class _ProfileForm extends StatefulWidget {
+  const _ProfileForm({
+    required this.teacherId,
+    required this.initial,
+    required this.initialName,
+  });
 
-  final TeacherProfile profile;
+  final String teacherId;
+
+  /// `null` = إنشاء ملف جديد.
+  final TeacherProfileDraft? initial;
+
+  final String initialName;
 
   @override
-  State<_EditProfileForm> createState() => _EditProfileFormState();
+  State<_ProfileForm> createState() => _ProfileFormState();
 }
 
-class _EditProfileFormState extends State<_EditProfileForm> {
+class _ProfileFormState extends State<_ProfileForm> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _subject;
@@ -81,19 +119,23 @@ class _EditProfileFormState extends State<_EditProfileForm> {
   late final TextEditingController _district;
   late bool _isOnline;
 
+  bool _saving = false;
+
   @override
   void initState() {
     super.initState();
-    final TeacherProfile profile = widget.profile;
-    _name = TextEditingController(text: profile.displayName);
-    _subject = TextEditingController(text: profile.subject);
-    _stage = TextEditingController(text: profile.stage);
-    _area = TextEditingController(text: profile.area);
-    _bio = TextEditingController(text: profile.bio);
-    _price = TextEditingController(text: profile.priceHint ?? '');
-    _governorate = TextEditingController(text: profile.governorate ?? '');
-    _district = TextEditingController(text: profile.district ?? '');
-    _isOnline = profile.isOnline;
+    final TeacherProfileDraft? initial = widget.initial;
+    _name = TextEditingController(
+      text: initial?.displayName ?? widget.initialName,
+    );
+    _subject = TextEditingController(text: initial?.subject ?? '');
+    _stage = TextEditingController(text: initial?.stage ?? '');
+    _area = TextEditingController(text: initial?.area ?? '');
+    _bio = TextEditingController(text: initial?.bio ?? '');
+    _price = TextEditingController(text: initial?.priceHint ?? '');
+    _governorate = TextEditingController(text: initial?.governorate ?? '');
+    _district = TextEditingController(text: initial?.district ?? '');
+    _isOnline = initial?.isOnline ?? false;
   }
 
   @override
@@ -109,7 +151,10 @@ class _EditProfileFormState extends State<_EditProfileForm> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saving) {
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) {
       AppSnackBar.show(
         context,
@@ -119,12 +164,61 @@ class _EditProfileFormState extends State<_EditProfileForm> {
       return;
     }
 
-    AppSnackBar.show(
-      context,
-      'لم يُحفظ شيء: النموذج للعرض فقط في هذه المرحلة، والحفظ على الخادم '
-      'سيُضاف لاحقًا.',
-      type: AppMessageType.info,
+    final TeacherProfileDraft draft = TeacherProfileDraft(
+      displayName: _name.text,
+      subject: _subject.text,
+      stage: _stage.text,
+      area: _area.text,
+      bio: _bio.text,
+      isOnline: _isOnline,
+      priceHint: _price.text,
+      governorate: _isOnline ? null : _governorate.text,
+      district: _isOnline ? null : _district.text,
     );
+
+    setState(() => _saving = true);
+    try {
+      await AppServicesScope.of(
+        context,
+      ).teachers.saveMyProfile(uid: widget.teacherId, draft: draft);
+      if (!mounted) {
+        return;
+      }
+
+      final bool isDemo = SessionScope.read(context).isDemoSession;
+      AppSnackBar.show(
+        context,
+        isDemo
+            ? 'حُفظ الملف في هذه الجلسة التجريبية فقط (لا خادم).'
+            : widget.initial == null
+            ? 'أُنشئ ملفك وأُرسل للمراجعة. سيظهر للطلاب بعد التوثيق.'
+            : 'حُفظت التعديلات. تبقى حالة التوثيق كما هي.',
+        type: AppMessageType.success,
+      );
+      Navigator.of(context).pop(true);
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        toAppException(error).message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   /// حقل مكان اختياري: الفراغ مسموح، وأي نص يجب أن يقع بين حرفين والحدّ.
@@ -150,19 +244,33 @@ class _EditProfileFormState extends State<_EditProfileForm> {
     if (text.isEmpty) {
       return '$label مطلوب';
     }
+    if (text.length > 40 && label != 'الاسم') {
+      return '$label طويل جدًا';
+    }
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isNew = widget.initial == null;
+
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           const DemoBanner(),
+          if (isNew) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            const InfoNote(
+              text:
+                  'لا يوجد ملف تعريفي بعد. املأ الحقول التالية ليُنشأ ملفك '
+                  'بحالة «قيد المراجعة»، ويظهر للطلاب بعد توثيق الإدارة.',
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           TextFormField(
+            key: const Key('profile-name'),
             controller: _name,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
@@ -174,14 +282,19 @@ class _EditProfileFormState extends State<_EditProfileForm> {
               if (required != null) {
                 return required;
               }
-              if ((value ?? '').trim().length < 3) {
+              final String text = (value ?? '').trim();
+              if (text.length < 3) {
                 return 'الاسم قصير جدًا (3 أحرف على الأقل)';
+              }
+              if (text.length > 80) {
+                return 'الاسم طويل جدًا (80 حرفًا كحد أقصى)';
               }
               return null;
             },
           ),
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
+            key: const Key('profile-subject'),
             controller: _subject,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(labelText: 'المادة'),
@@ -189,6 +302,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           ),
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
+            key: const Key('profile-stage'),
             controller: _stage,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(labelText: 'المرحلة الدراسية'),
@@ -196,6 +310,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           ),
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
+            key: const Key('profile-area'),
             controller: _area,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
@@ -228,6 +343,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
             )
           else ...<Widget>[
             TextFormField(
+              key: const Key('profile-governorate'),
               controller: _governorate,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
@@ -239,6 +355,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
             ),
             const SizedBox(height: AppSpacing.sm),
             TextFormField(
+              key: const Key('profile-district'),
               controller: _district,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
@@ -250,6 +367,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           ],
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
+            key: const Key('profile-bio'),
             controller: _bio,
             maxLines: 4,
             decoration: const InputDecoration(
@@ -270,6 +388,7 @@ class _EditProfileFormState extends State<_EditProfileForm> {
           ),
           const SizedBox(height: AppSpacing.sm),
           TextFormField(
+            key: const Key('profile-price'),
             controller: _price,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
@@ -278,14 +397,23 @@ class _EditProfileFormState extends State<_EditProfileForm> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          FilledButton(onPressed: _save, child: const Text('حفظ')),
+          FilledButton(
+            key: const Key('profile-save'),
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(isNew ? 'إنشاء الملف' : 'حفظ'),
+          ),
           const SizedBox(height: AppSpacing.sm),
           const InfoNote(
             text:
-                'لا يُرسل هذا النموذج أي بيانات، ولا يُحدَّث الملف بعد الحفظ. '
-                'وجوده الآن لتثبيت الحقول وقواعد التحقق قبل ربط Firestore. '
-                'قيم طريقة التقديم والمكان هنا مطابقة لما تفرضه قواعد الأمان '
-                'على صاحب الملف (حقول وصفية فقط، والتمييز إداري).',
+                'يُحفظ الملف في `teacherProfiles` ويبقى «قيد المراجعة» حتى '
+                'توثّقه الإدارة. التمييز في الصفحة الرئيسية قرار إداري لا '
+                'يُضبط من هنا.',
           ),
           const SizedBox(height: AppSpacing.lg),
         ],
