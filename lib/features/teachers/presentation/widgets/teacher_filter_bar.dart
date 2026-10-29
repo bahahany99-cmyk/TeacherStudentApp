@@ -13,13 +13,36 @@ import 'package:teacher_student_app/data/models/teacher_filter.dart';
 ///
 /// المكوّن عرض فقط: يستقبل الفلتر الحالي ويعيد الجديد عبر [onChanged]، فلا
 /// يعرف مستودعًا ولا حالة — ما يجعله قابلًا للاختبار وحده.
+///
+/// ## ثبات التخطيط (P18 — إصلاح «الفلاتر تختفي وتقفز»)
+///
+/// الشكوى كانت: اختيار «عن بُعد» يُخفي صف المحافظات كله، فيقفز صف
+/// «تفريغ الفلاتر» وقائمة النتائج لأعلى، وتبدو الخيارات وكأنها «اختلّت».
+/// السبب كان شرط عرض محسوبًا في البناء:
+///
+/// ```dart
+/// showsGovernorates = governorates.isNotEmpty &&
+///     (delivery != online || governorate != null);   // ← يحذف صفًا كاملًا
+/// ```
+///
+/// الإصلاح بنيوي لا تجميلي: **ارتفاع الشريط ثابت في كل الحالات**. كل الخيارات
+/// تبقى ظاهرة دائمًا، وتتغيّر صلاحيتها فقط:
+///
+/// | الحالة | صف المحافظات |
+/// | --- | --- |
+/// | «الكل» / «حضوري فقط» | حبات مفعّلة + «كل المحافظات» |
+/// | «عن بُعد» | نفس الحبات **ظاهرة لكن غير مفعّلة** + تنبيه داخل الصف |
+/// | قبل وصول المحافظات | سطر انتظار بنفس ارتفاع الحبة (لا قفزة عند الوصول) |
+///
+/// و«تفريغ الفلاتر» انتقل إلى **آخر صف طريقة التقديم** (صف أفقي قابل للتمرير)
+/// بدل صف مستقل يظهر ويختفي — فظهوره لا يحرّك شيئًا رأسيًا.
 class TeacherFilterBar extends StatefulWidget {
   const TeacherFilterBar({
     super.key,
     required this.filter,
     required this.governorates,
-    required this.resultLabel,
     required this.onChanged,
+    this.governoratesLoading = false,
   });
 
   final TeacherFilter filter;
@@ -27,8 +50,9 @@ class TeacherFilterBar extends StatefulWidget {
   /// المحافظات الموجودة فعلًا في البيانات (لا قائمة نظرية).
   final List<String> governorates;
 
-  /// سطر عدد النتائج — يُعرض تحت الشريط.
-  final String resultLabel;
+  /// هل ما زالت قراءة المحافظات جارية؟ يُستخدم لعرض سطر انتظار **بنفس
+  /// الارتفاع** بدل صف فارغ يقفز حين تصل البيانات.
+  final bool governoratesLoading;
 
   final ValueChanged<TeacherFilter> onChanged;
 
@@ -50,6 +74,9 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
   Timer? _debounce;
 
   void _onQueryChanged(String value) {
+    // إعادة بناء محلية فقط: أيقونة المسح تعتمد على وجود نص، ولو انتظرنا الأب
+    // (الذي يتحدّث بعد المهلة) لما ظهرت الأيقونة أثناء الكتابة.
+    setState(() {});
     _debounce?.cancel();
     _debounce = Timer(_typingDelay, () {
       if (mounted) {
@@ -61,10 +88,14 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
   @override
   void didUpdateWidget(TeacherFilterBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // «تفريغ الفلاتر» من الخارج يجب أن يفرّغ الحقل أيضًا.
-    if (widget.filter.query != _query.text &&
-        widget.filter.query != oldWidget.filter.query) {
+    // «تفريغ الفلاتر» أو أي تغيير خارجي للنص يجب أن يفرّغ الحقل أيضًا.
+    if (widget.filter.query != oldWidget.filter.query &&
+        widget.filter.query != _query.text) {
+      _debounce?.cancel();
       _query.text = widget.filter.query;
+      _query.selection = TextSelection.collapsed(
+        offset: _query.text.length,
+      );
     }
   }
 
@@ -77,7 +108,8 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
 
   void _setDelivery(TeacherDeliveryFilter next) {
     // «عن بُعد» تُلغي المحافظة المختارة: محافظة مع «عن بُعد» نتيجة فارغة في
-    // أكثر الحالات، والسلوك المتوقع أن يتكيّف الشريط مع الاختيار.
+    // أكثر الحالات، والسلوك المتوقع أن يتكيّف الشريط مع الاختيار. الصف لا
+    // يُحذف (فلا قفزة) — خيارات المحافظة تبقى ظاهرة لكن غير مفعّلة.
     widget.onChanged(
       next == TeacherDeliveryFilter.online
           ? widget.filter.copyWith(delivery: next, governorate: null)
@@ -85,14 +117,66 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
     );
   }
 
+  /// حبة ثابتة (بلا فعل) بنفس ارتفاع بقية الحبات.
+  ///
+  /// الغرض: تشغل مكانًا مرئيًا بدل إخفاء الصف، فلا يقفز التخطيط عند تغيّر
+  /// الحالة أو عند وصول البيانات.
+  Widget _placeholderChip(String label, {IconData? icon}) {
+    return PillChip(label: label, icon: icon);
+  }
+
+  Widget _governoratesRow(TeacherFilter filter) {
+    final bool onlineOnly = filter.delivery == TeacherDeliveryFilter.online;
+
+    if (widget.governorates.isEmpty) {
+      return PillRow(
+        children: <Widget>[
+          widget.governoratesLoading
+              ? _placeholderChip('جارٍ تحميل المحافظات…', icon: Icons.sync)
+              : _placeholderChip(
+                  'لا توجد محافظات مسجّلة بعد',
+                  icon: Icons.map_outlined,
+                ),
+        ],
+      );
+    }
+
+    return PillRow(
+      children: <Widget>[
+        // تنبيه **داخل الصف** لا فوقه: لا يزيد الارتفاع ولا يزيح شيئًا.
+        // وهو قابل للضغط: نقرة تكفي للانتقال إلى «حضوري فقط».
+        if (onlineOnly)
+          PillChip(
+            label: 'المحافظة تخصّ الحضوري',
+            icon: Icons.info_outline,
+            onTap: () => _setDelivery(TeacherDeliveryFilter.inPerson),
+          ),
+        PillChip(
+          label: 'كل المحافظات',
+          selected: filter.governorate == null,
+          onTap: onlineOnly
+              ? null
+              : () => widget.onChanged(filter.copyWith(governorate: null)),
+        ),
+        for (final String governorate in widget.governorates)
+          PillChip(
+            label: governorate,
+            selected: filter.governorate == governorate,
+            // «عن بُعد» يجعل المحافظة غير ذات معنى: الحبة تبقى **ظاهرة** لكن
+            // معطّلة، بدل أن تُحذف من الصف.
+            onTap: onlineOnly
+                ? null
+                : () => widget.onChanged(
+                    filter.copyWith(governorate: governorate),
+                  ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final TeacherFilter filter = widget.filter;
-    final bool showsGovernorates =
-        widget.governorates.isNotEmpty &&
-        (filter.delivery != TeacherDeliveryFilter.online ||
-            filter.governorate != null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -132,44 +216,12 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
                 selected: filter.delivery == option,
                 onTap: () => _setDelivery(option),
               ),
-          ],
-        ),
-        if (showsGovernorates) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          PillRow(
-            children: <Widget>[
-              PillChip(
-                label: 'كل المحافظات',
-                selected: filter.governorate == null,
-                onTap: () =>
-                    widget.onChanged(filter.copyWith(governorate: null)),
-              ),
-              for (final String governorate in widget.governorates)
-                PillChip(
-                  label: governorate,
-                  selected: filter.governorate == governorate,
-                  onTap: () =>
-                      widget.onChanged(filter.copyWith(governorate: governorate)),
-                ),
-            ],
-          ),
-        ],
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                widget.resultLabel,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
+            // «تفريغ الفلاتر» داخل صف أفقي (لا صف مستقل يظهر ويختفي)، فلا
+            // يتحرك شيء رأسيًا عند تفعيل أول فلتر أو تفريغه.
             if (filter.isActive)
               PillChip(
                 label: 'تفريغ الفلاتر',
                 icon: Icons.filter_alt_off_outlined,
-                dense: true,
                 onTap: () {
                   _debounce?.cancel();
                   _query.clear();
@@ -178,6 +230,10 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
               ),
           ],
         ),
+        const SizedBox(height: AppSpacing.xs),
+        // صف المحافظات: **موجود دائمًا** (بارتفاع ثابت) بعد اكتمال أو بدء
+        // تحميل البيانات، فلا يقفز ما تحته عند تغيير طريقة التقديم.
+        _governoratesRow(filter),
       ],
     );
   }

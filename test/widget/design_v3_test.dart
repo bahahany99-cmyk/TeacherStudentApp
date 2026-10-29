@@ -14,6 +14,7 @@ import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 
+import '../helpers/session_helpers.dart';
 import '../helpers/test_app.dart';
 
 /// اختبارات «النسخة 3» من النظام البصري (2026-10-27): Edge-to-Edge، الشريحة
@@ -44,13 +45,18 @@ void main() {
     ) async {
       usePhoneSurface(tester);
 
+      // (P18) `DemoBanner` صار يتحقق من الجلسة ذاتيًا؛ لقياس شكله نحتاج
+      // جلسة تجريبية حقيقية وإلا عاد `SizedBox.shrink()`.
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: const Scaffold(
-            body: Padding(
-              padding: AppSpacing.pagePadding,
-              child: DemoBanner(),
+        withSession(
+          demoSession(),
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const Scaffold(
+              body: Padding(
+                padding: AppSpacing.pagePadding,
+                child: DemoBanner(),
+              ),
             ),
           ),
         ),
@@ -79,13 +85,17 @@ void main() {
       WidgetTester tester,
     ) async {
       final SemanticsHandle handle = tester.ensureSemantics();
+      // (P18) نفس السبب: الجلسة التجريبية شرط لعرض الشريحة.
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: const Scaffold(
-            body: Padding(
-              padding: AppSpacing.pagePadding,
-              child: DemoBanner(),
+        withSession(
+          demoSession(),
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const Scaffold(
+              body: Padding(
+                padding: AppSpacing.pagePadding,
+                child: DemoBanner(),
+              ),
             ),
           ),
         ),

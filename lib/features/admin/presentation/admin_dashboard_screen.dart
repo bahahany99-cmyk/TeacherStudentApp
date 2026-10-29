@@ -10,7 +10,6 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
-import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
@@ -44,7 +43,6 @@ class AdminDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool isDemo = SessionScope.of(context).isDemoSession;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -58,7 +56,8 @@ class AdminDashboardScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  if (isDemo) const DemoBanner(),
+                  // (P18) التحقق من الجلسة داخل `DemoBanner` نفسه.
+                  const DemoBanner(),
                   const SizedBox(height: AppSpacing.sm),
                   AsyncView<_AdminOverview>(
                     load: () async {

@@ -156,7 +156,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              if (session.isDemoSession) const DemoBanner(),
+              // (P18) لا شرط هنا: `DemoBanner` يتحقق من الجلسة ذاتيًا.
+              const DemoBanner(),
               AppCard(
                 child: Row(
                   children: <Widget>[

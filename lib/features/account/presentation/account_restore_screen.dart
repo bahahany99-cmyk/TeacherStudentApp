@@ -117,7 +117,8 @@ class _AccountRestoreScreenState extends State<AccountRestoreScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  if (session.isDemoSession) const DemoBanner(),
+                  // (P18) التحقق من الجلسة داخل `DemoBanner` نفسه.
+                  const DemoBanner(),
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

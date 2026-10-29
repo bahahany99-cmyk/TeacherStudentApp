@@ -17,6 +17,20 @@ class ShellScope extends InheritedNotifier<ShellController> {
     return scope!.notifier!;
   }
 
+  /// قراءة **آمنة** لا تفترض وجود النطاق: `null` إن لم يوجد (اختبار ويدجت
+  /// منفرد). تُستخدم في شاشات قد تُستضاف خارج الهيكل في الاختبارات.
+  static ShellController? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<ShellScope>()?.notifier;
+  }
+
+  /// قراءة بلا اعتماد **وبلا افتراض وجود النطاق** (في الأحداث).
+  ///
+  /// تُستخدم في شاشات تُستضاف في اختبارات منفردة بلا هيكل تنقّل: التنقل يصبح
+  /// بلا أثر بدل أن يسقط التطبيق بـ assert.
+  static ShellController? readOrNull(BuildContext context) {
+    return context.getInheritedWidgetOfExactType<ShellScope>()?.notifier;
+  }
+
   /// قراءة بلا اعتماد (في الأحداث).
   static ShellController read(BuildContext context) {
     final ShellScope? scope = context.getInheritedWidgetOfExactType<ShellScope>();
