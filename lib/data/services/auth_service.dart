@@ -5,7 +5,9 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 /// عقد خدمة المصادقة.
 ///
 /// التنفيذ الحقيقي (`FirebaseAuthService`) يستخدم:
-/// - `firebase_auth` للبريد/كلمة المرور وGoogle (`signInWithProvider`)
+/// - `google_sign_in` (SDK أصلي) للحصول على `idToken` من Google
+/// - `firebase_auth` للبريد/كلمة المرور، ولتبديل بيانات اعتماد Google
+///   بـ`signInWithCredential` (P18)
 /// - `cloud_firestore` لقراءة `users/{uid}.role` وكتابته مرة واحدة عند الاختيار
 ///
 /// ⚠️ قرار التصميم: الدور **يُقرأ من الخادم** بعد الدخول، ولا يختاره التطبيق
@@ -22,8 +24,9 @@ abstract interface class AuthService {
 
   /// تسجيل الدخول بحساب Google.
   ///
-  /// يفتح واجهة Google الأصلية عبر `signInWithProvider`؛ لا نطلب كلمة مرور
-  /// Google أبدًا داخل التطبيق.
+  /// يفتح قائمة الحسابات المدمجة في النظام عبر `google_sign_in` (SDK أصلي)
+  /// ثم يمرّر `idToken` إلى Firebase؛ لا نطلب كلمة مرور Google أبدًا داخل
+  /// التطبيق، ولا نفتح متصفحًا.
   Future<AuthResult> signInWithGoogle();
 
   /// تسجيل الدخول بالبريد وكلمة المرور.

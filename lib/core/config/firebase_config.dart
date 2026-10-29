@@ -34,6 +34,24 @@ abstract final class FirebaseConfig {
     'FIREBASE_STORAGE_BUCKET',
   );
 
+  /// معرّف عميل **الويب** في مشروع Firebase (P18).
+  ///
+  /// لماذا نحتاجه؟ `google_sign_in` على أندرويد لا يقرأ `google-services.json`
+  /// عندنا (نمرّر إعدادات Firebase عبر `--dart-define` فقط)، فالسكربت الأصلي
+  /// يحتاج `serverClientId` صريحًا ليُصدر `idToken` بجمهور (audience) صحيح
+  /// يقبله Firebase. القيمة هي «Web client (auto created by Google Service)»
+  /// من Google Cloud Console — راجع docs/FIREBASE_SETUP.md §3.8.
+  ///
+  /// ⚠️ ليست سرًا (تظهر في أي عميل ويب)، لكنها تبقى في الأسرار حتى يبقى
+  /// المستودع مستقلًا عن مشروع بعينه.
+  static const String googleWebClientId = String.fromEnvironment(
+    'FIREBASE_GOOGLE_WEB_CLIENT_ID',
+  );
+
+  /// هل معرّف عميل الويب متاح؟ بدونه لا يعمل الدخول الأصلي بـGoogle، فنُظهر
+  /// رسالة إعداد واضحة بدل فشل غامض.
+  static bool get hasGoogleWebClientId => googleWebClientId.isNotEmpty;
+
   /// الحد الأدنى الذي يسمح بتهيئة Firebase: معرّف المشروع ومفتاح الـAPI
   /// ومعرّف التطبيق والمرسل.
   static bool get hasOptions =>

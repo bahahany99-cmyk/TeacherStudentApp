@@ -40,6 +40,7 @@ class ErrorState extends StatelessWidget {
       AppErrorKind.notFound => Icons.search_off,
       AppErrorKind.unavailable => Icons.cloud_off_outlined,
       AppErrorKind.invalidInput => Icons.edit_note_outlined,
+      AppErrorKind.canceled => Icons.close_fullscreen,
       AppErrorKind.unknown => Icons.error_outline,
     };
   }

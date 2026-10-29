@@ -16,11 +16,13 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/auth/presentation/auth_flow.dart';
+import 'package:teacher_student_app/features/auth/presentation/widgets/google_sign_in_button.dart';
 
 /// شاشة تسجيل الدخول.
 ///
 /// الطرق المتاحة (قرار صاحب المشروع 2026-10-27):
-/// 1. Google — عبر `signInWithProvider` من `firebase_auth`.
+/// 1. Google — عبر الـSDK الأصلي `google_sign_in` (P18): قائمة الحسابات
+///    المدمجة في أندرويد ثم تمرير `idToken` إلى Firebase. لا متصفح ولا redirect.
 /// 2. بريد إلكتروني + كلمة مرور — شاشة [RoutePaths.emailAuth].
 ///
 /// إن لم يكن Firebase مُهيَّأ (لا `--dart-define` ولا مشروع)، يُظهر الضغط
@@ -46,7 +48,10 @@ class LoginScreen extends StatelessWidget {
       AppSnackBar.show(
         context,
         '${failure.title} — ${failure.message}',
-        type: AppMessageType.warning,
+        // إلغاء المستخدم لقائمة الحسابات ليس خطأً: لا نُخيفه بلون تحذير.
+        type: failure.kind == AppErrorKind.canceled
+            ? AppMessageType.info
+            : AppMessageType.warning,
       );
     }
   }
@@ -120,10 +125,8 @@ class LoginScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.md),
-                        FilledButton.icon(
+                        GoogleSignInButton(
                           onPressed: () => _signInWithGoogle(context),
-                          icon: const _GoogleGlyph(),
-                          label: const Text('المتابعة باستخدام Google'),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         OutlinedButton.icon(
@@ -174,31 +177,6 @@ class LoginScreen extends StatelessWidget {
           ),
         ),
       );
-  }
-}
-
-/// حرف G بشكل بسيط بدل استخدام شعار Google الرسمي.
-class _GoogleGlyph extends StatelessWidget {
-  const _GoogleGlyph();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: theme.colorScheme.outline),
-      ),
-      child: Text(
-        'G',
-        style: theme.textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
   }
 }
 

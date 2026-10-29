@@ -22,9 +22,16 @@ dependencies:
   # ── P4: أساسيات Firebase ────────────────────────────────────────────────────
   # firebase_core: تهيئة التطبيق فقط.
   firebase_core: ^5.0.0
-  # firebase_auth: بريد/كلمة مرور + Google (تسجيل الدخول بحساب Google يمرّ عبر
-  # `signInWithProvider`، فلا نحتاج حزمة google_sign_in المنفصلة).
+  # firebase_auth: بريد/كلمة مرور + استبدال بيانات اعتماد Google بـFirebase.
   firebase_auth: '>=5.0.0 <8.0.0'
+
+  # ── P18: تسجيل الدخول بـGoogle عبر الـSDK الأصلي ────────────────────────────
+  # لماذا أُضيفت بعد أن كانت مستبعدة؟ `signInWithProvider` (المسار القديم) يفتح
+  # متصفحًا ويحتاج إعداد redirect على الويب، وكان يفشل على أندرويد برسالة
+  # «لا يوجد اتصال بالإنترنت» رغم وجود شبكة. الحزمة الأصلية تعرض قائمة حسابات
+  # Google المدمجة (Credential Manager) ثم نمرّر `idToken` إلى Firebase.
+  # minSdk 23 في `tool/scaffold_android.sh` يفي بمتطلبها.
+  google_sign_in: ^7.2.0
   # cloud_firestore: نقرأ/نكتب مستند المستخدم `users/{uid}` فقط في هذه المرحلة
   # (الدور المختار عند أول دخول). بقية المستودعات تنتقل إلى Firestore في P5.
   cloud_firestore: '>=5.0.0 <8.0.0'
@@ -36,6 +43,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # شعار Google الرسمي (رباعي الألوان) المستخدم في زر الدخول — P18.
+    # راجع assets/images/NOTICE.md لشروط الاستخدام والعلامة التجارية.
+    - assets/images/google_g.png
 
   # خط Cairo (رخصة SIL Open Font License 1.1) — مولَّد كأوزان ثابتة من الخط
   # المتغيّر الرسمي: Regular 400 / SemiBold 600 / Bold 700.

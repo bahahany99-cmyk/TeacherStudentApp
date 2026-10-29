@@ -1954,3 +1954,46 @@ runner. **تسجيلها في Firebase Console خطأ:** ينكسر Google Sign-
 **ملاحظة تشغيلية:** مجلد `signing/` المحلي لا يبقى بين جلسات البيئة؛ النسخة
 الموثوقة الآن هي **GitHub Secrets**، ويجب حفظ نسخة احتياطية لدى صاحب المشروع
 (fقد المفتاح بعد النشر على Play = استحالة تحديث التطبيق).
+
+---
+
+## 19) P18 — تسجيل الدخول بـGoogle عبر الـSDK الأصلي + زر مطابق للعلامة (2026-10-29)
+
+**الشكوى:** الضغط على «المتابعة باستخدام Google» يفتح متصفحًا (Web Redirect)
+ثم يفشل برسالة «لا يوجد اتصال بالإنترنت — تحقّق من الاتصال» مع أن الشبكة تعمل.
+وفوق ذلك الزر كان **بلون الهوية الوردي** بشعار «G» مرسوم بحرف — مخالف لشروط
+علامة Google.
+
+**التشخيص:** `FirebaseAuthService.signInWithGoogle` كان يستخدم
+`signInWithProvider(GoogleAuthProvider())` من `firebase_auth`، وهو مسار ويب
+يعتمد على redirect/متصفح. الرسالة العربية «لا يوجد اتصال» جاءت من ترجمة رمز
+`network-request-failed`، فالخطأ الحقيقي إعدادي لا شبكي.
+
+**ما نُفِّذ:**
+
+| # | التغيير | الملف |
+|---|---|---|
+| 1 | إضافة `google_sign_in: ^7.2.0` (SDK أصلي، Credential Manager) | `pubspec.yaml` |
+| 2 | `FIREBASE_GOOGLE_WEB_CLIENT_ID` عبر `--dart-define` + `hasGoogleWebClientId` | `lib/core/config/firebase_config.dart` |
+| 3 | بوابة مستقلة تُعيد `idToken` وتُترجم أخطاء الحزمة | `lib/data/firebase/google_sign_in_gateway.dart` |
+| 4 | مسار الدخول: قائمة الحسابات ← `GoogleAuthProvider.credential(idToken:)` ← `signInWithCredential` | `lib/data/firebase/firebase_auth_service.dart` |
+| 5 | `signOut` يخرج من Google أيضًا قبل Firebase | same |
+| 6 | نوع خطأ `canceled` (إلغاء المستخدم ليس خطأً) | `lib/core/errors/app_exception.dart` |
+| 7 | ترجمة رموز `google_sign_in` إلى عربية (دالة نقية) | `lib/core/errors/google_sign_in_error_mapper.dart` |
+| 8 | زر أبيض بحدّ `#DADCE0` وشعار Google الرسمي 20×20 ونص `#1F1F1F` | `lib/features/auth/presentation/widgets/google_sign_in_button.dart` |
+| 9 | الشعار الرسمي PNG (144×144، شفاف) + إشعار العلامة | `assets/images/google_g.png`, `NOTICE.md` |
+| 10 | تمرير السر السادس في CI + تحذير عند غيابه (بلا إفشال البناء) | `.github/workflows/build.yml` |
+| 11 | اختبارات: ترجمة الأخطاء + سلوك البوابة بلا معرّف + شكل الزر | `test/unit/google_sign_in_test.dart`, `test/widget/google_button_test.dart` |
+
+**حقائق تقنية مثبتة من التوثيق الرسمي (لا افتراضات):**
+- `google_sign_in` 7.x: `GoogleSignIn.instance.initialize(serverClientId: …)`
+  ثم `authenticate()` ثم `account.authentication.idToken`
+  ([pub.dev](https://pub.dev/packages/google_sign_in)).
+- بلا `google-services.json` **يجب** تمرير `serverClientId` = معرّف عميل الويب
+  ([google_sign_in_android](https://pub.dev/packages/google_sign_in_android)).
+- الحزمة تُصرّح بأن `canceled` بعد اختيار حساب كثيرًا ما يكون **خطأ إعداد**
+  (بصمة SHA-1/اسم حزمة/`serverClientId`) — لذلك الرسالة تذكّر بالإعداد.
+
+**ما بقي غير مُتحقَّق منه:** ظهور قائمة الحسابات فعليًا على جهاز. يحتاج:
+(أ) السر السادس `FIREBASE_GOOGLE_WEB_CLIENT_ID`، (ب) بصمة SHA-1 مسجّلة في
+Firebase. لا يمكن للوكيل تنفيذ أيهما (لا صلاحية على Secrets، ولا جهاز).

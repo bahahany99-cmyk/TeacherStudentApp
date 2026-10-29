@@ -89,7 +89,7 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// تسجيل الدخول بـGoogle (يفتح واجهة Google عبر Firebase).
+  /// تسجيل الدخول بـGoogle (قائمة الحسابات الأصلية في النظام ثم Firebase).
   Future<void> signInWithGoogle() async {
     _apply(await _auth.signInWithGoogle());
     notifyListeners();

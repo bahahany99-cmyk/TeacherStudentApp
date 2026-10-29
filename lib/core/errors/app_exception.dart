@@ -18,6 +18,12 @@ enum AppErrorKind {
   /// مدخلات المستخدم غير صالحة (بريد خاطئ، كلمة مرور ضعيفة…).
   invalidInput,
 
+  /// ألغى المستخدم العملية بنفسه (مثل إغلاق قائمة حسابات Google).
+  ///
+  /// نوع مستقل حتى لا نُخيف المستخدم برسالة خطأ لأنه غيّر رأيه، ولا نعامله
+  /// كنجاح كاذب.
+  canceled,
+
   /// خطأ غير متوقع.
   unknown,
 }
@@ -106,6 +112,7 @@ class AppException implements Exception {
         AppErrorKind.notFound => 'العنصر غير موجود',
         AppErrorKind.unavailable => 'الخدمة غير متاحة الآن',
         AppErrorKind.invalidInput => 'تحقّق من البيانات المُدخلة',
+        AppErrorKind.canceled => 'أُلغي تسجيل الدخول',
         AppErrorKind.unknown => 'حدث خطأ غير متوقع',
       };
 
@@ -119,6 +126,7 @@ class AppException implements Exception {
         AppErrorKind.unavailable =>
           'هذه الميزة تحتاج اتصالًا بالخادم غير مُهيَّأ في هذه النسخة.',
         AppErrorKind.invalidInput => 'راجع الحقول ثم أعد المحاولة.',
+        AppErrorKind.canceled => 'لم يكتمل تسجيل الدخول. يمكنك المحاولة متى شئت.',
         AppErrorKind.unknown => 'أعد المحاولة، وإن تكرر الخطأ أبلغنا عنه.',
       };
 

@@ -191,6 +191,8 @@ keytool -list -v -keystore darsly-release.p12 -storetype PKCS12 -alias darsly
 لجعل بناءات CI موقّعة بمفتاح ثابت، أضف الأسرار الأربعة (انظر `docs/SIGNING.md`):
 `DARSLY_KEYSTORE_BASE64` · `DARSLY_STORE_PASSWORD` · `DARSLY_KEY_ALIAS` ·
 `DARSLY_KEY_PASSWORD`. بعدها تصبح بصمة كل بناء ثابتة وقابلة للتسجيل مرة واحدة.
+✅ (P17/P18) تم رفع الأسرار الأربعة، وبناء `40821394239` أثبت أن الـAPK
+موقّع بـ`47:48:68:…:6F`، وهي البصمة المطلوبة في §3.8.
 
 ### 3.7 أول تشغيل: ما يجب أن يحدث
 
@@ -203,6 +205,63 @@ keytool -list -v -keystore darsly-release.p12 -storetype PKCS12 -alias darsly
    `AppConfig.isDemoMode`).
 6. «حسابي ← إعدادات الحساب ← تسجيل الخروج» يعمل، و«منطقة الخطر ← حذف الحساب»
    يسجّل الخروج فورًا، ثم تسجيل الدخول مرة أخرى يعرض **شاشة الاستعادة**.
+
+### 3.8 تسجيل الدخول بـGoogle عبر الـSDK الأصلي (P18) — خطوة إعداد واحدة
+
+**ماذا تغيّر؟** كان الدخول بـGoogle يمرّ عبر `signInWithProvider` في
+`firebase_auth`، وهو يفتح **متصفحًا/صفحة ويب** ويعتمد على redirect. على أندرويد
+ظهر الفشل كرسالة «لا يوجد اتصال بالإنترنت — تحقّق من الاتصال» رغم وجود شبكة،
+لأن المشكلة في إعداد الـredirect لا في الشبكة.
+
+الآن: حزمة `google_sign_in` (SDK أصلي، Credential Manager) تعرض **قائمة حسابات
+Google المدمجة في النظام**، ثم نأخذ `idToken` ونمرّره إلى Firebase عبر
+`GoogleAuthProvider.credential(idToken: …)` ثم `signInWithCredential`.
+**لا متصفح، ولا redirect، ولا `google-services.json`.**
+
+**ما يلزم منك (مرة واحدة):**
+
+1. **بصمة SHA-1 مسجّلة** في Firebase ← Project settings ← Your apps ← تطبيق
+   أندرويد (`com.darsly.app`) ← *Add fingerprint*. القيمة هي بصمة مفتاح
+   الإصدار الدائم:
+   `47:48:68:E2:9D:D9:AD:49:B2:FC:08:4F:CA:10:D5:46:84:8B:E8:6F`
+   (وإن جرّبت بناء debug محليًا، أضف بصمة مفتاح debug أيضًا:
+   `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`).
+   ⚠️ بصمة واحدة مفقودة = الدخول يفشل، وكثيرًا ما يظهر ذلك كـ«إلغاء» لا كخطأ.
+
+2. **معرّف عميل الويب (Web client ID)** — هذا هو *جمهور* الـ`idToken`:
+   - Firebase Console ← Project settings ← General ← *Your apps* ← انزل إلى
+     **Web apps**؛ إن لم يوجد تطبيق ويب فأضِفه (اسم أي شيء). أو:
+   - Google Cloud Console ← APIs & Services ← Credentials ← انسخ
+     `Client ID` الخاص بـ **Web client (auto created by Google Service)**.
+   - الشكل: `123456789012-xxxxxxxxxxxxxxxx.apps.googleusercontent.com`.
+
+3. **أضِفه سرًّا في GitHub** (اسم السر بالحرف):
+   ```bash
+   gh secret set FIREBASE_GOOGLE_WEB_CLIENT_ID --repo bahahany99-cmyk/TeacherStudentApp
+   # الصق القيمة ثم Enter (لا تُمرّرها في سطر الأوامر حتى لا تُسجَّل في history)
+   ```
+   ثم أعد البناء (`[build-release]`). سيطبع تقرير CI
+   `FIREBASE_GOOGLE_WEB_CLIENT_ID=موجود`.
+   للتشغيل المحلي:
+   ```bash
+   flutter run --dart-define=ENABLE_FIREBASE=true \
+     --dart-define=FIREBASE_PROJECT_ID=… --dart-define=FIREBASE_API_KEY=… \
+     --dart-define=FIREBASE_APP_ID=… --dart-define=FIREBASE_MESSAGING_SENDER_ID=… \
+     --dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID=…
+   ```
+
+**إن نسيت الخطوة 3:** لن يفشل البناء؛ سيظهر زر Google ويعرض عند الضغط
+«تسجيل الدخول بـGoogle غير مُهيّأ — معرّف عميل الويب غير موجود…». هذا سلوك
+مقصود بدل فشل غامض (انظر `GoogleSignInGateway`).
+
+**تشخيص سريع للأعراض:**
+
+| ما تراه | المعنى | ما تفعله |
+|---|---|---|
+| «إعداد Google غير مكتمل» (`clientConfigurationError`) | بصمة SHA-1 أو اسم الحزمة غير مسجّل، أو معرّف عميل الويب خطأ | راجع 1 و2 أعلاه |
+| «أُلغي تسجيل الدخول» مباشرة بعد اختيار الحساب | غالبًا **خطأ إعداد** لا إلغاء (توثيق الحزمة صريح في ذلك) | راجع 1 و2 أعلاه |
+| «تعذّر إكمال الدخول بـGoogle» | عاد `idToken` فارغًا | معرّف عميل الويب ناقص أو ليس من نفس المشروع |
+| يعمل على جهاز ولا يعمل على آخر | بصمة البناء مختلفة (debug/release) | أضف البصمة الناقصة |
 
 ## 4. أسئلة مفتوحة (تحتاج قرارك قبل الإنتاج)
 
@@ -218,5 +277,7 @@ keytool -list -v -keystore darsly-release.p12 -storetype PKCS12 -alias darsly
 - ❌ لم يُنشأ مشروع Firebase، ولم يُجرَّب تسجيل الدخول الحقيقي (لا جهاز ولا مفاتيح).
 - ❌ لا قواعد أمان منشورة: **الوصول إلى Firestore مفتوح/مغلق حسب إعدادك اليدوي**،
   ولا تعتمد على التطبيق في الفرض — راجع §3.4.
-- ❌ بناء APK بعد إضافة `firebase_auth`/`cloud_firestore` لم يُجرَّب في CI بعد
-  (البناء اليدوي غير متاح لبيئة التطوير). أول بناء يدوي منك هو نقطة التحقق.
+- ✅ بناء APK في CI يعمل (20.1/17.8 MiB) وموقّع بمفتاح الإصدار الدائم.
+- ❌ **تسجيل الدخول بـGoogle الأصلي لم يُجرَّب على جهاز بعد**: الكود والحزم
+  وُضعا، لكن قائمة الحسابات تحتاج جهازًا حقيقيًا + بصمة مسجّلة + سر معرّف
+  عميل الويب. هذه هي نقطة التحقق التالية الوحيدة.

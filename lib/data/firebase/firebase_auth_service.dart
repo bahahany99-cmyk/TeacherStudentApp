@@ -7,6 +7,7 @@ import 'package:teacher_student_app/data/models/account_status.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/data/firebase/google_sign_in_gateway.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 
@@ -39,12 +40,20 @@ import 'package:teacher_student_app/data/validation/account_deletion_rules.dart'
 /// ⚠️ الحقول أعلاه هي **كل** ما يكتبه التطبيق. لا يكتب `verified` ولا
 /// `isFeatured` ولا `isAdmin`؛ تغيير الحالة الإدارية خارج التطبيق تمامًا.
 class FirebaseAuthService implements AuthService {
-  FirebaseAuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-    : _auth = auth ?? FirebaseAuth.instance,
-      _firestore = firestore ?? FirebaseFirestore.instance;
+  FirebaseAuthService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    GoogleIdTokenProvider? googleSignIn,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance,
+       _googleSignIn = googleSignIn ?? GoogleSignInGateway();
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+
+  /// مصدر `idToken` من Google — يُحقن في الاختبارات، ويُستخدم التنفيذ الأصلي
+  /// افتراضيًا (P18).
+  final GoogleIdTokenProvider _googleSignIn;
 
   static const String usersCollection = 'users';
 
@@ -76,16 +85,30 @@ class FirebaseAuthService implements AuthService {
 
   @override
   Future<void> signOut() async {
+    // الخروج من Google أولًا (لا يرمي) ثم من Firebase: حتى لا تعود قائمة
+    // الحسابات إلى الحساب السابق عند الدخول التالي.
+    await _googleSignIn.signOut();
     await _auth.signOut();
   }
 
+  /// تسجيل الدخول بـGoogle عبر الـSDK الأصلي (P18).
+  ///
+  /// المسار: قائمة حسابات Google المدمجة ← `idToken` ←
+  /// `GoogleAuthProvider.credential` ← `signInWithCredential`.
+  ///
+  /// لماذا تغيّر هذا؟ `signInWithProvider` يفتح متصفحًا/redirect، وكان يفشل
+  /// على أندرويد برسالة «لا يوجد اتصال بالإنترنت» رغم وجود شبكة.
   @override
   Future<AuthResult> signInWithGoogle() {
     return _guard(() async {
-      final UserCredential credential = await _auth.signInWithProvider(
-        GoogleAuthProvider(),
+      final String idToken = await _googleSignIn.obtainIdToken();
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        idToken: idToken,
       );
-      final User? user = credential.user;
+      final UserCredential credentialResult = await _auth.signInWithCredential(
+        credential,
+      );
+      final User? user = credentialResult.user;
       if (user == null) {
         throw const AppException(
           AppErrorKind.unknown,
