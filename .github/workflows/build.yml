@@ -312,7 +312,6 @@ jobs:
               "GOOGLE_WEB_CLIENT_ID/المتغيرات:$WEB_CLIENT_ID_ALIAS_VAR"; do
             name="${pair%%:*}"
             value="${pair#*:}"
-            where="${name#*/}"
             if [ -n "$value" ] && [ -z "$web_id" ]; then
               web_id="$value"
               web_source="$name"
@@ -332,8 +331,17 @@ jobs:
             # نشاركه مع الخطوة التالية عبر GITHUB_ENV (لا يُطبع أبدًا).
             echo "GOOGLE_WEB_CLIENT_ID_VALUE=$web_id" >> "$GITHUB_ENV"
           else
-            report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=غائب"
-            echo "::warning title=Google sign-in::معرّف عميل الويب غائب — سيبني التطبيق، لكن زر «المتابعة باستخدام Google» سيعرض رسالة إعداد بدل قائمة الحسابات. تحقّق من: (1) الاسم بالحرف FIREBASE_GOOGLE_WEB_CLIENT_ID أو GOOGLE_WEB_CLIENT_ID، (2) أنه في تبويب Secrets لا Variables، (3) أنه في هذا المستودع لا في بيئة محددة. التفاصيل في docs/FIREBASE_SETUP.md §3.8."
+            # لا سر ولا متغيّر — لكن قد تكون القيمة العامة في الكود (P18)، وهي
+            # كافية تمامًا. نميّز الحالتين حتى لا يقرأ أحدهم تحذيرًا كاذبًا.
+            code_id="$(tr '\n' ' ' < lib/core/config/firebase_public_defaults.dart \
+              | sed -n "s/.*googleWebClientId *= *'\([^']*\)'.*/\1/p" | head -1)"
+            if [ -n "$code_id" ]; then
+              report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=(القيمة العامة في الكود)"
+              echo "::notice title=Google sign-in::لا سر ولا متغيّر باسم معرّف عميل الويب، لكن القيمة العامة موجودة في FirebasePublicDefaults ⇒ الدخول بـGoogle مُهيّأ. (وجود السر ليس مطلوبًا.)"
+            else
+              report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=غائب"
+              echo "::warning title=Google sign-in::لا معرّف عميل ويب في أي مكان (لا سر، لا متغيّر، لا قيمة عامة) — سيبني التطبيق، لكن زر «المتابعة باستخدام Google» سيعرض رسالة إعداد بدل قائمة الحسابات. التفاصيل في docs/FIREBASE_SETUP.md §3.8."
+            fi
           fi
           echo "::notice title=Firebase secrets::$report"
           if [ "$missing" -eq 0 ]; then
