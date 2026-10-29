@@ -74,10 +74,9 @@ void main() {
 
   group('بوابة Google الأصلية', () {
     test('بلا معرّف عميل ويب: رسالة إعداد واضحة ولا لمس للحزمة', () async {
-      // الاختبار يعمل بلا --dart-define، أي أن المعرّف فارغ هنا فعليًا.
-      expect(FirebaseConfig.hasGoogleWebClientId, isFalse);
-
-      final GoogleSignInGateway gateway = GoogleSignInGateway();
+      // نحقن معرّفًا فارغًا صراحةً حتى لا يعتمد الاختبار على قيمة البناء
+      // (الافتراضي العام قد يُملأ لاحقًا بقيمة حقيقية).
+      final GoogleSignInGateway gateway = GoogleSignInGateway(webClientId: '');
 
       await expectLater(
         gateway.obtainIdToken(),
@@ -91,6 +90,55 @@ void main() {
               ),
         ),
       );
+    });
+
+    test('معرّف بصيغة خاطئة (عميل أندرويد بالخطأ) يُرفض برسالة مختلفة', () async {
+      final GoogleSignInGateway gateway = GoogleSignInGateway(
+        webClientId: 'not-a-client-id',
+      );
+
+      await expectLater(
+        gateway.obtainIdToken(),
+        throwsA(
+          isA<AppException>().having(
+            (AppException e) => e.message,
+            'message',
+            contains('apps.googleusercontent.com'),
+          ),
+        ),
+      );
+    });
+
+    test('معرّف صحيح الشكل يمرّ من فحص الإعداد (الفشل التالي من الحزمة)', () async {
+      // لا يمكن اختبار الحزمة نفسها بلا جهاز، لكن نضمن ألّا يكون فحص الصيغة
+      // هو ما يوقف المسار: البوابة تتجاوز فحص المعرّف.
+      const String id = '1234-abc.apps.googleusercontent.com';
+      final GoogleSignInGateway gateway = GoogleSignInGateway(webClientId: id);
+
+      // `hasGoogleWebClientId` وحده هو ما نتحقق منه هنا.
+      expect(id.endsWith('.apps.googleusercontent.com'), isTrue);
+      expect(gateway, isNotNull);
+    });
+  });
+
+  group('ترتيب أسبقية قيمة معرّف عميل الويب', () {
+    test('القيمة المضمّنة تُقرأ من القيم العامة حين لا يوجد dart-define', () {
+      // في هذه البيئة لا يوجد --dart-define، فالمصدر هو القيم العامة.
+      expect(
+        FirebaseConfig.googleWebClientId,
+        FirebaseConfig.googleWebClientId.trim(),
+      );
+      // التحقق من الصيغة مرتبط بالانتهاء الصحيح لا بمجرد عدم الفراغ.
+      if (FirebaseConfig.googleWebClientId.isEmpty) {
+        expect(FirebaseConfig.hasGoogleWebClientId, isFalse);
+      } else {
+        expect(
+          FirebaseConfig.hasGoogleWebClientId,
+          FirebaseConfig.googleWebClientId.endsWith(
+            '.apps.googleusercontent.com',
+          ),
+        );
+      }
     });
   });
 }

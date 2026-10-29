@@ -1,5 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 
+import 'package:teacher_student_app/core/config/firebase_public_defaults.dart';
+
 /// إعدادات مشروع Firebase، تأتي **وقت البناء** عبر `--dart-define`.
 ///
 /// لماذا لا نقرأ `google-services.json`؟
@@ -42,15 +44,30 @@ abstract final class FirebaseConfig {
   /// يقبله Firebase. القيمة هي «Web client (auto created by Google Service)»
   /// من Google Cloud Console — راجع docs/FIREBASE_SETUP.md §3.8.
   ///
-  /// ⚠️ ليست سرًا (تظهر في أي عميل ويب)، لكنها تبقى في الأسرار حتى يبقى
-  /// المستودع مستقلًا عن مشروع بعينه.
-  static const String googleWebClientId = String.fromEnvironment(
+  /// ⚠️ ليست سرًا (تظهر في أي عميل ويب ومرفقة بكل APK).
+  static const String _googleWebClientIdDefine = String.fromEnvironment(
     'FIREBASE_GOOGLE_WEB_CLIENT_ID',
   );
 
-  /// هل معرّف عميل الويب متاح؟ بدونه لا يعمل الدخول الأصلي بـGoogle، فنُظهر
-  /// رسالة إعداد واضحة بدل فشل غامض.
-  static bool get hasGoogleWebClientId => googleWebClientId.isNotEmpty;
+  /// معرّف عميل الويب الفعّال.
+  ///
+  /// الأفضلية: قيمة البناء (`--dart-define`) ثم الافتراضي العام في
+  /// `FirebasePublicDefaults` (P18). وجود الافتراضي يجعل الدخول يعمل في أي
+  /// بناء بلا أي إعداد من GitHub، والقيمة نُقطِّع المسافات احتياطًا عند اللصق.
+  static String get googleWebClientId {
+    final String defined = _googleWebClientIdDefine.trim();
+    return defined.isNotEmpty
+        ? defined
+        : FirebasePublicDefaults.googleWebClientId.trim();
+  }
+
+  /// هل معرّف عميل الويب متاح **وبصيغة صحيحة**؟ بدونه لا يعمل الدخول الأصلي
+  /// بـGoogle، فنُظهر رسالة إعداد واضحة بدل فشل غامض.
+  static bool get hasGoogleWebClientId =>
+      googleWebClientId.isNotEmpty &&
+      googleWebClientId.endsWith(
+        FirebasePublicDefaults.googleClientIdSuffix,
+      );
 
   /// الحد الأدنى الذي يسمح بتهيئة Firebase: معرّف المشروع ومفتاح الـAPI
   /// ومعرّف التطبيق والمرسل.

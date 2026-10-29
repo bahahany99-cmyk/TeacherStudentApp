@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:teacher_student_app/core/config/firebase_config.dart';
+import 'package:teacher_student_app/core/config/firebase_public_defaults.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/google_sign_in_error_mapper.dart';
 
@@ -39,9 +40,15 @@ abstract interface class GoogleIdTokenProvider {
 ///
 /// لا يحتاج `google-services.json` إطلاقًا، تمامًا كبقية إعداد Firebase هنا.
 class GoogleSignInGateway implements GoogleIdTokenProvider {
-  GoogleSignInGateway({GoogleSignIn? client}) : _injected = client;
+  GoogleSignInGateway({GoogleSignIn? client, String? webClientId})
+    : _injected = client,
+      _webClientId = (webClientId ?? FirebaseConfig.googleWebClientId).trim();
 
   final GoogleSignIn? _injected;
+
+  /// معرّف عميل الويب الفعّال لهذه البوابة (قابل للتجاوز في الاختبارات حتى لا
+  /// يعتمد الاختبار على قيمة البناء).
+  final String _webClientId;
 
   /// الحزمة تُحقن في الاختبارات فقط؛ في التشغيل نأخذ المفردة عند أول استخدام
   /// (لا نلمس `GoogleSignIn.instance` في الباني، حتى لا يتأثر أي اختبار واجهة
@@ -54,15 +61,20 @@ class GoogleSignInGateway implements GoogleIdTokenProvider {
 
   @override
   Future<String> obtainIdToken() async {
-    if (!FirebaseConfig.hasGoogleWebClientId) {
+    if (!_hasWebClientId) {
       // إعداد ناقص: رسالة صريحة الآن أفضل من فشل غامض داخل السكربت.
       throw const AppException(
         AppErrorKind.unavailable,
-        debugMessage: 'FIREBASE_GOOGLE_WEB_CLIENT_ID is empty',
+        debugMessage: _webClientId.isEmpty
+            ? 'web client id is empty'
+            : 'web client id has an unexpected format',
         overrideTitle: 'تسجيل الدخول بـGoogle غير مُهيّأ',
-        overrideMessage:
-            'معرّف عميل الويب (Web client ID) غير موجود في بناء التطبيق. '
-            'أضِفه إلى الأسرار ثم أعد البناء (docs/FIREBASE_SETUP.md §3.8).',
+        overrideMessage: _webClientId.isEmpty
+            ? 'معرّف عميل الويب (Web client ID) غير موجود في بناء التطبيق. '
+                  'راجع docs/FIREBASE_SETUP.md §3.8.'
+            : 'معرّف عميل الويب ليس بصيغة صحيحة (يجب أن ينتهي بـ'
+                  '.apps.googleusercontent.com). غالبًا لُصق معرّف عميل '
+                  'أندرويد بالخطأ.',
       );
     }
 
@@ -114,14 +126,22 @@ class GoogleSignInGateway implements GoogleIdTokenProvider {
     }
   }
 
+  /// نفس تحقق `FirebaseConfig.hasGoogleWebClientId` لكن على القيمة المحقونة:
+  /// وجود القيمة + انتهاؤها بـ`.apps.googleusercontent.com` (يرفض لصق معرّف
+  /// عميل أندرويد بالخطأ أو قيمة مقطوعة، وهو خطأ شائع).
+  bool get _hasWebClientId {
+    if (_webClientId.isEmpty) {
+      return false;
+    }
+    return _webClientId.endsWith(FirebasePublicDefaults.googleClientIdSuffix);
+  }
+
   Future<void> _ensureInitialized() async {
     if (_initialized) {
       return;
     }
     try {
-      await _client.initialize(
-        serverClientId: FirebaseConfig.googleWebClientId,
-      );
+      await _client.initialize(serverClientId: _webClientId);
       _initialized = true;
     } on GoogleSignInException catch (error) {
       throw googleSignInCodeToException(
