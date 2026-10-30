@@ -2789,7 +2789,23 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
    وحفظ ملف موثّق يمرّ بحوار إعادة التحقق (أُضيف `pressProfileSave`)؛
    و`buildTestApp(services:)` لرفع صورة الحساب قبل الحفظ.
 
-### 7) حدود الأمانة
+### 7) بناء APK الإصدار النهائي — التشغيل `41034573461` (`[build-release]`)
+
+| المهمة | النتيجة |
+|---|---|
+| `analyze · test` | ✅ |
+| `firestore rules (emulator)` | ✅ 259/259 |
+| `build apk (عند الطلب)` | ✅ **نجح** |
+
+- `app-arm64-v8a-release.apk = 21.2 MiB` · `app-armeabi-v7a-release.apk = 18.9 MiB`
+- الـartifact: `apk-release` (22,376,416 بايت) — تاريخ الانتهاء `2026-11-01T09:35:43Z`.
+- توقيع الإصدار: keystore دائم (2656 بايت)، البصمات كما هي:
+  `SHA-1 47:48:68:…:E8:6F` · `SHA-256 0B:5B:2E:…:F5:7E` (2/2 ملفات).
+- Firebase: 6 تعريفات مدفوعة، معرّف المشروع مضمّن في 2/2، وزر Google بالمعرّف
+  العام في الكود (لا حاجة لسر).
+- `INTERNET` داخل 2/2 بعد فكّ الضغط، وأيقونة P20 كما هي (`xxxhdpi = 33100`).
+
+### 8) حدود الأمانة
 
 لا Flutter SDK ولا Java في بيئة العمل: المتحقق محليًا `check_structure.py`
 ⇒ OK و`check_rules.py` ⇒ OK و`node --check` على ملف اختبارات القواعد.
