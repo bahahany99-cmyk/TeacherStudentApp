@@ -408,43 +408,40 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
   });
 
   it('الإنشاء يبدأ مسودة أو بانتظار المراجعة، ولا يبدأ موثّقًا', async () => {
-    // نمسح أساس المحاكي: هذا الاختبار يخص **الإنشاء**، ووجود مستند سابق
-    // يحوّل الكتابة إلى تحديث.
-    await testEnv.clearFirestore();
+    // مستخدم جديد ومعرّفات لم تُلمس: `beforeEach` يزرع `teacher-1` موثّقًا،
+    // فإعادة استخدامه كانت ستُحوّل الكتابة إلى تحديث وتقيس قاعدة أخرى.
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
 
     // (P22) مسودة: ينشئها التطبيق تلقائيًا عند اختيار دور «مدرس» قبل الصورة.
     await assertSucceeds(
       setDoc(
-        doc(asTeacher(), 'teacherProfiles/teacher-1'),
-        teacherDoc('teacher-1', { status: 'draft' }),
+        doc(fresh, 'teacherProfiles/teacher-new'),
+        teacherDoc('teacher-new', { status: 'draft' }),
       ),
     );
 
     // (P22) إرسال للمراجعة **بلا صورة** مرفوض.
-    //
-    // ⚠️ مستند آخر (`teacher-2`) لا نفسه الذي ننجح عليه: كتابة مرفوضة على
-    // مسار ثم كتابة ناجحة عليه تُعيد المحاولة كـ`update` في عميل JS، فيقع
-    // الفحص على غير ما نقيسه.
     await assertFails(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
-        ...teacherDoc('teacher-2', { status: 'pendingReview' }),
-        photoPath: avatarPath('teacher-2'),
+      setDoc(doc(fresh, 'teacherProfiles/teacher-noimg'), {
+        ...teacherDoc('teacher-noimg', { status: 'pendingReview' }),
+        photoPath: avatarPath('teacher-noimg'),
       }),
     );
 
     // ومع وجود الصورة فعليًا يُقبل.
-    await seed([{ path: avatarPath('teacher-4'), data: avatarDoc('teacher-4') }]);
+    await seed([{ path: avatarPath('teacher-photo'), data: avatarDoc('teacher-photo') }]);
     await assertSucceeds(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-4'), {
-        ...teacherDoc('teacher-4', { status: 'pendingReview' }),
-        photoPath: avatarPath('teacher-4'),
+      setDoc(doc(fresh, 'teacherProfiles/teacher-photo'), {
+        ...teacherDoc('teacher-photo', { status: 'pendingReview' }),
+        photoPath: avatarPath('teacher-photo'),
       }),
     );
 
+    // ولا يُنشأ ملف موثّق من صاحبه.
     await assertFails(
       setDoc(
-        doc(asTeacher(), 'teacherProfiles/teacher-3'),
-        teacherDoc('teacher-3', { status: 'verified' }),
+        doc(fresh, 'teacherProfiles/teacher-bad'),
+        teacherDoc('teacher-bad', { status: 'verified' }),
       ),
     );
   });
