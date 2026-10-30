@@ -3016,6 +3016,25 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
 | `test/widget/group_discovery_test.dart` | شارة التوثيق واسم المدرس على البطاقة، والفلترة عبر الورقة |
 | `tool/rules_tests` (+١٥) | إلغاء بلا موعد، موعد قصير/طويل، إعادة الطلب داخل التهدئة وبعدها، توافق رجعي، خيط `joinRequest` بلا طلب، صور: العمر/الحجم/العمر الزائد/القراءة بعد الانتهاء/الحذف |
 
+### 8) نتيجة CI — التشغيل `41062894028` ✅
+
+| المهمة | النتيجة |
+|---|---|
+| `analyze · test` | ✅ `dart analyze` بلا خطأ/تحذير، و**كل** اختبارات Flutter ناجحة |
+| `firestore rules (emulator)` | ✅ **285** اختبارًا (كانت 266) — +19 اختبار قواعد لـP24 |
+| `build apk` | ⏭️ متخطّاة (ليست دفعة `[build-release]`) |
+
+**ما أسقط التشغيل الأول (`41061843920`) — ثلاثة أعطال حقيقية كشفها CI وحده:**
+
+1. **نسخة مكرّرة من فحص الحقول:** أضفت `academicProblem` إلى المستودع التجريبي
+   وهو موجود أصلًا من P23 ⇒ `DUPLICATE_DEFINITION`. الدرس: «تحقّق لا إعادة
+   بناء» ينطبق على الكود نفسه لا على البند فقط.
+2. **`sendMessage` في البديل المعطّل** (`FaultyDirectChatRepository`) لم يحمل
+   المعامل الجديد `imageId` ⇒ `INVALID_OVERRIDE` يسقط الترجمة كلها.
+3. **مسار المحادثة في بيئة الاختبار:** إرسال طلب الانضمام يفتح المحادثة الآن،
+   فاختبار يبني `MaterialApp` مصغّرة بلا `onGenerateRoute` يفشل بـ«لا مُولِّد
+   للمسار `/chat`». أُضيف `chatRouteForTests` في `test/helpers/test_app.dart`.
+
 **⚠️ ما لم يُتحقق محليًا:** لا Flutter ولا محاكي في بيئة العمل — `dart analyze`
 و`flutter test` و`npm --prefix tool/rules_tests test` تُثبت النتيجة في CI وحده.
 `check_structure.py` (239 ملف Dart) و`check_rules.py` (1799 سطرًا) يمرّان، وهما
