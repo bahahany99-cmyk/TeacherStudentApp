@@ -157,6 +157,12 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
         _refresh();
       },
       onEditTap: () => _openForm(groupId: group.id),
+      onMembersTap: () => Navigator.of(
+        context,
+      ).pushNamed(RoutePaths.groupMembers, arguments: group.id),
+      onRequestsTap: () => Navigator.of(
+        context,
+      ).pushNamed(RoutePaths.groupRequests, arguments: group.id),
     );
   }
 

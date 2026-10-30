@@ -28,6 +28,8 @@ class GroupCard extends StatelessWidget {
     this.onTap,
     this.onJoinTap,
     this.onEditTap,
+    this.onMembersTap,
+    this.onRequestsTap,
     this.favoriteAction,
     this.teacherVerified,
     this.onTeacherTap,
@@ -37,6 +39,11 @@ class GroupCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onJoinTap;
   final VoidCallback? onEditTap;
+
+  /// مداخل المدرس السريعة (P28): الأعضاء وطلبات الانضمام — كان الوصول إليهما
+  /// يمرّ عبر «تفاصيل المجموعة» ثم صفّين، فيضيع الطالب المنتظر خلف ضغطتين.
+  final VoidCallback? onMembersTap;
+  final VoidCallback? onRequestsTap;
 
   /// زر المفضلة (P13) — يُمرَّر من واجهة الطالب فقط.
   final Widget? favoriteAction;
@@ -132,7 +139,12 @@ class GroupCard extends StatelessWidget {
                 PillChip(
                   dense: true,
                   icon: Icons.groups_outlined,
-                  label: '${group.seatsTaken} / ${group.seatsTotal} مقعد',
+                  // (P28) «المتاح» هو ما يهم الطالب والمدرس؛ النسبة الكاملة
+                  // تُبقى في التفاصيل. لا فرق بين استعلامين: كلاهما يقرأ
+                  // `seatsTaken/seatsTotal` من مستند المجموعة نفسه.
+                  label: group.isFull
+                      ? 'مكتملة ($group.seatsTotal)'
+                      : 'متاح ${group.seatsAvailable} من ${group.seatsTotal}',
                   color: group.isFull
                       ? AppColors.statusRejected
                       : AppColors.statusAccepted,
@@ -162,6 +174,49 @@ class GroupCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+              ),
+            ],
+            if (onMembersTap != null || onRequestsTap != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: <Widget>[
+                  if (onRequestsTap != null)
+                    Expanded(
+                      child: TextButton.icon(
+                        key: const Key('group-card-requests'),
+                        onPressed: onRequestsTap,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                          ),
+                          textStyle: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        icon: const Icon(Icons.inbox_outlined, size: 16),
+                        label: const Text('طلبات الانضمام'),
+                      ),
+                    ),
+                  if (onMembersTap != null)
+                    Expanded(
+                      child: TextButton.icon(
+                        key: const Key('group-card-members'),
+                        onPressed: onMembersTap,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                          ),
+                          textStyle: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        icon: const Icon(Icons.people_outline, size: 16),
+                        label: const Text('الأعضاء'),
+                      ),
+                    ),
                 ],
               ),
             ],
