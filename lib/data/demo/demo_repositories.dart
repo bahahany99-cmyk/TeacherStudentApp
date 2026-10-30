@@ -685,7 +685,9 @@ class DemoGroupRepository implements GroupRepository {
 
   @override
   Future<List<String>> listSubjects() async =>
-      DiscoveryRules.subjectOptions(_groups.where((StudyGroup g) => g.isActive));
+      DiscoveryRules.subjectOptions(
+        _groups.where((StudyGroup g) => g.isActive).toList(growable: false),
+      );
 
   @override
   Future<GroupJoinRequest> decideJoinRequest({

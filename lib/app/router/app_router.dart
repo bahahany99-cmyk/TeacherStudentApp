@@ -18,7 +18,7 @@ import 'package:teacher_student_app/features/chat/presentation/direct_chat_scree
 import 'package:teacher_student_app/features/chat/presentation/direct_chats_screen.dart';
 import 'package:teacher_student_app/features/design_gallery/presentation/design_gallery_screen.dart';
 import 'package:teacher_student_app/features/favorites/presentation/favorites_screen.dart';
-import 'package:teacher_student_app/features/teachers/presentation/featured_teachers_screen.dart';
+import 'package:teacher_student_app/features/teachers/presentation/featured_tutors_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_chat_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_form_screen.dart';
@@ -112,7 +112,7 @@ abstract final class AppRouter {
       case RoutePaths.notifications:
         return _page(const NotificationsScreen(), settings);
       case RoutePaths.featuredTeachers:
-        return _page(const FeaturedTeachersScreen(), settings);
+        return _page(const FeaturedTutorsScreen(), settings);
       case RoutePaths.myData:
         return _page(const MyDataScreen(), settings);
       case RoutePaths.support:

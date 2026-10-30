@@ -13,23 +13,28 @@ import 'package:teacher_student_app/features/teachers/presentation/widgets/teach
 
 /// شاشة «المدرسون المميزون» الكاملة (P25) — وجهة زر «عرض الكل».
 ///
+/// **الاسم `FeaturedTutorsScreen` لا `FeaturedTeachersScreen`:** الأخير مستخدم
+/// في لوحة الإدارة (`features/admin`) لقائمة إدارة التمييز، واستيراد الاسمين
+/// معًا في `AppRouter` كان تنازعًا حقيقيًا (`AMBIGUOUS_IMPORT`). الاسم هنا يصف
+/// الوجهة كما يراها الطالب: قائمة المميزين.
+///
 /// **الفرق عن شريط الرئيسية:** الشريط يعرض خمسة لكل شريحة (مساحة الشاشة
 /// الأولى)، وهذه الشاشة تعرض **كل** المرشّحين في الشريحتين بنفس الاختيار
 /// الأسبوعي — فالطالب يستطيع رؤية ما لم تتّسع له الرئيسية بلا بحث جديد.
 ///
 /// المصدر واحد للاثنين: [FeaturedRules.selectWeekly] على نفس المجموعة
 /// (المميزون + الموثّقون). لا نسخة ثانية من منطق الاختيار هنا.
-class FeaturedTeachersScreen extends StatefulWidget {
-  const FeaturedTeachersScreen({super.key, this.now});
+class FeaturedTutorsScreen extends StatefulWidget {
+  const FeaturedTutorsScreen({super.key, this.now});
 
   /// حقن الوقت للاختبار: الاختيار أسبوعي، فيجب أن يكون حتميًا في الاختبار.
   final DateTime? now;
 
   @override
-  State<FeaturedTeachersScreen> createState() => _FeaturedTeachersScreenState();
+  State<FeaturedTutorsScreen> createState() => _FeaturedTutorsScreenState();
 }
 
-class _FeaturedTeachersScreenState extends State<FeaturedTeachersScreen> {
+class _FeaturedTutorsScreenState extends State<FeaturedTutorsScreen> {
   DateTime get _now => widget.now ?? DateTime.now();
 
   /// المميزون + كل الموثّقين: خمس بطاقات لكل شريحة قد لا تكتمل من المميزين

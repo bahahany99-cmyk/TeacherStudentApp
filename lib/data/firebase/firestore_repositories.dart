@@ -772,14 +772,14 @@ class FirestoreGroupRepository implements GroupRepository {
 
       // (P25) إشعار المدرس بوصول الطلب — كان الطلب يُكتب بلا أي إشعار، فلا
       // يعلم به المدرس إلا لو فتح شاشة الطلبات بنفسه.
-      final StudyGroup? group = joinedGroup;
-      if (group != null) {
+      final StudyGroup? joined = joinedGroup;
+      if (joined != null) {
         await _notify(
           type: NotificationType.joinRequested,
-          recipientId: group.teacherId,
+          recipientId: joined.teacherId,
           actorId: studentId,
           actorName: studentName,
-          targetId: group.id,
+          targetId: joined.id,
           title: NotificationRules.titleFor(
             type: NotificationType.joinRequested,
             actorName: studentName,
@@ -787,7 +787,7 @@ class FirestoreGroupRepository implements GroupRepository {
           body: NotificationRules.bodyFor(
             type: NotificationType.joinRequested,
             actorName: studentName,
-            subject: group.title,
+            subject: joined.title,
           ),
         );
       }
