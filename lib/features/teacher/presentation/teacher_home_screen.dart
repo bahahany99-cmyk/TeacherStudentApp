@@ -112,8 +112,14 @@ class TeacherHomeScreen extends StatelessWidget {
                 title: 'طلبات تنتظر قرارك',
                 subtitle: 'طلبات الانضمام والحجز تصل هنا لحظة إرسالها',
                 icon: Icons.inbox_outlined,
-                actionLabel: 'كل الطلبات',
-                onActionTap: () => ShellScope.read(context).goTo(AppTab.bookings),
+                // الإجراء يحتاج الهيكل (تبويب الطلبات)؛ عند عرض الشاشة منفردة
+                // (اختبار/معاينة) لا نعرض إجراءً لا يعمل.
+                actionLabel: ShellScope.readOrNull(context) == null
+                    ? null
+                    : 'كل الطلبات',
+                onActionTap: ShellScope.readOrNull(context) == null
+                    ? null
+                    : () => ShellScope.read(context).goTo(AppTab.bookings),
               ),
               _PendingRequestsPreview(teacherId: teacherId),
               const SizedBox(height: AppSpacing.md),
@@ -358,7 +364,11 @@ class _QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ShellController shell = ShellScope.read(context);
+    final ShellController? shell = ShellScope.readOrNull(context);
+    // بلا هيكل لا معنى للانتقال بين الأقسام (شاشة معروضة منفردة).
+    if (shell == null) {
+      return const SizedBox.shrink();
+    }
 
     final List<_QuickAction> actions = <_QuickAction>[
       _QuickAction(

@@ -207,10 +207,13 @@ void main() {
 
       expect(find.text('أ. سارة الخطيب'), findsOneWidget);
       expect(find.text('أ. منى عبد الرحمن'), findsOneWidget);
-      // محادثة «منى» وصلت منها رسالة بعد آخر قراءة ⇒ وسم «جديد».
-      expect(find.text('جديد'), findsOneWidget);
-      expect(find.text('مرتبطة بحجز'), findsOneWidget);
-      expect(find.text('استفسار قبل الحجز'), findsOneWidget);
+      // (P28) تمييز غير المقروء: عدّاد أعلى القائمة + نقطة في الصف + الخط.
+      // استبدل وسم «جديد» النصي لأنه كان يتكرّر مع «وارد/جديد» في شاشات أخرى.
+      expect(find.text('رسالة واحدة لم تُقرأ'), findsNothing);
+      expect(find.textContaining('فيها رسائل لم تُقرأ'), findsOneWidget);
+      // سياق المحادثة صار واضحًا: نوع العلاقة + المادة.
+      expect(find.textContaining('حجز حصة'), findsOneWidget);
+      expect(find.textContaining('استفسار'), findsOneWidget);
     });
 
     testWidgets('الطالب الذي لا محادثات له يرى حالة فراغ', (
