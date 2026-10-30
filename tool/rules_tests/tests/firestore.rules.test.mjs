@@ -407,37 +407,47 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
   });
 
-  it('الإنشاء يبدأ مسودة أو بانتظار المراجعة، ولا يبدأ موثّقًا', async () => {
-    // مستخدم جديد ومعرّفات لم تُلمس: `beforeEach` يزرع `teacher-1` موثّقًا،
-    // فإعادة استخدامه كانت ستُحوّل الكتابة إلى تحديث وتقيس قاعدة أخرى.
-    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+  // كل حالة في اختبار مستقل: اسم الفشل يحدّد الحالة، ولا تتلوّث الحالات
+  // بذاكرة عميل واحد بعد كتابة مرفوضة.
+  it('إنشاء مسودة بلا صورة مسموح', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-draft').firestore();
 
-    // (P22) مسودة: ينشئها التطبيق تلقائيًا عند اختيار دور «مدرس» قبل الصورة.
     await assertSucceeds(
       setDoc(
-        doc(fresh, 'teacherProfiles/teacher-new'),
-        teacherDoc('teacher-new', { status: 'draft' }),
+        doc(fresh, 'teacherProfiles/teacher-draft'),
+        teacherDoc('teacher-draft', { status: 'draft' }),
       ),
     );
+  });
 
-    // (P22) إرسال للمراجعة **بلا صورة** مرفوض.
+  it('إرسال للمراجعة بلا صورة مرفوض', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-noimg').firestore();
+
     await assertFails(
       setDoc(doc(fresh, 'teacherProfiles/teacher-noimg'), {
         ...teacherDoc('teacher-noimg', { status: 'pendingReview' }),
         photoPath: avatarPath('teacher-noimg'),
       }),
     );
+  });
 
-    // ومع وجود الصورة فعليًا يُقبل.
-    await seed([{ path: avatarPath('teacher-photo'), data: avatarDoc('teacher-photo') }]);
+  it('إرسال للمراجعة مع صورة موجودة مسموح', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-photo').firestore();
+    await seed([
+      { path: avatarPath('teacher-photo'), data: avatarDoc('teacher-photo') },
+    ]);
+
     await assertSucceeds(
       setDoc(doc(fresh, 'teacherProfiles/teacher-photo'), {
         ...teacherDoc('teacher-photo', { status: 'pendingReview' }),
         photoPath: avatarPath('teacher-photo'),
       }),
     );
+  });
 
-    // ولا يُنشأ ملف موثّق من صاحبه.
+  it('لا يُنشأ ملف موثّق من صاحبه', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-bad').firestore();
+
     await assertFails(
       setDoc(
         doc(fresh, 'teacherProfiles/teacher-bad'),
