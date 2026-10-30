@@ -34,10 +34,8 @@ Future<void> _enterStudentShell(WidgetTester tester) async {
 Future<void> _enterTeacherShell(WidgetTester tester) async {
   await _enterStudentShell(tester);
   await _tapNav(tester, 'حسابي');
-  await tapVisible(
-    tester,
-    find.widgetWithText(OutlinedButton, 'واجهة المدرس'),
-  );
+  // (P26) صفوف «حسابي» صارت SettingsTile (أيقونة + عنوان) لا أزرارًا.
+  await tapVisible(tester, find.text('واجهة المدرس'));
 }
 
 Future<void> _tapNav(WidgetTester tester, String label) async {
@@ -54,7 +52,7 @@ Future<void> _tapNav(WidgetTester tester, String label) async {
 Future<void> _openEditForm(WidgetTester tester) async {
   await _enterTeacherShell(tester);
   await _tapNav(tester, 'حسابي');
-  await tapVisible(tester, find.widgetWithText(ListTile, 'ملفي التعريفي'));
+  await tapVisible(tester, find.text('ملفي التعريفي'));
   await tapVisible(tester, find.text('تعديل المعلومات'));
   _expectTitle('تعديل المعلومات');
 }

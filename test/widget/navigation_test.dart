@@ -151,10 +151,7 @@ void main() {
       await _enterStudentShell(tester);
 
       await _tapNav(tester, 'حسابي');
-      await tapVisible(
-        tester,
-        find.widgetWithText(OutlinedButton, 'واجهة المدرس'),
-      );
+      await tapVisible(tester, find.text('واجهة المدرس'));
 
       expect(
         find.descendant(
@@ -188,10 +185,7 @@ void main() {
       // ننتقل إلى قسم «المدرسون» (غير موجود في واجهة المدرس).
       await _tapNav(tester, 'المدرسون');
       await _tapNav(tester, 'حسابي');
-      await tapVisible(
-        tester,
-        find.widgetWithText(OutlinedButton, 'واجهة المدرس'),
-      );
+      await tapVisible(tester, find.text('واجهة المدرس'));
 
       // بعد التبديل يجب ألا يبقى قسم غير متاح، والشريط يعمل.
       expect(find.byType(NavigationBar), findsOneWidget);

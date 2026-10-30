@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:teacher_student_app/core/theme/app_spacing.dart';
+
 import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_effects.dart';
@@ -40,7 +42,7 @@ void main() {
   });
 
   group('بطاقات بيضاء عائمة', () {
-    testWidgets('البطاقة بيضاء بحواف 24 وحدّ أبيض وظلين بالضبط', (
+    testWidgets('البطاقة بيضاء بحواف البطاقة المعتمدة وظلين بالضبط', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -65,7 +67,11 @@ void main() {
       final BoxDecoration decoration = container.decoration! as BoxDecoration;
 
       expect(decoration.color, Colors.white);
-      expect(decoration.borderRadius, BorderRadius.circular(24));
+      // (P26) نصف قطر البطاقة صار 20 — نتبع الرمز لا رقمًا مكرّرًا هنا.
+      expect(
+        decoration.borderRadius,
+        BorderRadius.circular(AppSpacing.radiusCard),
+      );
       expect(decoration.boxShadow, AppShadows.card);
       expect(decoration.boxShadow!.length, 2);
 
