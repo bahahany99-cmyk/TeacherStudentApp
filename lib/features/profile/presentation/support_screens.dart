@@ -38,7 +38,8 @@ class SupportScreen extends StatelessWidget {
                     subtitle: 'إجابات سريعة لأكثر ما يُسأل عنه',
                     icon: Icons.help_outline,
                   ),
-                  AppCard(
+                  // ثابت بالكامل: نصوص فقط، فلا يُعاد بناؤه مع كل إطار.
+                  const AppCard(
                     child: Column(
                       children: <Widget>[
                         _FaqTile(

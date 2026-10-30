@@ -443,7 +443,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                             ),
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    InfoNote(
+                    const InfoNote(
                       icon: Icons.cloud_off_outlined,
                       text:
                           'يُحفظ التغيير على حسابك مباشرة، ولا يستطيع أي حساب '

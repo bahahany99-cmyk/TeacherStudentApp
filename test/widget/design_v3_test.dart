@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_effects.dart';
-import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
