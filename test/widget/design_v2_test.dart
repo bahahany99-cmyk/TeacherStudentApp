@@ -48,8 +48,8 @@ void main() {
 
       expect(border?.borderRadius, BorderRadius.circular(AppSpacing.radiusLg));
       expect(AppSpacing.radiusXl, greaterThan(AppSpacing.radiusLg));
-      // أزرار أعلى من النسخة السابقة (52 → 54).
-      expect(AppSpacing.buttonHeight, 52);
+      // (P28) 48: هدف اللمس الأدنى في Material، وأقل استهلاكًا للمساحة.
+      expect(AppSpacing.buttonHeight, 48);
     });
 
     test('شريط التنقّل بخلفية بيضاء بلا نتوء لوني', () {
@@ -64,6 +64,9 @@ void main() {
       // محدود، لا تدرّج على ارتفاع الشاشة.
       expect(AppGradients.page.colors.length, 3);
       expect(AppGradients.page.begin, Alignment.topCenter);
+      // (P28) الشريط ينتهي بلون خلفية الصفحة لا بالأبيض: البطاقات البيضاء
+      // تحتاج خلفية مختلفة عنها لتبدو أسطحًا.
+      expect(AppGradients.page.colors.last, AppColors.lightBackground);
       expect(AppGradients.page.stops?.first, 0.0);
       expect(AppGradients.page.stops?.last, 1.0);
       expect(AppGradients.hero.colors.first, AppColors.heroFrom);

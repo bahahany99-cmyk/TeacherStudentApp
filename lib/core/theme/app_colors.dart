@@ -1,85 +1,114 @@
 import 'package:flutter/material.dart';
 
-/// لوحة ألوان المشروع — **نسخة 4.1: النقطة الحلوة (The Sweet Spot)**.
+/// لوحة ألوان المشروع — **الهوية 5 «نيلي درسلي» (Darsly Indigo)**.
 ///
-/// قرار صاحب المشروع (2026-10-27): إزالة كل تدرّجات الأخضر والنعناع من التطبيق
-/// بالكامل، والانتقال إلى خلفية وردية باستيلية متلاشية إلى الأبيض، مع لمسات
-/// وردية/ذهبية هادئة ونصوص داكنة محايدة — مطابقة للمرجع البصري المعتمد.
+/// قرار صاحب المشروع (2026-10-30): التخلّي عن الهوية الوردية بالكامل. الوردي
+/// كان هادئًا لكنه لا يقول «ثقة وتعليم»؛ والتطبيق التجاري يحتاج لونًا يمثّل
+/// الجدّية فيُقرأ كمنصّة تعليمية لا كتطبيق مواعدة.
+///
+/// ## الاختيارات ولماذا
+/// - **نيلي عميق `#303F9F`** هويةً: لون الثقة والمؤسسات التعليمية، تباينه على
+///   الأبيض ≈ 8.6:1 (يكفي للنصوص والأيقونات والأزرار)، ولا يُستخدم كمساحة
+///   كبيرة فلا يصبح الصفحة كلها «أزرق ثقيل».
+/// - **تركواز `#0E7C86`** ثانويًا: يميّز العناصر النشطة والشارات الثانوية عن
+///   الهوية، ويبعد الواجهة عن أحادية اللون.
+/// - **أخضر زمردي للمقبول/النجاح، عنبري للانتظار، أحمر للرفض، أزرق للمعلومة**:
+///   دلالة واضحة تُقرأ بسرعة. (في النسخة السابقة مُنع الأخضر عمدًا؛ أُلغي هذا
+///   القرار لأن المستخدم يحتاج إشارة «قُبل» صريحة لا رمادية.)
+/// - **خلفية باردة هادئة `#F4F6FB`** بدل الأبيض المسطّح: تفصل البطاقات البيضاء
+///   عن الصفحة بلا ظلال ثقيلة، وتريح العين في القراءة الطويلة.
+/// - **نصوص بشبه أسود `#12172B`** (تباين 16.8:1) وثانوي `#525A6E` (7.2:1) —
+///   لا نص باهت يصعب قراءته.
 ///
 /// قواعد الاستخدام:
-/// - `wash*` **للخلفيات فقط** (تباينها منخفض جدًا، لا تُستخدم كنص).
-/// - `seed` هو لون الهوية: يُشتق منه `ColorScheme` كاملًا (أزرار، روابط، أيقونات).
-///   مُختار غامقًا بما يكفي لتباين جيد على الأبيض.
-/// - `hero*` محصور في الشعار الصغير فقط؛ لا كتل مشبعة داخل الصفحات.
-/// - **v4.1:** الخلفية بيضاء صريحة، والوردي لا يظهر إلا كتدرّج رقيق في أعلى
-///   الصفحة يتلاشى إلى الأبيض. المحتوى نفسه لا يُصبغ.
-/// - ألوان الحالات دلالية وليست هوية: لا أخضر عمدًا — «مقبول» صار أزرق رمادي
-///   هادئ، و«مرفوض» وردي محروق، و«قيد الانتظار» عسلي ترابي.
+/// - `seed` هو لون الهوية: يُشتق منه `ColorScheme` كاملًا.
+/// - الألوان الدلالية للحالات فقط، لا للديكور.
+/// - **كل لون في التطبيق يمرّ من هنا**؛ لا قيم لون مكتوبة داخل الشاشات.
 abstract final class AppColors {
-  /// لون الهوية: وردي عميق (لا فوشيا). تباينه على الأبيض كافٍ للنصوص.
-  static const Color seed = Color(0xFF9E4C6C);
+  // ── الهوية ────────────────────────────────────────────────────────────────
+  /// لون الهوية: نيلي عميق.
+  static const Color seed = Color(0xFF303F9F);
 
-  /// لمسة ثانوية: ذهبي وردي هادئ (النجوم والوسام).
-  static const Color accent = Color(0xFFB98A5E);
+  /// نيلي أغمق — للتدرّجات والعناوين المشبعة فقط.
+  static const Color primaryDeep = Color(0xFF1C2A73);
+
+  /// لمسة ثانوية: تركواز.
+  static const Color accent = Color(0xFF0E7C86);
+
+  /// تركواز غامق للنص على خلفية تركوازية فاتحة.
+  static const Color accentDeep = Color(0xFF075E66);
 
   // خلفيات وأسطح
-  static const Color lightBackground = Color(0xFFFDFBFB);
-  static const Color darkBackground = Color(0xFF17121A);
+  /// خلفية الصفحة: رمادي مزرق هادئ لا أبيض مسطّح.
+  static const Color lightBackground = Color(0xFFF4F6FB);
+  static const Color darkBackground = Color(0xFF0F1220);
 
   /// أبيض الأسطح العائمة (البطاقات).
   static const Color surfaceRaised = Color(0xFFFFFFFF);
 
-  // ── طبقة الغسيل الوردي (الخلفيات) ─────────────────────────────────────────
-  /// **الحافة العلوية للصفحة (v4.1):** بلاش واضح بلا صراخ.
-  ///
-  /// القيمة مختارة عند «النقطة الحلوة»: مرئية كوردي على شاشة حقيقية (لا تُقرأ
-  /// كأبيض مغبَّش)، لكنها بعيدة عن الفوشيا؛ تباين النص الداكن عليها يبقى فوق
-  /// 16:1. تقع في مدى تشبّع منخفض (S≈28%) وإضاءة عالية (L≈92%).
-  static const Color blushTop = Color(0xFFF8DEE7);
+  // ── طبقة الغسيل العلوية (الخلفيات) ───────────────────────────────────────
+  /// الحافة العلوية: نيلي فاتح جدًا. مرئية على شاشة حقيقية (لا تُقرأ كأبيض
+  /// مغبَّش)، وتباين النص الداكن عليها فوق 14:1.
+  static const Color blushTop = Color(0xFFE6EAFA);
 
-  /// الطبقة الوسطى للتلاشي: نفس الوردية بشفافية بصرية أعلى.
-  static const Color blushSoft = Color(0xFFFCEFF3);
+  /// الطبقة الوسطى للتلاشي: نفس العائلة بشفافية بصرية أعلى.
+  static const Color blushSoft = Color(0xFFF1F4FD);
 
-  /// وردي هادئ جدًا (يُستخدم في الأسطح الصغيرة، لا في الخلفية).
-  static const Color washRose = Color(0xFFFBEDF3);
+  /// نيلي فاتح جدًا (أسطح صغيرة، شرائح مختارة).
+  static const Color washIndigo = Color(0xFFEDF0FB);
 
-  /// أسفل الصفحة: لافندر وردي باهت (يعطي العمق بلا إشباع).
-  static const Color washLilac = Color(0xFFF5EFFA);
+  /// تركواز فاتح جدًا.
+  static const Color washTeal = Color(0xFFE8F4F5);
 
-  /// لمسة خوخية دافئة (صفحات الحساب).
-  static const Color washPeach = Color(0xFFFDF2EC);
+  /// رملي دافئ هادئ (صفحات الحساب).
+  static const Color washSand = Color(0xFFFAF3E9);
 
-  // ── النصوص (v4.1): أسود شبه صريح لتباين «حادّ» على الأبيض ────────────────
-  /// نص العناوين والمتون الأساسي — تباين 17.5:1 على الأبيض.
-  static const Color textPrimary = Color(0xFF151217);
+  // ── النصوص ───────────────────────────────────────────────────────────────
+  /// نص العناوين والمتون الأساسي — تباين 16.8:1 على الأبيض.
+  static const Color textPrimary = Color(0xFF12172B);
 
-  /// نص ثانوي (وصف، تسميات) — تباين 6.4:1 على الأبيض.
-  static const Color textSecondary = Color(0xFF5E5865);
+  /// نص ثانوي (وصف، تسميات) — تباين 7.2:1 على الأبيض.
+  static const Color textSecondary = Color(0xFF525A6E);
 
-  /// نص خفيف (تلميحات فقط، لا يُستخدم لمعلومة أساسية).
-  static const Color textMuted = Color(0xFF8A8492);
+  /// نص خفيف (تلميحات فقط، لا يُستخدم لمعلومة أساسية) — 5.1:1.
+  static const Color textMuted = Color(0xFF7C8497);
 
-  // مرادفات النسخة 3 — محفوظة حتى لا تتعطّل أي مراجع قائمة.
-  static const Color washMint = washRose;
-  static const Color washLavender = washLilac;
-  static const Color washBlush = washPeach;
+  /// مرادفات محفوظة حتى لا تتعطّل أي مراجع قائمة (أسماء قديمة، قيم جديدة).
+  static const Color washRose = washIndigo;
+  static const Color washLilac = washIndigo;
+  static const Color washPeach = washSand;
+  static const Color washMint = washTeal;
+  static const Color washLavender = washIndigo;
+  static const Color washBlush = washSand;
 
   /// بداية/نهاية الشعار المتدرّج (الموضع الوحيد المسموح فيه بالإشباع).
-  static const Color heroFrom = Color(0xFFB76E86);
-  static const Color heroTo = Color(0xFF8E465F);
+  static const Color heroFrom = Color(0xFF3B4CC0);
+  static const Color heroTo = Color(0xFF1C2A73);
 
   // ظلال
-  static const Color shadow = Color(0x14000000);
+  static const Color shadow = Color(0x14101828);
 
-  // بيج دافئ محايد (لا أصفر صارخ، ولا أخضر): يُستخدم لوسم الجولة
-  // التعريفية وشارات «بانتظار إجراء» الإدارية — لون انتباه هادئ.
-  static const Color attentionBackground = Color(0xFFFFF8F3);
-  static const Color attentionBorder = Color(0xFFEFDCCB);
-  static const Color attentionForeground = Color(0xFF8A6A52);
+  // دلالة الانتباه (وسم الجولة التعريفية وشارات «بانتظار إجراء»)
+  static const Color attentionBackground = Color(0xFFFFF7E6);
+  static const Color attentionBorder = Color(0xFFF0DCB2);
+  static const Color attentionForeground = Color(0xFF8A5A00);
 
-  // حالات الطلبات — دلالية، خالية من الأخضر بقرار صاحب المشروع.
-  static const Color statusPending = Color(0xFFA9762F);
-  static const Color statusAccepted = Color(0xFF4A6C8C);
-  static const Color statusRejected = Color(0xFFB04A5E);
-  static const Color statusNeutral = Color(0xFF6B6670);
+  // ── حالات الطلبات: دلالية وواضحة ─────────────────────────────────────────
+  /// قيد الانتظار — عنبري غامق (تباين 5.4:1 على الأبيض).
+  static const Color statusPending = Color(0xFF9A5B00);
+
+  /// مقبول/مكتمل — زمردي غامق (5.1:1)، وليس أخضر فاتحًا لا يُقرأ.
+  static const Color statusAccepted = Color(0xFF0F7B52);
+
+  /// مرفوض/ملغى متأخرًا — أحمر طوبي (6.2:1).
+  static const Color statusRejected = Color(0xFFB3261E);
+
+  /// محايد/موقوف — أردوازي (7.0:1).
+  static const Color statusNeutral = Color(0xFF5B6474);
+
+  /// معلومة — أزرق صريح (5.9:1).
+  static const Color statusInfo = Color(0xFF0B63B7);
+
+  /// خلفيات الحالات (شرائح، تنبيهات) — فاتحة جدًا مع النص الغامق نفسه.
+  static Color statusTint(Color status) => status.withAlpha(20);
 }

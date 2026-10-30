@@ -2190,6 +2190,41 @@ class DemoDirectChatRepository implements DirectChatRepository {
 
   void _publishChat(String chatId) {
     _chatStreamFor(chatId).add(_find(chatId));
+    // كل تغيير في محادثة يعني تغيّرًا في قوائم الطرفين (الأحدث/غير المقروء)،
+    // فنُطلق البثّ من نقطة واحدة بدل تذكّر النداء في كل دالة تعديل.
+    _publishLists();
+  }
+
+  /// قوائم المحادثات الحيّة لكل معرّف شاهدها مرة واحدة على الأقل.
+  final Map<String, StreamController<List<DirectChat>>> _listStreams =
+      <String, StreamController<List<DirectChat>>>{};
+
+  StreamController<List<DirectChat>> _listStreamFor(String viewerId) {
+    return _listStreams.putIfAbsent(
+      viewerId,
+      () => StreamController<List<DirectChat>>.broadcast(),
+    );
+  }
+
+  void _publishLists() {
+    for (final MapEntry<String, StreamController<List<DirectChat>>> entry
+        in _listStreams.entries) {
+      if (!entry.value.isClosed) {
+        entry.value.add(_listOf(entry.key));
+      }
+    }
+  }
+
+  List<DirectChat> _listOf(String viewerId) {
+    final List<DirectChat> mine = _chats
+        .where((DirectChat chat) => chat.involves(viewerId))
+        .toList(growable: false)
+      ..sort((DirectChat a, DirectChat b) {
+        final DateTime left = a.lastMessageAt ?? a.createdAt;
+        final DateTime right = b.lastMessageAt ?? b.createdAt;
+        return right.compareTo(left);
+      });
+    return List<DirectChat>.unmodifiable(mine);
   }
 
   StreamController<List<DirectChatMessage>> _streamFor(String chatId) {
@@ -2233,16 +2268,13 @@ class DemoDirectChatRepository implements DirectChatRepository {
   Future<DirectChat?> findById(String chatId) async => _find(chatId);
 
   @override
-  Future<List<DirectChat>> listMine(String viewerId) async {
-    final List<DirectChat> mine = _chats
-        .where((DirectChat chat) => chat.involves(viewerId))
-        .toList(growable: false)
-      ..sort((DirectChat a, DirectChat b) {
-        final DateTime left = a.lastMessageAt ?? a.createdAt;
-        final DateTime right = b.lastMessageAt ?? b.createdAt;
-        return right.compareTo(left);
-      });
-    return List<DirectChat>.unmodifiable(mine);
+  Future<List<DirectChat>> listMine(String viewerId) async =>
+      _listOf(viewerId);
+
+  @override
+  Stream<List<DirectChat>> watchMine(String viewerId) async* {
+    yield _listOf(viewerId);
+    yield* _listStreamFor(viewerId).stream;
   }
 
   @override

@@ -7,13 +7,14 @@ import 'package:teacher_student_app/core/theme/app_typography.dart';
 
 /// الثيم الموحّد للتطبيق (فاتح/داكن).
 ///
-/// النسخة 4.1 (2026-10-27):
-/// - **حواف دائرية واضحة**: الأزرار والشرائح `StadiumBorder` (حبة دواء)،
-///   والبطاقات 24، والحقول 18.
-/// - **سطوح عائمة**: خلفية بيضاء بلمسة بلاش علوية (`AppGradients.page`)،
-///   والبطاقات بيضاء بظل مزدوج رقيق (`AppShadows.card`).
-/// - **نص داكن حادّ**: `onSurface` شبه أسود و`onSurfaceVariant` رمادي متوسط،
-///   بلا زرقة ولا صبغة وردية على النص — أعلى تباين ممكن على الأبيض.
+/// **النسخة 5 (2026-10-30) — الهوية «نيلي درسلي»:**
+/// - ألوان من `AppColors` وحدها (نيلي + تركواز + دلالات الحالة).
+/// - خط `IBMPlexSansArabic` بأوزان 400/600/700 وأحجام متدرّجة (انظر
+///   `AppTypography`).
+/// - أسطح: بطاقات بيضاء على خلفية باردة `#F4F6FB`، حواف 20 للبطاقة و14 للحقل،
+///   وظلّان خفيفان فقط.
+/// - أزرار `StadiumBorder` بارتفاع 48 (كان 52): أقل استهلاكًا للمساحة مع بقاء
+///   هدف اللمس فوق 48dp شاملة الحشوة.
 ///
 /// ملاحظة: لا نضيف تخصيصات لمكوّنات لا تُستخدم فعليًا، لتقليل المخاطر عند
 /// ترقية Flutter.
@@ -48,16 +49,18 @@ abstract final class AppTheme {
     return seeded.copyWith(
       surface: Colors.white,
       surfaceBright: Colors.white,
-      surfaceDim: const Color(0xFFF6F4F5),
+      surfaceDim: const Color(0xFFEDF0F7),
       surfaceTint: Colors.transparent,
       surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: const Color(0xFFFBFAFB),
-      surfaceContainer: const Color(0xFFF7F5F6),
-      surfaceContainerHigh: const Color(0xFFF4F2F3),
-      surfaceContainerHighest: const Color(0xFFF1EFF0),
+      surfaceContainerLow: const Color(0xFFF8FAFD),
+      surfaceContainer: const Color(0xFFF1F4FA),
+      surfaceContainerHigh: const Color(0xFFEDF0F7),
+      surfaceContainerHighest: const Color(0xFFE7EBF4),
       onSurface: AppColors.textPrimary,
       onSurfaceVariant: AppColors.textSecondary,
-      outlineVariant: const Color(0xFFEADFE4),
+      // حدود رمادية مزرقة (لا وردية) — تُقرأ كخط فاصل لا كصبغة.
+      outlineVariant: const Color(0xFFDDE3EE),
+      outline: const Color(0xFFC3CBDA),
     );
   }
 
@@ -101,7 +104,7 @@ abstract final class AppTheme {
         backgroundColor: isLight ? Colors.white : scheme.surface,
         surfaceTintColor: Colors.transparent,
         // مؤشّر باستيلي ناعم بدل دائرة بلون الهوية الكامل.
-        indicatorColor: scheme.primary.withAlpha(20),
+        indicatorColor: scheme.primary.withAlpha(28),
         indicatorShape: const StadiumBorder(),
         elevation: 0,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -133,7 +136,7 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(AppSpacing.buttonHeight + 2),
+          minimumSize: const Size.fromHeight(AppSpacing.buttonHeight),
           // حبة دواء: الشكل المميز للنسخة 2.
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
@@ -163,10 +166,16 @@ abstract final class AppTheme {
       chipTheme: ChipThemeData(
         shape: const StadiumBorder(),
         side: BorderSide.none,
-        backgroundColor: scheme.primary.withAlpha(18),
-        selectedColor: scheme.primary.withAlpha(38),
-        labelStyle: textTheme.labelMedium,
+        backgroundColor: scheme.primary.withAlpha(16),
+        selectedColor: scheme.primary.withAlpha(34),
+        labelStyle: textTheme.labelMedium?.copyWith(
+          color: scheme.onSurface,
+        ),
         secondaryLabelStyle: textTheme.labelMedium,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: 2,
+        ),
       ),
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant,

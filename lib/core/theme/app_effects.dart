@@ -2,21 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 
-/// التدرّجات اللونية الناعمة.
+/// التدرّجات والظلال.
 ///
-/// النسخة 4.2 (2026-10-27): **صفحة بيضاء صريحة**، وشريط بلاش قصير في أعلى
-/// الشاشة فقط.
+/// **الهوية 5 (2026-10-30):** خلفية باردة هادئة `#F4F6FB`، وشريط نيلي فاتح في
+/// أعلى الصفحة يتلاشى إلى لون الخلفية نفسه — لا إلى أبيض.
 ///
-/// لماذا تغيّر البنية؟ في 4.1 كان البلاش متدرّجًا على ارتفاع الشاشة كلها؛
-/// ومع أن الأبيض يبدأ عند 30% إلا أن التدرّج الطويل يجعل الوردي «يتسرّب» بصريًا
-/// إلى ما وراء البطاقات، فتُقرأ الصفحة مصبوغة. القاعدة الآن صريحة ومحسوبة:
-/// - طبقة سفلية **بيضاء صريحة** (`Colors.white`) على كامل الشاشة.
-/// - شريط علوي بارتفاع **20% كحد أقصى** من الشاشة، ينتهي عند حافته السفلية
-///   بأبيض صريح **معتم** ⇒ لا يوجد خط فاصل ولا تسرّب لون تحته إطلاقًا.
-/// - ما تحت الشريط (80% من الشاشة) أبيض `#FFFFFF` لا غير.
+/// لماذا لا يزال الشريط محدود الارتفاع؟ لأن تدرّجًا على ارتفاع الشاشة كلها
+/// يُقرأ كصبغة، ويجعل البطاقات البيضاء تبدو معلّقة في لا شيء. الشريط القصير
+/// يعطي عمقًا، والخلفية الموحّدة أسفله هي ما يفصل الأسطح عن الصفحة.
 ///
 /// القاعدة الحاكمة: **لا يُكتب تدرّج داخل شاشة**. كل خلفية أو سطح متدرّج يأتي
-/// من هنا، حتى يبقى المظهر موحّدًا وقابلًا للتعديل من نقطة واحدة (A-44).
+/// من هنا، حتى يبقى المظهر موحّدًا وقابلًا للتعديل من نقطة واحدة.
 abstract final class AppGradients {
   /// شريط الحافة العلوية: بلاش ← أبيض صريح.
   ///
@@ -29,9 +25,9 @@ abstract final class AppGradients {
     colors: <Color>[
       AppColors.blushTop,
       AppColors.blushSoft,
-      Color(0xFFFFFFFF),
+      AppColors.lightBackground,
     ],
-    stops: <double>[0.0, 0.48, 1.0],
+    stops: <double>[0.0, 0.55, 1.0],
   );
 
   /// نفس الشريط بمزاج خوخي دافئ (صفحات الحساب/الملف الشخصي).
@@ -40,9 +36,9 @@ abstract final class AppGradients {
     begin: AlignmentDirectional.topEnd,
     end: AlignmentDirectional.bottomStart,
     colors: <Color>[
-      AppColors.blushTop,
-      AppColors.washPeach,
-      Color(0xFFFFFFFF),
+      AppColors.washSand,
+      AppColors.blushSoft,
+      AppColors.lightBackground,
     ],
     stops: <double>[0.0, 0.45, 1.0],
   );
@@ -56,8 +52,8 @@ abstract final class AppGradients {
     end: AlignmentDirectional.bottomEnd,
     colors: <Color>[
       AppColors.blushSoft,
-      Color(0xFFFFFFFF),
-      Color(0xFFFFFFFF),
+      AppColors.surfaceRaised,
+      AppColors.surfaceRaised,
     ],
     stops: <double>[0.0, 0.42, 1.0],
   );
@@ -134,7 +130,7 @@ abstract final class AppShadows {
   /// ظل الشعار الملوّن (يُستخدم مرة واحدة على شاشة الدخول).
   static const List<BoxShadow> hero = <BoxShadow>[
     BoxShadow(
-      color: Color(0x2E9E4C6C),
+      color: Color(0x2E303F9F),
       blurRadius: 26,
       offset: Offset(0, 12),
       spreadRadius: -8,

@@ -15,11 +15,13 @@ import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/teacher_verification_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
+import 'package:teacher_student_app/features/bookings/presentation/teacher_requests_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
 import 'package:teacher_student_app/features/profile/presentation/profile_screen.dart';
 import 'package:teacher_student_app/features/student/presentation/student_home_screen.dart';
@@ -146,6 +148,9 @@ class _AppShellState extends State<AppShell> {
                   // (بجانب الصورة والتحيّة) كما يطلب التصميم، فيختفي جرس الشريط
                   // هناك ويبقى في بقية الأقسام. جرسان على الشاشة نفسها يبدوان
                   // كخطأ واجهة، ويُربكان قارئ الشاشة (إجراءان بالاسم نفسه).
+                  // (P28) المحادثات صارت متاحة من كل قسم: زر في الشريط مع عدّاد
+                  // غير المقروء، بدل أن تكون مدفونة داخل «حسابي».
+                  ChatInboxButton(viewerId: viewerId),
                   if (!_hasInlineBell(role, effectiveTab))
                     NotificationBell(viewerId: viewerId),
                   if (effectiveTab != firstTab)
@@ -236,10 +241,14 @@ class _AppShellState extends State<AppShell> {
       AppTab.groups => role == UserRole.teacher
           ? const GroupsScreen.forTeacher(key: ValueKey<String>('tab-groups'))
           : const GroupsScreen.discover(key: ValueKey<String>('tab-groups')),
-      AppTab.bookings => BookingsScreen(
-        key: const ValueKey<String>('tab-bookings'),
-        viewerRole: role,
-      ),
+      // (P28) المدرس يرى «الطلبات» (حجز + انضمام في قائمة واحدة)، والطالب
+      // يرى حجوزاته كما كانت.
+      AppTab.bookings => role == UserRole.teacher
+          ? const TeacherRequestsScreen(key: ValueKey<String>('tab-bookings'))
+          : BookingsScreen(
+              key: const ValueKey<String>('tab-bookings'),
+              viewerRole: role,
+            ),
       // (P14) أقسام الإدارة: نفس الشاشات التي تفتحها المسارات المحمية.
       AppTab.adminHome => const AdminDashboardScreen(
         key: ValueKey<String>('tab-admin-home'),
@@ -364,6 +373,80 @@ class NotificationBell extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onPrimary,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+
+/// زر «المحادثات» في شريط التطبيق مع عدّاد المحادثات غير المقروءة (P28).
+///
+/// **لماذا في الشريط لا في تبويب خامس؟** لأن شريط المدرس يمثل أربعة أقسام
+/// أساسية (رئيسية/مجموعاتي/طلبات/حسابي)، وإضافة تبويب خامس تزدحم الشريط
+/// وتضغط النصوص على 320dp. الزر هنا حاضر في كل قسم، ويحمل عدّادًا حيًّا من
+/// `chats.watchMine` — فالوصول واضح بلا ازدحام.
+class ChatInboxButton extends StatelessWidget {
+  const ChatInboxButton({super.key, required this.viewerId});
+
+  /// مفتاح ثابت للاختبارات.
+  static const Key buttonKey = Key('app-bar-chats');
+
+  final String viewerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return StreamBuilder<List<DirectChat>>(
+      stream: AppServicesScope.of(context).chats.watchMine(viewerId),
+      initialData: const <DirectChat>[],
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<List<DirectChat>> snapshot,
+      ) {
+        final int unread = (snapshot.data ?? const <DirectChat>[])
+            .where((DirectChat chat) => chat.hasUnreadFor(viewerId))
+            .length;
+
+        return Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            IconButton(
+              key: buttonKey,
+              tooltip: unread == 0
+                  ? 'المحادثات'
+                  : 'المحادثات ($unread غير مقروءة)',
+              onPressed: () =>
+                  Navigator.of(context).pushNamed(RoutePaths.directChats),
+              icon: const Icon(Icons.forum_outlined),
+            ),
+            if (unread > 0)
+              PositionedDirectional(
+                top: 8,
+                end: 6,
+                child: IgnorePointer(
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                      border: Border.all(color: Colors.white, width: 1.4),
+                    ),
+                    child: Text(
+                      unread > 9 ? '9+' : '$unread',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.white,
                         fontWeight: FontWeight.w700,
                         height: 1.3,
                       ),

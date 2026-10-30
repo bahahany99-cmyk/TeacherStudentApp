@@ -25,7 +25,9 @@ abstract final class AppSpacing {
   static const double radiusPill = 999;
 
   // ارتفاعات عناصر
-  static const double buttonHeight = 52;
+  /// ارتفاع الزر المعتمد: 48 (كان 52). هدف اللمس الأدنى في Material هو 48dp،
+  /// وأي ارتفاع أعلى يستهلك مساحة بلا فائدة في صفحة مليئة بالإجراءات.
+  static const double buttonHeight = 48;
   static const double avatarSm = 40;
   static const double avatarMd = 56;
   static const double avatarLg = 80;

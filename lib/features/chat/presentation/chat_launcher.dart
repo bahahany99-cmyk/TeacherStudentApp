@@ -294,3 +294,57 @@ class _ChatActionButtonState extends State<ChatActionButton> {
     );
   }
 }
+
+/// (P28) يضمن وجود خيط محادثة لطلب حجز **بلا فتح شاشة وبلا رسائل**.
+///
+/// ## العطل الذي أُصلح
+///
+/// الخيط لم يكن يُنشأ إلا حين يضغط الطالب «مراسلة المدرس» بنفسه. فالمدرس الذي
+/// وصله طلب حجز حديثًا لا يجد في «المحادثات» أي صف — لأن الصف يمثّل مستند
+/// محادثة لم يُكتب بعد. النتيجة: «المحادثات لا تظهر عند المدرس» رغم وجود علاقة
+/// حقيقية (حجز قائم). الآن يُنشأ الخيط لحظة إرسال الطلب (الطالب هو من يملك
+/// الصلاحية بحسب القواعد)، فيراه الطرفان في قائمتهما فورًا.
+///
+/// **لا يغيّر السياسة:** الأصل `booking` ما زال يتحقق منه الخادم من مستند
+/// الحجز نفسه. الفشل هنا صامت عن قصد (لا رسالة خطأ): إرسال الطلب نجح، وإنشاء
+/// الخيط التجميلي لا يجوز أن يُقلق الطالب أو يظهر كخطأ في عملية ناجحة.
+Future<void> ensureThreadForBooking({
+  required AppServices services,
+  required BookingRequest booking,
+}) async {
+  try {
+    await services.chats.openChat(
+      teacherId: booking.teacherId ?? '',
+      teacherName: booking.teacherName,
+      studentId: booking.studentId ?? '',
+      studentName: booking.studentName,
+      origin: DirectChatOrigin.booking,
+      subject: booking.subject,
+      bookingId: booking.id,
+    );
+  } on AppException {
+    // لا شيء: الخيط اختياري، والطلب نفسه حُفظ بنجاح.
+  }
+}
+
+/// (P28) نفس المبدأ لطلب الانضمام: يُنشأ الخيط بأصل `joinRequest` بعد إرسال
+/// الطلب، فيرى المدرس صفًّا في المحادثات يستطيع الردّ منه مباشرة.
+Future<void> ensureThreadForJoinRequest({
+  required AppServices services,
+  required StudyGroup group,
+  required GroupJoinRequest request,
+}) async {
+  try {
+    await services.chats.openChat(
+      teacherId: group.teacherId,
+      teacherName: group.teacherName,
+      studentId: request.studentId,
+      studentName: request.studentName,
+      origin: DirectChatOrigin.joinRequest,
+      subject: group.subject,
+      groupId: group.id,
+    );
+  } on AppException {
+    // اختياري كما في الحجز.
+  }
+}

@@ -109,6 +109,20 @@ flutter:
   # المتغيّر الرسمي: Regular 400 / SemiBold 600 / Bold 700.
   # الترخيص محفوظ في assets/fonts/OFL.txt (إلزامي عند توزيع الخط).
   fonts:
+    # الهوية 5 (P28): IBM Plex Sans Arabic خطًا معتمدًا — أوزان مسجّلة 400/600/700
+    # فقط، لأن أي وزن غير مسجَّل يُصنَّعه المحرك فيبدو رديئًا بالعربية.
+    - family: IBMPlexSansArabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+          style: normal
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+          style: normal
+        - asset: assets/fonts/IBMPlexSansArabic-Bold.ttf
+          weight: 700
+          style: normal
+    # Cairo محفوظ كخط احتياطي (fontFamilyFallback) — لا يُحذف من الحزمة.
     - family: Cairo
       fonts:
         - asset: assets/fonts/Cairo-Regular.ttf

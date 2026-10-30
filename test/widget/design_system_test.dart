@@ -12,8 +12,9 @@ import '../helpers/test_app.dart';
 
 void main() {
   group('نظام التصميم (P1)', () {
-    test('الخط المعتمد هو Cairo ومسجَّل على كل أنماط النص', () {
-      expect(AppTypography.fontFamily, 'Cairo');
+    test('الخط المعتمد (IBM Plex Sans Arabic) مسجَّل على كل أنماط النص', () {
+      // (P28) الهوية 5: IBM Plex Sans Arabic (أوضح تدرّجًا في الأوزان من Cairo).
+      expect(AppTypography.fontFamily, 'IBMPlexSansArabic');
 
       final ThemeData theme = AppTheme.light;
       final List<TextStyle?> styles = <TextStyle?>[
@@ -26,7 +27,11 @@ void main() {
       ];
 
       for (final TextStyle? style in styles) {
-        expect(style?.fontFamily, 'Cairo', reason: 'نمط بلا خط Cairo: $style');
+        expect(
+          style?.fontFamily,
+          AppTypography.fontFamily,
+          reason: 'نمط بخط غير المعتمد: $style',
+        );
       }
     });
 

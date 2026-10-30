@@ -2,40 +2,28 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
-import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
+import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 
-/// بطاقة حالة الملف التعريفي — **من حالة الملف الحقيقية لا من نص مكتوب** (P21).
+/// شريط حالة الملف التعريفي — **مضغوط** (P28).
 ///
-/// ## المشكلة التي حُلّت
+/// ## ما تغيّر ولماذا
 ///
-/// كانت الرئيسية تعرض نصًا ثابتًا لا علاقة له بحساب صاحبه:
-/// «هذه معاينة محلية بلا Firebase… حالة اعتماد ملفك (C-06)» مع وسم
-/// «حساب تجريبي». النتيجة: مدرس **موثّق فعليًا** يقرأ أنه في معاينة، ومدرس بلا
-/// ملف يُخبَر برمز سياسة داخلية بدل أن يُطلب منه إنشاء ملفه.
+/// في السابق كانت هذه بطاقةً تملأ نصف الرئيسية: أيقونة دائرية كبيرة، عنوان،
+/// فقرة من ثلاثة أسطر، ثم زرّان بعرض الشاشة. النتيجة أن **حالة** الملف — وهي
+/// معلومة من سطر واحد — كانت تسيطر على الصفحة، ولا يبقى للمدرس مكان لمعرفة
+/// ما يحتاج متابعته اليوم.
 ///
-/// ## السلوك الآن
+/// الشكل الجديد **صفّ واحد** (56–72dp):
+/// `[أيقونة حالة] [العنوان + سطر توضيحي] [شارة الحالة] [سهم]`، والضغط عليه
+/// يفتح الملف، وأيقونة قلم صغيرة تفتح التعديل. الحالات الاستثنائية (مسودة أو
+/// مرفوض) تضيف سطرًا واحدًا فقط (سبب الرفض) ولا تتحوّل إلى بطاقة.
 ///
-/// تقرأ `teacherProfiles/{uid}` من المستودع (نفس مصدر بقية الشاشات) وتعرض:
-///
-/// | الحالة | ما يراه المدرس |
-/// |---|---|
-/// | بلا ملف | «أنشئ ملفك التعريفي» + زر إجراء — دعوة واضحة لا رسالة تقنية |
-/// | `draft` | «أكمل ملفك وأرسله للمراجعة» + زر تعديل |
-/// | `pendingReview` | «ملفك قيد المراجعة» + ما المتوقع ومتى |
-/// | `verified` | «ملفك موثّق ويظهر للطلاب» + زر الملف |
-/// | `rejected` | «ملفك يحتاج تعديلًا» + سبب الإدارة كما كتبه المراجع |
-///
-/// **لماذا نُخفي النص التقني بدل حذفه فقط؟** لأن الحالة نفسها معلومة يحتاجها
-/// المدرس: بدونها سيكرّر المحاولة بلا معرفة ما ينتظره. الحل ليس «بلا رسالة»
-/// بل «رسالة إنسانية مبنية على الحالة».
-///
-/// أي خطأ في القراءة يعرض حالة خطأ عربية قابلة لإعادة المحاولة (عبر
-/// [AsyncView])، لا رسالة تقنية ولا بيانات بديلة ملفّقة.
+/// المفاتيح والنصوص التي تعتمدها الاختبارات محفوظة كما هي.
 class TeacherProfileStatusCard extends StatelessWidget {
   const TeacherProfileStatusCard({super.key, required this.teacherId});
 
@@ -47,19 +35,18 @@ class TeacherProfileStatusCard extends StatelessWidget {
     return AsyncView<TeacherProfile?>(
       load: () => AppServicesScope.of(context).teachers.findMine(teacherId),
       // `null` = لا ملف ⇒ `AsyncView` يعرض `emptyBuilder` (لا `builder`).
-      // لذلك دعوة الإنشاء تُمرَّر هنا، لا كحالة داخل `builder`.
       emptyBuilder: (BuildContext context) => const _NoProfileCard(),
       builder: (BuildContext context, TeacherProfile? profile) {
         if (profile == null) {
           return const _NoProfileCard();
         }
-        return _StatusCard(profile: profile);
+        return _StatusRow(profile: profile);
       },
     );
   }
 }
 
-/// بلا ملف: دعوة إنشاء واضحة (onboarding) لا رسالة تقنية.
+/// بلا ملف: دعوة إنشاء واضحة لكن **مضغوطة** (سطر + زر صغير).
 class _NoProfileCard extends StatelessWidget {
   const _NoProfileCard();
 
@@ -69,52 +56,49 @@ class _NoProfileCard extends StatelessWidget {
 
     return AppCard(
       key: const Key('teacher-onboarding-card'),
-      gradient: AppGradients.glow,
-      borderColor: AppBorders.onTint,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Icon(Icons.badge_outlined, size: 20),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
+          _StatusIcon(
+            icon: Icons.badge_outlined,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
                   'ملفك التعريفي بانتظارك',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'أضف المادة والمرحلة ونبذة قصيرة، وسيظهر ملفك للطلاب بعد '
+                  'اعتماد الإدارة.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'أضف المادة والمرحلة والمنطقة ونبذة قصيرة عن طريقة شرحك، وسيظهر '
-            'ملفك للطلاب بعد أن تعتمده الإدارة.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.75,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          FilledButton(
-            key: const Key('teacher-create-profile'),
-            onPressed: () => Navigator.of(
-              context,
-            ).pushNamed(RoutePaths.editTeacherProfile),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(46),
-            ),
-            child: const Text('إنشاء ملف تعريفي'),
-          ),
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            'يستغرق دقيقتين، ويمكنك تعديله في أي وقت.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: AppSpacing.xs),
+                FilledButton(
+                  key: const Key('teacher-create-profile'),
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pushNamed(RoutePaths.editTeacherProfile),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
+                    textStyle: theme.textTheme.labelMedium,
+                  ),
+                  child: const Text('إنشاء ملف تعريفي'),
+                ),
+              ],
             ),
           ),
         ],
@@ -123,9 +107,9 @@ class _NoProfileCard extends StatelessWidget {
   }
 }
 
-/// ملف قائم: الشكل والنبرة يتغيّران بحسب حالته الحقيقية.
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.profile});
+/// ملف قائم: صف واحد يتغيّر لونه وشارته بحسب الحالة الحقيقية.
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.profile});
 
   final TeacherProfile profile;
 
@@ -133,101 +117,111 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final _StatusCopy copy = _StatusCopy.of(profile);
+    final bool rejected = profile.status == TeacherProfileStatus.rejected;
+    final String? note = (profile.reviewNote ?? '').trim().isEmpty
+        ? null
+        : profile.reviewNote!.trim();
 
     return AppCard(
       key: Key('teacher-status-card-${profile.status.wireValue}'),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      onTap: () =>
+          Navigator.of(context).pushNamed(RoutePaths.myTeacherProfile),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             children: <Widget>[
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: copy.accent.withAlpha(28),
-                child: Icon(copy.icon, size: 20, color: copy.accent),
-              ),
-              const SizedBox(width: AppSpacing.xs),
+              _StatusIcon(icon: copy.icon, color: copy.accent),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   copy.title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              StatusChip(label: copy.chip, color: copy.accent),
+              const SizedBox(width: AppSpacing.xxs),
+              // تعديل فوري بلا استهلاك مساحة: أيقونة واحدة داخل هدف لمس 40dp.
+              IconButton(
+                key: const Key('teacher-status-edit'),
+                tooltip: 'تعديل الملف',
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                padding: EdgeInsets.zero,
+                onPressed: () => Navigator.of(
+                  context,
+                ).pushNamed(RoutePaths.editTeacherProfile),
+                icon: Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            copy.message,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.75,
+          // سطر واحد فقط يشرح الحالة. لا فقرة، ولا أزرار بعرض الشاشة.
+          const SizedBox(height: AppSpacing.xxs),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 44),
+            child: Text(
+              copy.message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
           // سبب الرفض كما كتبه المراجع: معلومة يملكها المدرس، لا رمز داخلي.
-          if (profile.status == TeacherProfileStatus.rejected &&
-              (profile.reviewNote ?? '').trim().isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
+          if (rejected && note != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.xxs),
             Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
+              margin: const EdgeInsetsDirectional.only(start: 44),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
+              ),
               decoration: BoxDecoration(
-                color: AppColors.statusRejected.withAlpha(18),
+                color: AppColors.statusRejected.withAlpha(16),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
               ),
               child: Text(
-                'ملاحظة المراجع: ${profile.reviewNote!.trim()}',
-                style: theme.textTheme.bodySmall?.copyWith(height: 1.6),
+                'ملاحظة المراجع: $note',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.statusRejected,
+                ),
               ),
             ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pushNamed(RoutePaths.myTeacherProfile),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    textStyle: theme.textTheme.labelMedium,
-                  ),
-                  child: const Text(
-                    'ملفي التعريفي',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pushNamed(RoutePaths.editTeacherProfile),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
-                    ),
-                    textStyle: theme.textTheme.labelMedium,
-                  ),
-                  child: const Text(
-                    'تعديل',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
+    );
+  }
+}
+
+/// أيقونة الحالة في مربع 36dp ملوّن (لا دائرة 40dp بلا معنى).
+class _StatusIcon extends StatelessWidget {
+  const _StatusIcon({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: color.withAlpha(24),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
+      ),
+      child: Icon(icon, size: 19, color: color),
     );
   }
 }
@@ -240,12 +234,14 @@ class _StatusCopy {
   const _StatusCopy({
     required this.title,
     required this.message,
+    required this.chip,
     required this.icon,
     required this.accent,
   });
 
   final String title;
   final String message;
+  final String chip;
   final IconData icon;
   final Color accent;
 
@@ -257,6 +253,7 @@ class _StatusCopy {
           message:
               'ملفك محفوظ كمسودة ولا يراه الطلاب بعد. أضف ما ينقصه ثم احفظ '
               'لإرساله إلى مراجعة الإدارة.',
+          chip: 'مسودة',
           icon: Icons.edit_note_outlined,
           accent: AppColors.statusPending,
         );
@@ -265,7 +262,8 @@ class _StatusCopy {
           title: 'ملفك قيد المراجعة',
           message:
               'استلمنا ملفك ويراجعه فريق التوثيق. لا تحتاج إلى أي خطوة الآن — '
-              'سنُشعرك عند صدور القرار، ويمكنك تعديل بياناتك في أي وقت.',
+              'سنُشعرك عند صدور القرار.',
+          chip: 'قيد المراجعة',
           icon: Icons.hourglass_bottom_outlined,
           accent: AppColors.statusPending,
         );
@@ -273,17 +271,18 @@ class _StatusCopy {
         return const _StatusCopy(
           title: 'ملفك موثّق ويظهر للطلاب',
           message:
-              'يمكن للطلاب الآن العثور عليك وطلب الانضمام إلى مجموعاتك '
-              'وحجز الحصص. حافظ على تحديث بياناتك ومواعيدك.',
+              'يمكن للطلاب الآن العثور عليك وطلب الانضمام إلى مجموعاتك وحجز '
+              'الحصص.',
+          chip: 'موثّق',
           icon: Icons.verified_outlined,
           accent: AppColors.statusAccepted,
         );
       case TeacherProfileStatus.rejected:
         return const _StatusCopy(
           title: 'ملفك يحتاج تعديلًا',
-          message:
-              'لم يُعتمد الملف في صورته الحالية. راجع الملاحظة أدناه، عدّل ما '
-              'يلزم، ثم احفظ لإعادة إرساله إلى المراجعة.',
+          message: 'لم يُعتمد الملف في صورته الحالية. راجع الملاحظة، عدّل ما '
+              'يلزم ثم احفظ لإعادة الإرسال.',
+          chip: 'يحتاج تعديلًا',
           icon: Icons.report_gmailerrorred_outlined,
           accent: AppColors.statusRejected,
         );

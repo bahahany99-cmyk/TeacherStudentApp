@@ -81,11 +81,12 @@ abstract final class AppTabs {
     selectedIcon: Icons.event_note_rounded,
   );
 
+  /// (P28) «الطلبات» صندوق وارد لا تقويم: يحوي طلبات الحجز والانضمام معًا.
   static const AppTabSpec requests = AppTabSpec(
     tab: AppTab.bookings,
     label: 'الطلبات',
-    icon: Icons.event_note_outlined,
-    selectedIcon: Icons.event_note_rounded,
+    icon: Icons.inbox_outlined,
+    selectedIcon: Icons.inbox_rounded,
   );
 
   static const AppTabSpec profile = AppTabSpec(

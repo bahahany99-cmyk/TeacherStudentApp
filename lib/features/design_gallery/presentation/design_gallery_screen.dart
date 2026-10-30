@@ -44,7 +44,7 @@ class DesignGalleryScreen extends StatelessWidget {
                 // ---------- الهوية والخط ----------
                 const SectionHeader(
                   title: 'الهوية والخط',
-                  subtitle: 'Cairo 400 / 600 / 700 — العرض من اليمين لليسار',
+                  subtitle: 'IBM Plex Sans Arabic 400 / 600 / 700 — من اليمين لليسار',
                 ),
                 AppCard(
                   child: Column(

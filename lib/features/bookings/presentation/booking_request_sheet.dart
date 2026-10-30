@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/booking_rules.dart';
+import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
 import 'package:teacher_student_app/features/bookings/widgets/slot_picker_sheet.dart';
 
 /// ورقة «طلب حجز» للطالب (P10).
@@ -118,6 +119,15 @@ class _BookingRequestSheetState extends State<_BookingRequestSheet> {
         startsAt: slot,
         durationMinutes: _duration,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+      // (P28) خيط المحادثة يُنشأ الآن لا عند أول ضغطة «مراسلة»: فيراه المدرس
+      // في قائمته لحظة وصول الطلب.
+      await ensureThreadForBooking(
+        services: AppServicesScope.of(context),
+        booking: created,
       );
       if (!mounted) {
         return;

@@ -2791,6 +2791,48 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
   }
 
   @override
+  @override
+  Stream<List<DirectChat>> watchMine(String viewerId) {
+    if (viewerId.isEmpty) {
+      return Stream<List<DirectChat>>.value(const <DirectChat>[]);
+    }
+
+    List<DirectChat> merge(
+      List<DirectChat> asTeacher,
+      List<DirectChat> asStudent,
+    ) {
+      final Map<String, DirectChat> byId = <String, DirectChat>{
+        for (final DirectChat chat in asTeacher) chat.id: chat,
+        for (final DirectChat chat in asStudent) chat.id: chat,
+      };
+      final List<DirectChat> chats = byId.values.toList(growable: false)
+        ..sort((DirectChat a, DirectChat b) {
+          final DateTime left = a.lastMessageAt ?? a.createdAt;
+          final DateTime right = b.lastMessageAt ?? b.createdAt;
+          return right.compareTo(left);
+        });
+      return chats;
+    }
+
+    Stream<List<DirectChat>> query(String field) {
+      return _chats
+          .where(field, isEqualTo: viewerId)
+          .snapshots()
+          .map(
+            (QuerySnapshot<Map<String, dynamic>> snapshot) => mapDocuments(
+              snapshot.docs.map(_entry).toList(growable: false),
+              directChatFromMap,
+            ),
+          );
+    }
+
+    return mergeListStreams<DirectChat>(
+      first: query('teacherId'),
+      second: query('studentId'),
+      combine: merge,
+    );
+  }
+
   Future<List<DirectChat>> listMine(String viewerId) {
     return _guard(() async {
       if (viewerId.isEmpty) {

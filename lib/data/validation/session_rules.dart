@@ -20,7 +20,7 @@ abstract final class SessionRules {
 
   /// «5:30 م» — تنسيق عربي 12 ساعة بلا حزمة `intl`.
   ///
-  /// الأرقام لاتينية مقصودة: الخط المضمَّن (Cairo) يرسمها بوضوح على كل
+  /// الأرقام لاتينية مقصودة: الخط المضمَّن (IBM Plex Sans Arabic) يرسمها بوضوح على كل
   /// الأجهزة، وتوحيد الشكل يمنع اختلاف العرض بين لوحة مفاتيح عربية وأخرى.
   static String formatMinutes(int minutes) {
     final int safe = minutes.clamp(0, 24 * 60);

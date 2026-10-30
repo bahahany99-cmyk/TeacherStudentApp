@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -81,55 +83,52 @@ void main() {
     });
   });
 
-  group('لوحة v4 — وردي فاخر بلا أخضر', () {
-    test('الهوية وردية والغسيل وردي/لافندر', () {
-      // اللون الأساسي وردي عميق (قناة حمراء أعلى من الخضراء والزرقاء).
+  group('الهوية 5 — نيلي درسلي', () {
+    test('الهوية نيلية (أزرق مسيطر) والخلفية باردة لا وردية', () {
       final Color seed = AppColors.seed;
-      expect(seed.r, greaterThan(seed.g));
+      // أزرق صريح: القناة الزرقاء هي الأقوى بوضوح.
+      expect(seed.b, greaterThan(seed.r));
       expect(seed.b, greaterThan(seed.g));
+      // تباين كافٍ للنص على الأبيض (≥ 4.5:1).
+      expect(_contrastOnWhite(seed), greaterThanOrEqualTo(4.5));
 
-      // لا بقايا نعناع/أخضر في خلفيات الغسيل.
-      for (final Color wash in <Color>[
-        AppColors.washRose,
-        AppColors.washLilac,
-        AppColors.washPeach,
-      ]) {
-        // دافئة/وردية: الأحمر هو القناة الأقوى أو مساوٍ للأخضر.
-        expect(wash.r, greaterThanOrEqualTo(wash.g));
-      }
+      // الخلفية باردة هادئة، لا بيضاء مسطّحة ولا وردية.
+      final Color background = AppColors.lightBackground;
+      expect(background, isNot(Colors.white));
+      expect(background.b, greaterThanOrEqualTo(background.r));
     });
 
-    test('الحالات الدلالية خالية من الأخضر', () {
-      // القاعدة: الأخضر ليس القناة الأقوى (لا لون «أخضر» أو «نعناعي»)، وهو
-      // تحقّق أعم من مقارنة الأحمر فقط لأن الأزرق الرمادي مقبول.
-      for (final Color status in <Color>[
+    test('الحالات الدلالية متمايزة وقابلة للقراءة', () {
+      final List<Color> statuses = <Color>[
         AppColors.statusAccepted,
         AppColors.statusPending,
         AppColors.statusRejected,
         AppColors.statusNeutral,
-      ]) {
-        final double maxOther = status.r > status.b ? status.r : status.b;
+        AppColors.statusInfo,
+      ];
+      // لا لونان متطابقان: كل حالة تُقرأ بلونها.
+      expect(statuses.toSet().length, statuses.length);
+      for (final Color status in statuses) {
         expect(
-          status.g,
-          lessThanOrEqualTo(maxOther),
-          reason: 'اللون $status أخضر مسيطر',
+          _contrastOnWhite(status),
+          greaterThanOrEqualTo(4.5),
+          reason: 'الحالة $status غير مقروءة على الأبيض',
         );
       }
+      // «مقبول» أخضر (الثقة) و«مرفوض» أحمر — إشارة صريحة لا رمادية.
+      expect(
+        AppColors.statusAccepted.g,
+        greaterThan(AppColors.statusAccepted.r),
+      );
+      expect(
+        AppColors.statusRejected.r,
+        greaterThan(AppColors.statusRejected.g),
+      );
     });
 
-    test('لا لون أخضر هوية قديم في أي مكان من الشجرة', () {
-      // 0E7C66 كان لون الهوية القديم؛ نتأكد أنه لم يبقَ في أي مصدر.
-      final Directory lib = Directory('lib');
-      final RegExp oldGreen = RegExp(r'0x[Ff]{2}0E7C66|0x[Ff]{2}0A5D4C');
-      final List<String> offenders = <String>[];
-      for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
-        if (entity is File && entity.path.endsWith('.dart')) {
-          if (oldGreen.hasMatch(entity.readAsStringSync())) {
-            offenders.add(entity.path);
-          }
-        }
-      }
-      expect(offenders, isEmpty);
+    test('النصوص الأساسية فوق حد التباين المقروء', () {
+      expect(_contrastOnWhite(AppColors.textPrimary), greaterThanOrEqualTo(7));
+      expect(_contrastOnWhite(AppColors.textSecondary), greaterThanOrEqualTo(4.5));
     });
   });
 
@@ -334,4 +333,21 @@ void main() {
       expect(offenders, isEmpty, reason: offenders.join('، '));
     });
   });
+}
+
+
+/// تباين لون على خلفية بيضاء وفق WCAG: (1.05) / (L + 0.05).
+///
+/// `Color.r/g/b` في هذه النسخة من Flutter قيم كسرية 0..1، فالحساب مباشر بلا
+/// تحويل.
+double _contrastOnWhite(Color color) {
+  double linear(double channel) => channel <= 0.03928
+      ? channel / 12.92
+      : math.pow((channel + 0.055) / 1.055, 2.4).toDouble();
+
+  final double luminance =
+      0.2126 * linear(color.r) +
+      0.7152 * linear(color.g) +
+      0.0722 * linear(color.b);
+  return 1.05 / (luminance + 0.05);
 }
