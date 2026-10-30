@@ -435,6 +435,9 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
 
                     const SizedBox(height: AppSpacing.lg),
                     FilledButton(
+                      // مفتاح ثابت: الاختبار (والمستخدم عبر قارئ الشاشة)
+                      // يصل إلى الفعل الأساسي بالهوية لا بالنص.
+                      key: const Key('group-form-save'),
                       onPressed: _saving ? null : _save,
                       child: _saving
                           ? const SizedBox(

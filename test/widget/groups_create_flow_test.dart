@@ -174,12 +174,19 @@ void main() {
         find.widgetWithText(TextFormField, 'المرحلة الدراسية'),
         'الثانوية العامة',
       );
-      await tester.ensureVisible(find.text('إنشاء المجموعة'));
+      // الحفظ: الزر نفسه (لا نصّه) ثم الانتظار حتى ينتهي الحفظ.
+      final Finder saveButton = find.byKey(const Key('group-form-save'));
+      await tester.ensureVisible(saveButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('إنشاء المجموعة'));
+      await tester.tap(saveButton);
       await tester.pumpAndSettle();
 
-      // ③ عاد إلى «مجموعاتي» والمجموعة ظاهرة فعلًا (قراءة من المستودع).
+      // ③ عاد إلى «مجموعاتي»: نموذج الإنشاء أُغلق فعلًا بالحفظ لا بالرجوع.
+      expect(
+        find.byType(GroupFormScreen),
+        findsNothing,
+        reason: 'النموذج ما زال مفتوحًا ⇒ الحفظ لم يحدث (تحقّق من رسالة الخطأ)',
+      );
       expect(
         find.text('مجموعة التفاضل — اختبار الزر الواحد'),
         findsOneWidget,
@@ -190,7 +197,9 @@ void main() {
       expect(
         after.any((StudyGroup g) => g.title == 'مجموعة التفاضل — اختبار الزر الواحد'),
         isTrue,
-        reason: 'المجموعة يجب أن تُحفظ في المستودع لا أن تُعرض فقط',
+        reason:
+            'المجموعة يجب أن تُحفظ في المستودع لا أن تُعرض فقط. '
+            'المخزّن الآن: ${after.map((StudyGroup g) => g.title).join(' | ')}',
       );
     });
   });
