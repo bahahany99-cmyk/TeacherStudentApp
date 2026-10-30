@@ -55,12 +55,28 @@ void main() {
       );
     });
 
-    test('هامش التسامح يمنع «انتهت» كاذبة قبل الموعد', () {
+    test('هامش التسامح: لا تُعتبر منتهية مبكرًا إلا داخل الهامش', () {
       final ChatImage image = imageAt(now);
-      final DateTime justBefore = now.add(
-        ChatImageLimits.lifetime - const Duration(minutes: 1),
+
+      // قبل الموعد بثلاث دقائق (أكثر من هامش الدقيقتين) ⇒ سارية.
+      expect(
+        image.isExpired(
+          now: now.add(
+            ChatImageLimits.lifetime - const Duration(minutes: 3),
+          ),
+        ),
+        isFalse,
       );
-      expect(image.isExpired(now: justBefore), isFalse);
+      // داخل الهامش: نتعامل معها كمنتهية (تحفّظًا) لأن ساعة الجهاز قد تتأخر
+      // عن الخادم، وظهور صورة سينتهي مستندها خلال لحظات أسوأ من إخفائها.
+      expect(
+        image.isExpired(
+          now: now.add(
+            ChatImageLimits.lifetime - const Duration(minutes: 1),
+          ),
+        ),
+        isTrue,
+      );
     });
 
     test('المتبقي لا يصير سالبًا', () {
@@ -217,8 +233,9 @@ void main() {
 
     test('التنفيذ الفارغ يفشل بوضوح ولا يوهم بالنجاح', () async {
       const EmptyChatImageRepository empty = EmptyChatImageRepository();
-      await expectLater(
-        empty.upload(
+      // يرمي **متزامنًا** (لا يعيد مستقبلًا فاشلًا)، فنغلّفه بدالة.
+      expect(
+        () => empty.upload(
           chatId: 'chat-1',
           senderId: 'student-1',
           bytes: payload(),

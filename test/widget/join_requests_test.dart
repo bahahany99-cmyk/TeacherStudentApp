@@ -10,6 +10,7 @@ import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/features/chat/presentation/direct_chat_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/group_details_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/join_requests_screen.dart';
 
@@ -44,7 +45,11 @@ Widget _host({
     services: services,
     child: SessionScope(
       controller: session,
-      child: MaterialApp(theme: AppTheme.light, home: screen),
+      child: MaterialApp(
+        theme: AppTheme.light,
+        onGenerateRoute: chatRouteForTests,
+        home: screen,
+      ),
     ),
   );
 }
@@ -134,6 +139,12 @@ void main() {
       expect(find.text('طلب الانضمام'), findsOneWidget);
 
       await tapVisible(tester, find.text('طلب الانضمام'));
+      await tester.pumpAndSettle();
+
+      // (P24) المحادثة مع المدرس تُفتح تلقائيًا بعد الطلب — هنا نتحقق من
+      // فتحها ثم نعود، لأن بقية التأكيدات تخص شاشة التفاصيل تحتها.
+      expect(find.byType(DirectChatScreen), findsOneWidget);
+      await tester.pageBack();
       await tester.pumpAndSettle();
 
       // الحالة تُقرأ من المستودع بعد الإرسال، لا من حالة محلية متفائلة.
