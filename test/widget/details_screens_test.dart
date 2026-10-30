@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 
+import '../helpers/avatar_helpers.dart';
 import '../helpers/test_app.dart';
 
 /// يمر عبر شاشة البداية إلى شاشة الدخول.
 Future<void> _openLogin(WidgetTester tester) async {
   usePhoneSurface(tester);
-  await tester.pumpWidget(buildTestApp());
+  // (P22) ملف المدرس التجريبي موثّق وصورته إلزامية قبل الحفظ، فنرفع صورة
+  // للحساب التجريبي أولًا — وإلا كان اختبار الحفظ يقيس منع الحفظ لا الحفظ.
+  final AppServices services = AppServices.demo();
+  await seedAvatar(services, DemoData.demoTeacherId);
+  await tester.pumpWidget(buildTestApp(services: services));
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
   await tester.pumpAndSettle();
@@ -170,11 +177,7 @@ void main() {
       // (P15) النموذج صار أطول من الشاشة، وزر «حفظ» في أسفله. نضغط معالجه
       // مباشرة بدل الاعتماد على إصابة نقطة يحتاج تمريرها — والضغط الحقيقي
       // على الزر مغطّى في اختبار «النموذج الصالح يحفظ فعلًا ويُغلق».
-      final FilledButton save = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'حفظ'),
-      );
-      save.onPressed!();
-      await tester.pumpAndSettle();
+      await pressProfileSave(tester);
 
       // الرسالة العامة دليل على أن التحقق جرى.
       expect(find.text('راجع الحقول المطلوبة قبل الحفظ.'), findsOneWidget);
@@ -202,11 +205,7 @@ void main() {
       // نضغط المعالج مباشرة: النموذج أطول من الشاشة، و`tapVisible` قد يصيب
       // نقطة خارج منطقة العرض فتضيع النقرة بلا فشل صريح (نفس السبب الموثّق
       // في اختبار الاسم الفارغ أعلاه).
-      final FilledButton save = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'حفظ'),
-      );
-      save.onPressed!();
-      await tester.pumpAndSettle();
+      await pressProfileSave(tester);
 
       // عاد إلى «ملفي التعريفي»، ولا نص يدّعي غير ذلك.
       _expectTitle('ملفي التعريفي');

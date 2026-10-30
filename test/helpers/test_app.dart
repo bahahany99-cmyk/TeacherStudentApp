@@ -15,10 +15,16 @@ void usePhoneSurface(WidgetTester tester) {
 }
 
 /// يبني التطبيق كاملًا ببيانات تجريبية (لا Firebase) للاختبار.
-Widget buildTestApp() {
-  final AppServices services = AppServices.demo();
-  final SessionController session = SessionController(services.auth);
-  return TeacherStudentApp(services: services, session: session);
+///
+/// [services] اختيارية: بعض الاختبارات تحتاج تجهيز الحزمة قبل البناء (مثل
+/// رفع صورة حساب قبل حفظ ملف مدرس، P22).
+Widget buildTestApp({AppServices? services}) {
+  final AppServices resolved = services ?? AppServices.demo();
+  final SessionController session = SessionController(
+    resolved.auth,
+    avatars: resolved.avatars,
+  );
+  return TeacherStudentApp(services: resolved, session: session);
 }
 
 /// يضغط عنصرًا بعد التأكد من ظهوره داخل منطقة العرض (مع تمرير إن لزم).

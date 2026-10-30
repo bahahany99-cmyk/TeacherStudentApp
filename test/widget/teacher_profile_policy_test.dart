@@ -5,6 +5,7 @@ import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/data/constants/academic_options.dart';
+import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
@@ -42,7 +43,7 @@ Widget _host(Widget child, AppServices services, SessionController session) {
 _teacherWith(TeacherProfileStatus status, {bool withPhoto = true}) {
   final List<TeacherProfile> source = <TeacherProfile>[
     TeacherProfile(
-      id: 'teacher-1',
+      id: DemoData.demoTeacherId,
       displayName: 'أ. سارة الخطيب',
       subject: 'الرياضيات',
       stage: 'الثانوية العامة',
@@ -50,7 +51,9 @@ _teacherWith(TeacherProfileStatus status, {bool withPhoto = true}) {
       bio: 'شرح مبسّط للجبر والتفاضل مع تدريبات محلولة بعد كل حصة.',
       status: status,
       governorate: 'القاهرة',
-      photoPath: withPhoto ? TeacherProfile.photoPathFor('teacher-1') : null,
+      photoPath: withPhoto
+          ? TeacherProfile.photoPathFor(DemoData.demoTeacherId)
+          : null,
     ),
   ];
 
@@ -128,7 +131,7 @@ void main() {
       usePhoneSurface(tester);
       final ({AppServices services, SessionController session, List<TeacherProfile> source})
       bundle = _teacherWith(TeacherProfileStatus.verified);
-      await seedAvatar(bundle.services, 'teacher-1');
+      await seedAvatar(bundle.services, DemoData.demoTeacherId);
 
       await tester.pumpWidget(
         _host(const EditTeacherProfileScreen(), bundle.services, bundle.session),
@@ -165,7 +168,7 @@ void main() {
       usePhoneSurface(tester);
       final ({AppServices services, SessionController session, List<TeacherProfile> source})
       bundle = _teacherWith(TeacherProfileStatus.verified);
-      await seedAvatar(bundle.services, 'teacher-1');
+      await seedAvatar(bundle.services, DemoData.demoTeacherId);
 
       await tester.pumpWidget(
         _host(const EditTeacherProfileScreen(), bundle.services, bundle.session),
@@ -193,7 +196,7 @@ void main() {
       usePhoneSurface(tester);
       final ({AppServices services, SessionController session, List<TeacherProfile> source})
       bundle = _teacherWith(TeacherProfileStatus.draft);
-      await seedAvatar(bundle.services, 'teacher-1');
+      await seedAvatar(bundle.services, DemoData.demoTeacherId);
 
       await tester.pumpWidget(
         _host(const EditTeacherProfileScreen(), bundle.services, bundle.session),
@@ -241,7 +244,7 @@ void main() {
       usePhoneSurface(tester);
       final ({AppServices services, SessionController session, List<TeacherProfile> source})
       bundle = _teacherWith(TeacherProfileStatus.draft);
-      await seedAvatar(bundle.services, 'teacher-1');
+      await seedAvatar(bundle.services, DemoData.demoTeacherId);
 
       await tester.pumpWidget(
         _host(const EditTeacherProfileScreen(), bundle.services, bundle.session),
@@ -270,7 +273,7 @@ void main() {
       usePhoneSurface(tester);
       final List<TeacherProfile> source = <TeacherProfile>[
         TeacherProfile(
-          id: 'teacher-1',
+          id: DemoData.demoTeacherId,
           displayName: 'أ. سارة الخطيب',
           // قيمة قديمة غير معتمدة (نص حر قبل P19).
           subject: 'الرياضيات — التفاضل',
@@ -278,7 +281,7 @@ void main() {
           area: 'المعادي',
           bio: 'شرح مبسّط للجبر والتفاضل مع تدريبات محلولة بعد كل حصة.',
           status: TeacherProfileStatus.draft,
-          photoPath: TeacherProfile.photoPathFor('teacher-1'),
+          photoPath: TeacherProfile.photoPathFor(DemoData.demoTeacherId),
         ),
       ];
       final AppServices demo = AppServices.demo();
@@ -297,7 +300,7 @@ void main() {
         avatars: demo.avatars,
         imagePicker: demo.imagePicker,
       );
-      await seedAvatar(services, 'teacher-1');
+      await seedAvatar(services, DemoData.demoTeacherId);
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);
 
@@ -335,7 +338,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // لا صورة مرفوعة ⇒ «صورتك الافتراضية» والإرشاد ظاهر.
-      expect(find.textContaining('الصورة'), findsWidgets);
+      expect(find.text('صورتك الافتراضية'), findsOneWidget);
+      expect(find.textContaining('صورة واضحة'), findsWidgets);
 
       await pressProfileSave(tester);
 
@@ -373,7 +377,10 @@ void main() {
 
       final TeacherProfile saved = bundle.source.single;
       expect(saved.hasPhoto, isTrue);
-      expect(saved.photoPath, TeacherProfile.photoPathFor('teacher-1'));
+      expect(
+        saved.photoPath,
+        TeacherProfile.photoPathFor(DemoData.demoTeacherId),
+      );
       expect(saved.status, TeacherProfileStatus.pendingReview);
     });
 
@@ -383,7 +390,7 @@ void main() {
       usePhoneSurface(tester);
       final List<TeacherProfile> source = <TeacherProfile>[
         TeacherProfile(
-          id: 'teacher-1',
+          id: DemoData.demoTeacherId,
           displayName: 'أ. سارة الخطيب',
           subject: 'الرياضيات',
           stage: 'الثانوية العامة',

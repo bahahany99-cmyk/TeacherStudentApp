@@ -98,7 +98,7 @@ abstract final class AvatarPresets {
   /// خيارات ألوان الخلفية (تدرّجات) — تُطابق `AppColors` ولا تخالفه.
   static const List<(int, int)> gradients = <(int, int)>[
     (0xFF6C5CE7, 0xFFA29BFE), // بنفسجي
-    (0xFF00897B, 0xFF4DB6AC), // أخضر مزرق
+    (0xFF32406B, 0xFF8C9BC9), // أزرق حبري
     (0xFFB04A5E, 0xFFE39AA6), // وردي داكن
     (0xFF4A6C8C, 0xFF90AFC5), // أزرق هادئ
     (0xFFA9762F, 0xFFE0BC7C), // كهرماني
