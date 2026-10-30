@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:typed_data';
@@ -106,6 +107,64 @@ abstract final class FirestoreCollections {
 (String, Map<String, Object?>) _entry(
   QueryDocumentSnapshot<Map<String, dynamic>> doc,
 ) => (doc.id, doc.data());
+
+/// يدمج تدفّقَي قوائم في تدفّق واحد: يُعاد الدمج عند وصول أي طرف.
+///
+/// **لماذا؟** الحجوزات والمحادثات تُقرأ باستعلامين متساويين (كطالب وكمعلم)
+/// لأن Firestore لا يدعم `OR` على حقلين بلا فهرس مركّب. الطلب الواحد
+/// (`listMine`) يجمعهما مرة واحدة، أما المراقبة الحيّة فتحتاج الاستماع
+/// للاثنين معًا. الاعتماد على `await` داخل `StreamBuilder` كان يعني إعادة
+/// الاشتراك عند كل بناء — وهو أصل عطل «الرسائل تختفي».
+///
+/// [combine] يستقبل أحدث قائمة من كل تدفّق ويعيد النتيجة النهائية؛ تُستدعى مرة
+/// عند وصول أول قيمة من أحدهما (والأخرى فارغة) ثم عند كل تحديث.
+Stream<List<T>> mergeListStreams<T>({
+  required Stream<List<T>> first,
+  required Stream<List<T>> second,
+  required List<T> Function(List<T> left, List<T> right) combine,
+}) {
+  late StreamController<List<T>> controller;
+  StreamSubscription<List<T>>? leftSub;
+  StreamSubscription<List<T>>? rightSub;
+  List<T> leftItems = <T>[];
+  List<T> rightItems = <T>[];
+
+  void emit() {
+    if (!controller.isClosed) {
+      controller.add(combine(leftItems, rightItems));
+    }
+  }
+
+  void onError(Object error, StackTrace stack) {
+    if (!controller.isClosed) {
+      controller.addError(error, stack);
+    }
+  }
+
+  controller = StreamController<List<T>>(
+    onListen: () {
+      leftSub = first.listen(
+        (List<T> items) {
+          leftItems = items;
+          emit();
+        },
+        onError: onError,
+      );
+      rightSub = second.listen(
+        (List<T> items) {
+          rightItems = items;
+          emit();
+        },
+        onError: onError,
+      );
+    },
+    onCancel: () async {
+      await leftSub?.cancel();
+      await rightSub?.cancel();
+    },
+  );
+  return controller.stream;
+}
 
 /// أخطاء Firestore → [AppException] عربية.
 ///
@@ -639,9 +698,13 @@ class FirestoreGroupRepository implements GroupRepository {
             GroupJoinRequest.idFor(groupId: group.id, studentId: studentId),
           );
 
-      return _firestore.runTransaction<GroupJoinRequest>((
-        Transaction transaction,
-      ) async {
+      // تُلتقط من داخل المعاملة لاستخدامها في الإشعار بعد الالتزام.
+      StudyGroup? joinedGroup;
+
+      final GroupJoinRequest created =
+          await _firestore.runTransaction<GroupJoinRequest>((
+            Transaction transaction,
+          ) async {
         final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
             await transaction.get(groupRef);
         final Map<String, Object?>? groupData = groupSnapshot.data();
@@ -703,8 +766,32 @@ class FirestoreGroupRepository implements GroupRepository {
 
         // `set` متعمّد: إعادة الطلب بعد رفض/إلغاء تستبدل المستند نفسه.
         transaction.set(requestRef, request.toCreateMap());
+        joinedGroup = current;
         return request;
       });
+
+      // (P25) إشعار المدرس بوصول الطلب — كان الطلب يُكتب بلا أي إشعار، فلا
+      // يعلم به المدرس إلا لو فتح شاشة الطلبات بنفسه.
+      final StudyGroup? group = joinedGroup;
+      if (group != null) {
+        await _notify(
+          type: NotificationType.joinRequested,
+          recipientId: group.teacherId,
+          actorId: studentId,
+          actorName: studentName,
+          targetId: group.id,
+          title: NotificationRules.titleFor(
+            type: NotificationType.joinRequested,
+            actorName: studentName,
+          ),
+          body: NotificationRules.bodyFor(
+            type: NotificationType.joinRequested,
+            actorName: studentName,
+            subject: group.title,
+          ),
+        );
+      }
+      return created;
     });
   }
 
@@ -765,6 +852,37 @@ class FirestoreGroupRepository implements GroupRepository {
   /// العضو في معاملة واحدة. لو حُسب المقعد في الواجهة لكان طلبان متزامنان
   /// يحصلان على المقعد الأخير معًا.
   @override
+  Stream<List<GroupJoinRequest>> watchIncomingRequests(String teacherId) {
+    if (teacherId.isEmpty) {
+      return Stream<List<GroupJoinRequest>>.value(
+        const <GroupJoinRequest>[],
+      );
+    }
+    // شرط واحد (`teacherId`) — وهو ما تسمح به القواعد للقراءة، والترتيب في
+    // العميل حتى لا نحتاج فهرسًا مركّبًا.
+    return _joinRequests
+        .where('teacherId', isEqualTo: teacherId)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) => sortJoinRequests(
+            mapDocuments(snapshot.docs.map(_entry), joinRequestFromMap),
+          ),
+        );
+  }
+
+  @override
+  Future<List<String>> listSubjects() {
+    return _guard(() async {
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _groups
+          .where('isActive', isEqualTo: true)
+          .get();
+      return DiscoveryRules.subjectOptions(
+        mapDocuments(snapshot.docs.map(_entry), studyGroupFromMap),
+      );
+    });
+  }
+
+  @override
   Future<GroupJoinRequest> decideJoinRequest({
     required GroupJoinRequest request,
     required String teacherId,
@@ -780,9 +898,14 @@ class FirestoreGroupRepository implements GroupRepository {
           .collection(FirestoreCollections.groupMembers)
           .doc(request.studentId);
 
-      return _firestore.runTransaction<GroupJoinRequest>((
-        Transaction transaction,
-      ) async {
+      // تُلتقط من المعاملة للإشعار بعد الالتزام (اسم المدرس وعنوان المجموعة).
+      String groupTitle = request.groupTitle;
+      String teacherName = '';
+
+      final GroupJoinRequest decided =
+          await _firestore.runTransaction<GroupJoinRequest>((
+            Transaction transaction,
+          ) async {
         final DocumentSnapshot<Map<String, dynamic>> groupSnapshot =
             await transaction.get(groupRef);
         final DocumentSnapshot<Map<String, dynamic>> requestSnapshot =
@@ -816,6 +939,8 @@ class FirestoreGroupRepository implements GroupRepository {
         if (group.teacherId != teacherId) {
           throw const AppException.permission(debugMessage: 'not group owner');
         }
+        groupTitle = group.title;
+        teacherName = group.teacherName;
 
         final DateTime now = DateTime.now();
 
@@ -875,6 +1000,33 @@ class FirestoreGroupRepository implements GroupRepository {
           decidedBy: teacherId,
         );
       });
+
+      // (P25) إشعار الطالب بالقرار — القبول/الرفض كان يبقى في المستند وحده،
+      // فلا يعلم الطالب إلا لو أعاد فتح شاشته.
+      await _notify(
+        type: approve
+            ? NotificationType.joinAccepted
+            : NotificationType.joinRejected,
+        recipientId: decided.studentId,
+        actorId: teacherId,
+        actorName: teacherName,
+        targetId: decided.groupId,
+        title: NotificationRules.titleFor(
+          type: approve
+              ? NotificationType.joinAccepted
+              : NotificationType.joinRejected,
+          actorName: teacherName,
+          subject: groupTitle,
+        ),
+        body: NotificationRules.bodyFor(
+          type: approve
+              ? NotificationType.joinAccepted
+              : NotificationType.joinRejected,
+          actorName: teacherName,
+          subject: groupTitle,
+        ),
+      );
+      return decided;
     });
   }
 
@@ -1854,6 +2006,58 @@ class FirestoreBookingRepository implements BookingRepository {
       );
       return List<BookingRequest>.unmodifiable(all);
     });
+  }
+
+  /// (P25) مراقبة حيّة لطلبات المستخدم من الجهتين.
+  ///
+  /// استعلامان (كطالب وكمعلم) لا يمكن دمجهما في استعلام واحد بلا `OR`/فهرس
+  /// مركّب، فنراقبهما معًا وندمج النتائج. النتيجة نفسها التي يعيدها
+  /// [listMine] (بلا تكرار، الأحدث أولًا) لكنها تصل عند كل تغيير — فقبول
+  /// المدرس يظهر في شاشة الطالب في اللحظة نفسها.
+  @override
+  Stream<List<BookingRequest>> watchMine() async* {
+    final String? uid = await _currentUid();
+    if (uid == null) {
+      yield const <BookingRequest>[];
+      return;
+    }
+
+    List<BookingRequest> merge(
+      List<BookingRequest> asStudent,
+      List<BookingRequest> asTeacher,
+    ) {
+      final Map<String, BookingRequest> merged = <String, BookingRequest>{};
+      for (final BookingRequest booking in <BookingRequest>[
+        ...asStudent,
+        ...asTeacher,
+      ]) {
+        merged[booking.id] = booking;
+      }
+      final List<BookingRequest> all = merged.values.toList(growable: false);
+      all.sort(
+        (BookingRequest a, BookingRequest b) =>
+            b.requestedAt.compareTo(a.requestedAt),
+      );
+      return List<BookingRequest>.unmodifiable(all);
+    }
+
+    Stream<List<BookingRequest>> side(String field) {
+      return _bookings
+          .where(field, isEqualTo: uid)
+          .snapshots()
+          .map(
+            (QuerySnapshot<Map<String, dynamic>> snapshot) => mapDocuments(
+              snapshot.docs.map(_entry),
+              bookingFromMap,
+            ),
+          );
+    }
+
+    yield* mergeListStreams<BookingRequest>(
+      first: side('studentId'),
+      second: side('teacherId'),
+      combine: merge,
+    );
   }
 
   @override
@@ -2983,6 +3187,26 @@ class FirestoreNotificationRepository implements NotificationRepository {
         mapDocuments(snapshot.docs.map(_entry), notificationFromMap),
       );
     });
+  }
+
+  @override
+  Stream<List<AppNotification>> watchMine(String recipientId) {
+    if (recipientId.isEmpty) {
+      return Stream<List<AppNotification>>.value(
+        const <AppNotification>[],
+      );
+    }
+    // شرط واحد + ترتيب في العميل (كما في `listMine`): لا فهرس مركّب جديد.
+    return _items
+        .where('recipientId', isEqualTo: recipientId)
+        .limit(NotificationRules.maxPerLoad)
+        .snapshots()
+        .map(
+          (QuerySnapshot<Map<String, dynamic>> snapshot) =>
+              NotificationRules.newestFirst(
+                mapDocuments(snapshot.docs.map(_entry), notificationFromMap),
+              ),
+        );
   }
 
   @override

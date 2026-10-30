@@ -10,7 +10,6 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
@@ -35,7 +34,6 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  int _revision = 0;
   bool _markingAll = false;
 
   String _viewerId(SessionController session) {
@@ -73,13 +71,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!mounted) {
       return;
     }
+    // (P25) لا حاجة لإعادة قراءة بعد العودة: البثّ الحيّ حدّث القائمة أصلًا
+    // (تعليم «مقروء» نفسه يصل عبر `watchMine`). الانتقال وحده يكفي.
     await Navigator.of(
       context,
     ).pushNamed(route, arguments: notification.targetId);
-    // بعد العودة قد تكون الحالة تغيّرت داخل الشاشة المفتوحة.
-    if (mounted) {
-      setState(() => _revision++);
-    }
   }
 
   Future<void> _markAll(String viewerId) async {
@@ -99,10 +95,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _markingAll = false;
-          _revision++;
-        });
+        setState(() => _markingAll = false);
       }
     }
   }
@@ -137,38 +130,66 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     title: 'آخر التحديثات',
                     subtitle: 'حجوزاتك ورسائلك ومقاعدك — في مكان واحد',
                   ),
-                  AsyncView<List<AppNotification>>(
-                    key: ValueKey<int>(_revision),
-                    load: () => AppServicesScope.of(
+                  // (P25) **قائمة حيّة** لا قراءة عند الفتح: الإشعار يُرسله
+                  // الخادم من عملية طرف آخر (طالب يحجز، مدرس يقبل)، فالشاشة
+                  // المفتوحة كانت تبقى قديمة حتى إعادة فتحها. الآن
+                  // `watchMine` يدفع كل مستند جديد فور وصوله.
+                  StreamBuilder<List<AppNotification>>(
+                    stream: AppServicesScope.of(
                       context,
-                    ).notifications.listMine(viewerId),
-                    builder:
-                        (
-                          BuildContext context,
-                          List<AppNotification> items,
-                        ) {
-                          if (items.isEmpty) {
-                            return const EmptyState(
-                              icon: Icons.notifications_none,
-                              title: 'لا إشعارات',
-                              message:
-                                  'سيصلك إشعار عند تحرّك طلب حجز أو وصول رسالة '
-                                  'أو توفّر مقعد في مجموعة.',
-                            );
-                          }
-                          return Column(
-                            children: <Widget>[
-                              for (final AppNotification item in items)
-                                Padding(
-                                  padding: AppSpacing.listGap,
-                                  child: _NotificationTile(
-                                    notification: item,
-                                    onTap: () => _open(item, viewerId),
-                                  ),
-                                ),
-                            ],
-                          );
-                        },
+                    ).notifications.watchMine(viewerId),
+                    builder: (
+                      BuildContext context,
+                      AsyncSnapshot<List<AppNotification>> snapshot,
+                    ) {
+                      if (snapshot.hasError) {
+                        return const EmptyState(
+                          icon: Icons.wifi_off_rounded,
+                          title: 'تعذّر تحميل الإشعارات',
+                          message: 'تحقّق من الاتصال، ثم ارجع إلى هذه الشاشة.',
+                        );
+                      }
+                      // لا `initialData`: التمييز بين «لم يصل شيء بعد» و«لا
+                      // إشعارات» يمنع وميض «لا إشعارات» في كل فتح.
+                      if (!snapshot.hasData) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppSpacing.lg,
+                          ),
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final List<AppNotification> items = snapshot.data!;
+                      if (items.isEmpty) {
+                        return const EmptyState(
+                          icon: Icons.notifications_none,
+                          title: 'لا إشعارات',
+                          message:
+                              'سيصلك إشعار عند تحرّك طلب حجز أو وصول رسالة '
+                              'أو توفّر مقعد في مجموعة.',
+                        );
+                      }
+                      return Column(
+                        children: <Widget>[
+                          for (final AppNotification item in items)
+                            Padding(
+                              padding: AppSpacing.listGap,
+                              child: _NotificationTile(
+                                notification: item,
+                                onTap: () => _open(item, viewerId),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: AppSpacing.md),
                   const InfoNote(
@@ -201,6 +222,9 @@ class _NotificationTile extends StatelessWidget {
     NotificationType.rescheduleProposed => Icons.swap_horiz,
     NotificationType.directMessage => Icons.forum_outlined,
     NotificationType.waitlistPromoted => Icons.groups_outlined,
+    NotificationType.joinRequested => Icons.person_add_alt_1_outlined,
+    NotificationType.joinAccepted => Icons.how_to_reg_outlined,
+    NotificationType.joinRejected => Icons.person_off_outlined,
   };
 
   @override

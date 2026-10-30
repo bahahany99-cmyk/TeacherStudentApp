@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/current_student.dart';
 import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
@@ -16,10 +17,11 @@ import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
-import 'package:teacher_student_app/data/services/group_repository.dart';
+import 'package:teacher_student_app/data/validation/booking_rules.dart';
 
 /// طلبات الانضمام (P8) — شاشة واحدة للطرفين:
 /// - **المدرس صاحب المجموعة:** يرى الطلبات المعلّقة ويقبل/يرفض.
@@ -160,122 +162,403 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
         title: Text(isTeacher ? 'طلبات الانضمام' : 'طلباتي'),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            ResponsiveContent(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  AsyncView<List<GroupJoinRequest>>(
-                    key: ValueKey<int>(_revision),
-                    load: () {
-                      final GroupRepository groups = AppServicesScope.of(
-                        context,
-                      ).groups;
-                      return isTeacher
-                          ? groups.listRequestsForGroup(
-                              widget.groupId,
-                              teacherId: CurrentTeacher.idOf(session),
-                            )
-                          : groups.listMyRequests(CurrentStudent.idOf(session));
-                    },
-                    isEmpty: (List<GroupJoinRequest> items) => items.isEmpty,
-                    emptyBuilder: (BuildContext context) => EmptyState(
-                      icon: Icons.mark_email_unread_outlined,
-                      title: isTeacher
-                          ? 'لا توجد طلبات انضمام'
-                          : 'لم تُرسل طلبات انضمام',
-                      message: isTeacher
-                          ? 'ستظهر هنا طلبات الطلاب، ومعها زر القبول الذي يحجز '
-                                'المقعد فورًا.'
-                          : 'افتح أي مجموعة من تبويب «المجموعات» وأرسل طلب '
-                                'انضمام لتتابعه هنا.',
-                    ),
-                    builder:
-                        (BuildContext context, List<GroupJoinRequest> requests) {
-                          final List<GroupJoinRequest> pending = requests
-                              .where((GroupJoinRequest r) => r.isPending)
-                              .toList(growable: false);
-                          final List<GroupJoinRequest> decided = requests
-                              .where((GroupJoinRequest r) => !r.isPending)
-                              .toList(growable: false);
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              SectionHeader(
-                                title: isTeacher
-                                    ? 'بانتظار قرارك'
-                                    : 'قيد المراجعة',
-                                icon: Icons.hourglass_empty,
-                                subtitle: '${pending.length} طلبًا معلّقًا',
-                              ),
-                              if (pending.isEmpty)
-                                const AppCard(
-                                  child: InfoNote(
-                                    text: 'لا طلبات معلّقة الآن.',
-                                    icon: Icons.check_circle_outline,
-                                  ),
-                                )
-                              else
-                                for (final GroupJoinRequest request in pending)
-                                  Padding(
-                                    padding: AppSpacing.listGap,
-                                    child: _RequestCard(
-                                      request: request,
-                                      isTeacher: isTeacher,
-                                      busy: _busyId == request.id,
-                                      onApprove: () => _decide(
-                                        request,
-                                        approve: true,
-                                      ),
-                                      onReject: () => _decide(
-                                        request,
-                                        approve: false,
-                                      ),
-                                      onCancel: () => _cancel(request),
-                                    ),
-                                  ),
-                              if (decided.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: AppSpacing.sectionGap),
-                                SectionHeader(
-                                  title: 'طلبات سابقة',
-                                  icon: Icons.history,
-                                  subtitle: '${decided.length} طلبًا',
-                                ),
-                                for (final GroupJoinRequest request in decided)
-                                  Padding(
-                                    padding: AppSpacing.listGap,
-                                    child: _RequestCard(
-                                      request: request,
-                                      isTeacher: isTeacher,
-                                      busy: false,
-                                    ),
-                                  ),
-                              ],
-                              const SizedBox(height: AppSpacing.sm),
-                              InfoNote(
-                                text: isTeacher
-                                    ? 'القبول يحجز المقعد ويضيف الطالب إلى '
-                                          'المجموعة في خطوة واحدة، ولا يمكن أن '
-                                          'يتجاوز العدد السعة حتى لو قُبل طلبان '
-                                          'في اللحظة نفسها.'
-                                    : 'طلب الانضمام يحتاج موافقة المدرس. '
-                                          'المقعد يُحجز لحظة القبول فقط، لا لحظة '
-                                          'إرسال الطلب.',
-                              ),
-                              const SizedBox(height: AppSpacing.lg),
-                            ],
-                          );
-                        },
-                  ),
-                ],
+        child: isTeacher
+            // (P25) لوحة المدرس العامة: انضمام + حجز، حيّة، وكل الطلبات.
+            ? _TeacherRequestsPanel(
+                teacherId: CurrentTeacher.idOf(session),
+                busyId: _busyId,
+                onDecide: _decide,
+              )
+            : _StudentRequestsList(
+                key: ValueKey<int>(_revision),
+                studentId: CurrentStudent.idOf(session),
+                busyId: _busyId,
+                onCancel: _cancel,
               ),
-            ),
-          ],
+      ),
+    );
+  }
+}
+
+/// لوحة طلبات المدرس (P25 — البند 5).
+///
+/// ## العطل الذي تُصلحه
+/// كانت الشاشة تقرأ `listRequestsForGroup(groupId)` — **مجموعة واحدة**،
+/// وتُبنى عند فتحها من صفحة تلك المجموعة فقط. فصلاحًا لذلك:
+/// - المدرس الذي يملك خمس مجموعات يرى طلبات مجموعة واحدة ويظن الباقي فارغًا.
+/// - «طلبات الحجز» لم تكن هنا إطلاقًا، فكان عليه أن يفتح تبويبًا آخر ليعرف أن
+///   طالبًا ينتظره.
+/// - كل قراءة كانت لقطة عند البناء، فالطلب الجديد لا يظهر إلا بإعادة فتح.
+///
+/// ## الحل
+/// بثّان مباشران: `groups.watchIncomingRequests(teacherId)` و
+/// `bookings.watchMine()` (مفلترًا على طلبات هذا المدرس المنتظرة). كلاهما بثّ
+/// خادم، فيظهر الطلب **فور وصوله** بلا تحديث يدوي.
+///
+/// **الترتيب:** الانضمام أولًا (يحتاج قرارًا لمقعد)، ثم الحجز. كل قسم يعرض
+/// حالته الفارغة الخاصة به، فلا يختفي قسم لأن الآخر فارغ.
+class _TeacherRequestsPanel extends StatelessWidget {
+  const _TeacherRequestsPanel({
+    required this.teacherId,
+    required this.busyId,
+    required this.onDecide,
+  });
+
+  final String teacherId;
+  final String? busyId;
+  final Future<void> Function(GroupJoinRequest request, {required bool approve})
+  onDecide;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: <Widget>[
+        ResponsiveContent(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const SectionHeader(
+                title: 'طلبات الانضمام',
+                icon: Icons.person_add_alt_1_outlined,
+                subtitle: 'كل مجموعاتك — تظهر لحظة إرسالها',
+              ),
+              StreamBuilder<List<GroupJoinRequest>>(
+                stream: AppServicesScope.of(
+                  context,
+                ).groups.watchIncomingRequests(teacherId),
+                builder: (
+                  BuildContext context,
+                  AsyncSnapshot<List<GroupJoinRequest>> snapshot,
+                ) {
+                  if (snapshot.hasError) {
+                    return const AppCard(
+                      child: InfoNote(
+                        icon: Icons.wifi_off_rounded,
+                        text: 'تعذّر تحميل طلبات الانضمام. تحقّق من الاتصال.',
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const _RequestsLoading();
+                  }
+                  final List<GroupJoinRequest> requests = snapshot.data!;
+                  final List<GroupJoinRequest> pending = requests
+                      .where((GroupJoinRequest r) => r.isPending)
+                      .toList(growable: false);
+                  final List<GroupJoinRequest> decided = requests
+                      .where((GroupJoinRequest r) => !r.isPending)
+                      .toList(growable: false);
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (pending.isEmpty)
+                        const AppCard(
+                          child: InfoNote(
+                            text: 'لا طلبات انضمام معلّقة الآن.',
+                            icon: Icons.check_circle_outline,
+                          ),
+                        )
+                      else ...<Widget>[
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppSpacing.xxs,
+                          ),
+                          child: Text(
+                            '${pending.length} طلبًا بانتظار قرارك',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: AppColors.statusPending),
+                          ),
+                        ),
+                        for (final GroupJoinRequest request in pending)
+                          Padding(
+                            padding: AppSpacing.listGap,
+                            child: _RequestCard(
+                              request: request,
+                              isTeacher: true,
+                              busy: busyId == request.id,
+                              onApprove: () =>
+                                  onDecide(request, approve: true),
+                              onReject: () =>
+                                  onDecide(request, approve: false),
+                            ),
+                          ),
+                      ],
+                      if (decided.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: AppSpacing.sm),
+                        SectionHeader(
+                          title: 'طلبات سابقة',
+                          icon: Icons.history,
+                          subtitle: '${decided.length} طلبًا',
+                        ),
+                        for (final GroupJoinRequest request in decided)
+                          Padding(
+                            padding: AppSpacing.listGap,
+                            child: _RequestCard(
+                              request: request,
+                              isTeacher: true,
+                              busy: false,
+                            ),
+                          ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.sectionGap),
+              const SectionHeader(
+                title: 'طلبات الحجز',
+                icon: Icons.event_note_outlined,
+                subtitle: 'الطلبات التي تنتظر ردّك على موعد',
+              ),
+              StreamBuilder<List<BookingRequest>>(
+                stream: AppServicesScope.of(context).bookings.watchMine(),
+                builder: (
+                  BuildContext context,
+                  AsyncSnapshot<List<BookingRequest>> snapshot,
+                ) {
+                  if (snapshot.hasError) {
+                    return const AppCard(
+                      child: InfoNote(
+                        icon: Icons.wifi_off_rounded,
+                        text: 'تعذّر تحميل طلبات الحجز. تحقّق من الاتصال.',
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const _RequestsLoading();
+                  }
+                  // طلبات هذا المدرس المنتظرة فقط — `watchMine` تُرجع الاتجاهين
+                  // (كطالب وكمعلم)، والقسم هنا لصفته كمعلّم.
+                  final List<BookingRequest> pending = snapshot.data!
+                      .where(
+                        (BookingRequest b) =>
+                            b.teacherId == teacherId && b.waitingForTeacher,
+                      )
+                      .toList(growable: false);
+
+                  if (pending.isEmpty) {
+                    return const AppCard(
+                      child: InfoNote(
+                        text: 'لا طلبات حجز معلّقة الآن.',
+                        icon: Icons.check_circle_outline,
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: <Widget>[
+                      for (final BookingRequest booking in pending)
+                        Padding(
+                          padding: AppSpacing.listGap,
+                          child: AppCard(
+                            onTap: () => Navigator.of(context).pushNamed(
+                              RoutePaths.bookingDetails,
+                              arguments: booking.id,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                CircleAvatar(
+                                  radius: AppSpacing.avatarSm / 2,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(24),
+                                  child: Text(
+                                    booking.studentName.trim().isEmpty
+                                        ? '؟'
+                                        : booking.studentName.trim().substring(
+                                            0,
+                                            1,
+                                          ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        booking.studentName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                      Text(
+                                        booking.hasSchedule
+                                            ? '${booking.subject} — '
+                                                  '${BookingRules.slotLabel(booking)}'
+                                            : booking.subject,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                const StatusChip(
+                                  label: 'قيد الانتظار',
+                                  color: AppColors.statusPending,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              const InfoNote(
+                text: 'القبول يحجز المقعد ويضيف الطالب إلى المجموعة في خطوة '
+                    'واحدة، ولا يمكن أن يتجاوز العدد السعة حتى لو قُبل طلبان '
+                    'في اللحظة نفسها.',
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RequestsLoading extends StatelessWidget {
+  const _RequestsLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
+    );
+  }
+}
+
+/// قائمة الطالب: طلباته هو، مع إمكانية إلغاء المعلّق.
+class _StudentRequestsList extends StatelessWidget {
+  const _StudentRequestsList({
+    super.key,
+    required this.studentId,
+    required this.busyId,
+    required this.onCancel,
+  });
+
+  final String studentId;
+  final String? busyId;
+  final Future<void> Function(GroupJoinRequest request) onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: <Widget>[
+        ResponsiveContent(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              AsyncView<List<GroupJoinRequest>>(
+                load: () => AppServicesScope.of(
+                  context,
+                ).groups.listMyRequests(studentId),
+                isEmpty: (List<GroupJoinRequest> items) => items.isEmpty,
+                emptyBuilder: (BuildContext context) => const EmptyState(
+                  icon: Icons.mark_email_unread_outlined,
+                  title: 'لم تُرسل طلبات انضمام',
+                  message: 'افتح أي مجموعة من تبويب «المجموعات» وأرسل طلب '
+                      'انضمام لتتابعه هنا.',
+                ),
+                builder:
+                    (BuildContext context, List<GroupJoinRequest> requests) {
+                      final List<GroupJoinRequest> pending = requests
+                          .where((GroupJoinRequest r) => r.isPending)
+                          .toList(growable: false);
+                      final List<GroupJoinRequest> decided = requests
+                          .where((GroupJoinRequest r) => !r.isPending)
+                          .toList(growable: false);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          SectionHeader(
+                            title: 'قيد المراجعة',
+                            icon: Icons.hourglass_empty,
+                            subtitle: '${pending.length} طلبًا معلّقًا',
+                          ),
+                          if (pending.isEmpty)
+                            const AppCard(
+                              child: InfoNote(
+                                text: 'لا طلبات معلّقة الآن.',
+                                icon: Icons.check_circle_outline,
+                              ),
+                            )
+                          else
+                            for (final GroupJoinRequest request in pending)
+                              Padding(
+                                padding: AppSpacing.listGap,
+                                child: _RequestCard(
+                                  request: request,
+                                  isTeacher: false,
+                                  busy: busyId == request.id,
+                                  onCancel: () => onCancel(request),
+                                ),
+                              ),
+                          if (decided.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: AppSpacing.sectionGap),
+                            SectionHeader(
+                              title: 'طلبات سابقة',
+                              icon: Icons.history,
+                              subtitle: '${decided.length} طلبًا',
+                            ),
+                            for (final GroupJoinRequest request in decided)
+                              Padding(
+                                padding: AppSpacing.listGap,
+                                child: _RequestCard(
+                                  request: request,
+                                  isTeacher: false,
+                                  busy: false,
+                                ),
+                              ),
+                          ],
+                          const SizedBox(height: AppSpacing.sm),
+                          const InfoNote(
+                            text: 'طلب الانضمام يحتاج موافقة المدرس. المقعد '
+                                'يُحجز لحظة القبول فقط، لا لحظة إرسال الطلب.',
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                        ],
+                      );
+                    },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

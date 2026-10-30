@@ -55,6 +55,36 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   /// آخر لحظة علّمنا فيها المحادثة مقروءة — يمنع حلقة كتابة/قراءة.
   String? _markedReadFor;
 
+  /// (P25 — البند 6) **تدفّقان محفوظان لا يُنشآن في كل بناء.**
+  ///
+  /// كان `watchMessages(chat.id)` يُستدعى داخل `build`. وبما أن `StreamBuilder`
+  /// يقارن كائن التدفّق، فكل إعادة بناء (إرسال رسالة، تحديث حقل، وصول إشعار)
+  /// كانت تُنتج تدفّقًا جديدًا ⇒ إلغاء اشتراك وإعادة اشتراك ⇒ حالة «لا بيانات
+  /// بعد» ⇒ **اختفاء الرسائل المرسومة للحظة**، والرسالة الجديدة تظهر بعد رحلة
+  /// كاملة إلى الخادم. وهو بالضبط العَرَض المبلَّغ عنه: «الرسالة تظهر ثم
+  /// تختفي».
+  ///
+  /// الحفظ هنا يجعل إعادة البناء إعادة رسم فقط؛ الاشتراك يتغيّر عند إعادة
+  /// المحاولة الصريحة ([_retryStreams]) أو عند تغيّر المحادثة.
+  Stream<DirectChat?>? _chatStream;
+  Stream<List<DirectChatMessage>>? _messagesStream;
+
+  void _ensureStreams() {
+    if (_chatStream != null && _messagesStream != null) {
+      return;
+    }
+    final DirectChatRepository repo = AppServicesScope.of(context).chats;
+    _chatStream ??= repo.watchChat(widget.chatId);
+    _messagesStream ??= repo.watchMessages(widget.chatId);
+  }
+
+  void _retryStreams() {
+    setState(() {
+      _chatStream = null;
+      _messagesStream = null;
+    });
+  }
+
   @override
   void dispose() {
     _input.dispose();
@@ -312,6 +342,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     final String viewerName = isTeacher
         ? CurrentTeacher.nameOf(session)
         : CurrentStudent.nameOf(session);
+    _ensureStreams();
 
     return Scaffold(
       // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
@@ -320,7 +351,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
       body: SafeArea(
         child: ResponsiveContent(
           child: StreamBuilder<DirectChat?>(
-            stream: AppServicesScope.of(context).chats.watchChat(widget.chatId),
+            stream: _chatStream,
             builder:
                 (
                   BuildContext context,
@@ -339,7 +370,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                   if (snapshot.hasError) {
                     return ErrorState(
                       error: snapshot.error!,
-                      onRetry: () => setState(() {}),
+                      onRetry: _retryStreams,
                     );
                   }
 
@@ -370,9 +401,10 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     onSend: () => _send(chat, viewerId, viewerName),
                     onPickImage: () =>
                         _sendOrPick(chat, viewerId, viewerName, true),
-                    // التدفّقان يُنشآن في `build`، فإعادة البناء = إعادة اشتراك
-                    // (التدفّق المنتهي بالخطأ لا يُعاد تشغيله تلقائيًا).
-                    onRetryStreams: () => setState(() {}),
+                    messagesStream: _messagesStream!,
+                    // إعادة الاشتراك **صريحة** فقط (تدفّق انتهى بخطأ، أو
+                    // انقطاع): إعادة البناء العادية لا تلمس الاشتراك.
+                    onRetryStreams: _retryStreams,
                   );
                 },
           ),
@@ -391,6 +423,7 @@ class _ChatBody extends StatelessWidget {
     required this.sending,
     required this.onSend,
     required this.onPickImage,
+    required this.messagesStream,
     required this.onRetryStreams,
   });
 
@@ -403,6 +436,9 @@ class _ChatBody extends StatelessWidget {
 
   /// اختيار صورة من المعرض وإرسالها.
   final VoidCallback onPickImage;
+
+  /// بثّ رسائل المحادثة — يُمرَّر من الأعلى ليبقى **نفس الاشتراك** عبر البناء.
+  final Stream<List<DirectChatMessage>> messagesStream;
 
   /// يعيد الاشتراك في تدفّقي المحادثة والرسائل بعد انقطاعهما.
   final VoidCallback onRetryStreams;
@@ -464,9 +500,7 @@ class _ChatBody extends StatelessWidget {
         ),
         Expanded(
           child: StreamBuilder<List<DirectChatMessage>>(
-            stream: AppServicesScope.of(
-              context,
-            ).chats.watchMessages(chat.id),
+            stream: messagesStream,
             builder:
                 (
                   BuildContext context,

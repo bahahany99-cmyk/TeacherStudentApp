@@ -4,7 +4,6 @@ import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -29,17 +28,12 @@ class BookingsScreen extends StatefulWidget {
 }
 
 class _BookingsScreenState extends State<BookingsScreen> {
-  /// مفتاح إعادة القراءة بعد أي تغيير يعود من شاشة التفاصيل.
-  int _revision = 0;
-
-  Future<void> _openDetails(String bookingId) async {
-    await Navigator.of(context).pushNamed(
-      RoutePaths.bookingDetails,
-      arguments: bookingId,
-    );
-    if (mounted) {
-      setState(() => _revision++);
-    }
+  Future<void> _openDetails(String bookingId) {
+    // (P25) لا حاجة لإعادة قراءة عند العودة: القائمة تُدفع حيًّا من
+    // `bookings.watchMine()`، فأي قرار داخل التفاصيل يظهر هنا فور كتابته.
+    return Navigator.of(
+      context,
+    ).pushNamed(RoutePaths.bookingDetails, arguments: bookingId);
   }
 
   Color _statusColor(BookingStatus status) {
@@ -80,10 +74,36 @@ class _BookingsScreenState extends State<BookingsScreen> {
                     ? 'افتح الطلب للقبول أو الرفض أو اقتراح وقت بديل'
                     : 'كل طلب يظل بانتظار موافقة المدرس حتى يردّ عليه',
               ),
-              AsyncView<List<BookingRequest>>(
-                key: ValueKey<int>(_revision),
-                load: () => AppServicesScope.of(context).bookings.listMine(),
-                builder: (BuildContext context, List<BookingRequest> bookings) {
+              // (P25) **البند 7:** قائمة حيّة بدل قراءة عند البناء. قبل ذلك
+              // كان قبول المدرس يكتب الحالة في الخادم بينما شاشة الطالب تعرض
+              // اللقطة القديمة (فراغ) حتى يعيد فتحها. الآن الطلب المقبول يظهر
+              // ويُحدَّث فورًا عبر `watchMine`.
+              StreamBuilder<List<BookingRequest>>(
+                stream: AppServicesScope.of(context).bookings.watchMine(),
+                builder: (
+                  BuildContext context,
+                  AsyncSnapshot<List<BookingRequest>> snapshot,
+                ) {
+                  if (snapshot.hasError) {
+                    return const EmptyState(
+                      icon: Icons.wifi_off_rounded,
+                      title: 'تعذّر تحميل الحجوزات',
+                      message: 'تحقّق من الاتصال ثم أعد فتح الصفحة.',
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+                  final List<BookingRequest> bookings = snapshot.data!;
                   if (bookings.isEmpty) {
                     return const EmptyState(
                       icon: Icons.event_note_outlined,
@@ -169,14 +189,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
                     ],
                   );
                 },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'المحادثة المرتبطة بالحجز تُنفَّذ في المرحلة التالية (P11)، '
-                'مربوطة بهذا الطلب وحده.',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
               ),
               const SizedBox(height: AppSpacing.lg),
             ],

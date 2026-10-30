@@ -108,6 +108,65 @@ void main() {
       );
     });
 
+    test('(P25) نصوص إشعارات الانضمام في الاتجاهين', () {
+      // الطالب → المدرس: «طلب انضمام».
+      expect(
+        NotificationRules.titleFor(
+          type: NotificationType.joinRequested,
+          actorName: 'سلمى محمود',
+        ),
+        'سلمى محمود طلب الانضمام لمجموعتك',
+      );
+      expect(
+        NotificationRules.bodyFor(
+          type: NotificationType.joinRequested,
+          actorName: 'سلمى محمود',
+          subject: 'التفاضل — المستوى الثاني',
+        ),
+        contains('التفاضل — المستوى الثاني'),
+      );
+
+      // المدرس → الطالب: قبول يحمل اسم المادة.
+      expect(
+        NotificationRules.titleFor(
+          type: NotificationType.joinAccepted,
+          actorName: 'أ. سارة',
+          subject: 'التفاضل',
+        ),
+        'قُبل طلب انضمامك إلى التفاضل',
+      );
+      expect(
+        NotificationRules.titleFor(
+          type: NotificationType.joinRejected,
+          actorName: 'أ. سارة',
+          subject: 'التفاضل',
+        ),
+        'لم يُقبل طلب انضمامك إلى التفاضل',
+      );
+      // بلا مادة تبقى الصياغة سليمة.
+      expect(
+        NotificationRules.titleFor(
+          type: NotificationType.joinRejected,
+          actorName: '   ',
+        ),
+        'رُفض طلب انضمامك',
+      );
+
+      // الثلاثة تفتح المجموعة، لا الحجز.
+      expect(
+        NotificationType.joinRequested.target,
+        NotificationTarget.group,
+      );
+      expect(
+        NotificationType.joinAccepted.target,
+        NotificationTarget.group,
+      );
+      expect(
+        NotificationType.joinRejected.target,
+        NotificationTarget.group,
+      );
+    });
+
     test('التحقق من الطول: عنوان مطلوب وحدود مطابقة للقواعد', () {
       expect(
         NotificationRules.textProblem(title: '  ', actorName: 'طالب'),

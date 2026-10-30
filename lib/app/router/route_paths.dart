@@ -22,6 +22,10 @@ abstract final class RoutePaths {
   /// ملف مدرس (واجهة الطالب). `arguments` = معرّف المدرس.
   static const String teacherProfile = '/teacher';
 
+  /// «المدرسون المميزون» — صفحة كاملة (P25). بلا `arguments`: القائمة
+  /// محسوبة أسبوعيًا من مصدرها، لا تُمرَّر من الشاشة السابقة.
+  static const String featuredTeachers = '/teachers/featured';
+
   /// تفاصيل مجموعة. `arguments` = معرّف المجموعة.
   static const String groupDetails = '/group';
 

@@ -20,7 +20,22 @@ enum NotificationType {
   directMessage('رسالة جديدة', NotificationTarget.chat),
 
   /// ترقية من قائمة انتظار مجموعة مكتملة ⇒ الطالب.
-  waitlistPromoted('مقعد متاح لك', NotificationTarget.group);
+  waitlistPromoted('مقعد متاح لك', NotificationTarget.group),
+
+  // ── (P25) طلبات الانضمام: كانت بلا إشعار إطلاقًا ────────────────────────
+  // الثغرة: طلب الانضمام يُنشئ مستندًا في `groupJoinRequests` فقط، فالمدرس
+  // لا يعلم بالطلب إلا لو فتح الشاشة بنفسه — والقبول/الرفض لا يعلم به الطالب
+  // إلا لو أعاد الفتح. الأنواع الثلاثة تغلق الحلقة، و`targetId` هو **معرّف
+  // المجموعة** فتفتح الضغطة تفاصيلها حيث تظهر الطلبات.
+
+  /// الطالب أرسل طلب انضمام ⇒ المدرس صاحب المجموعة.
+  joinRequested('طلب انضمام جديد', NotificationTarget.group),
+
+  /// المدرس قبل الطلب ⇒ الطالب.
+  joinAccepted('قُبل طلب انضمامك', NotificationTarget.group),
+
+  /// المدرس رفض الطلب ⇒ الطالب.
+  joinRejected('رُفض طلب انضمامك', NotificationTarget.group);
 
   const NotificationType(this.label, this.target);
 
@@ -38,6 +53,9 @@ enum NotificationType {
     NotificationType.rescheduleProposed => 'rescheduleProposed',
     NotificationType.directMessage => 'directMessage',
     NotificationType.waitlistPromoted => 'waitlistPromoted',
+    NotificationType.joinRequested => 'joinRequested',
+    NotificationType.joinAccepted => 'joinAccepted',
+    NotificationType.joinRejected => 'joinRejected',
   };
 
   static NotificationType parse(Object? raw) {
@@ -48,6 +66,9 @@ enum NotificationType {
       'rescheduleProposed' => NotificationType.rescheduleProposed,
       'directMessage' => NotificationType.directMessage,
       'waitlistPromoted' => NotificationType.waitlistPromoted,
+      'joinRequested' => NotificationType.joinRequested,
+      'joinAccepted' => NotificationType.joinAccepted,
+      'joinRejected' => NotificationType.joinRejected,
       // نوع غير معروف: نعرضه كإشعار بلا وجهة بدل إسقاطه بصمت.
       _ => NotificationType.bookingRequested,
     };

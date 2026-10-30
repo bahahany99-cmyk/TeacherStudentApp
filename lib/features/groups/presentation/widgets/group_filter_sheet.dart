@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/utils/arabic_text.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
@@ -21,6 +22,7 @@ class GroupFilterSheet extends StatefulWidget {
     super.key,
     required this.filter,
     required this.stageOptions,
+    this.subjectOptions = const <String>[],
   });
 
   /// الفلتر الحالي — نقطة البداية للمسوّدة المحلية.
@@ -28,6 +30,14 @@ class GroupFilterSheet extends StatefulWidget {
 
   /// المراحل المشتقة من البيانات المعروضة (لا قائمة نظرية).
   final List<String> stageOptions;
+
+  /// (P25) المواد **المشتقة من مستندات المجموعات المنشورة** — استعلام
+  /// `listSubjects()` على كل المجموعات النشطة، لا قائمة مكتوبة في الكود.
+  /// لذلك تظهر مادة كتبها مدرس بنفسه («علوم متكاملة») بلا تعديل برمجي.
+  final List<String> subjectOptions;
+
+  /// مفتاح حقل البحث عن مادة — تثبته الاختبارات.
+  static const Key subjectSearchKey = Key('group-filter-subject-search');
 
   /// مفتاح زر التطبيق — يستخدمه الاختبار للوصول إلى الفعل بلا نص.
   static const Key applyKey = Key('group-filter-apply');
@@ -40,8 +50,47 @@ class GroupFilterSheet extends StatefulWidget {
 class _GroupFilterSheetState extends State<GroupFilterSheet> {
   late GroupFilter _draft = widget.filter;
 
+  /// نص البحث داخل قائمة المواد (لا يفلتر النتائج بذاته).
+  final TextEditingController _subjectQuery = TextEditingController();
+
+  @override
+  void dispose() {
+    _subjectQuery.dispose();
+    super.dispose();
+  }
+
   void _update(GroupFilter next) {
     setState(() => _draft = next);
+  }
+
+  /// المواد المعروضة بعد البحث داخل القائمة — مطابقة عربية مُطبَّعة (الهمزات
+  /// والتاء المربوطة تُوحَّد) حتى لا تخفي «فيزياء» عند كتابة «فيزياء» بلا همزة.
+  List<String> get _visibleSubjects {
+    final String needle = ArabicText.normalize(_subjectQuery.text);
+    final List<String> all = widget.subjectOptions;
+    if (needle.isEmpty) {
+      return all;
+    }
+    return all
+        .where(
+          (String subject) => ArabicText.normalize(subject).contains(needle),
+        )
+        .toList(growable: false);
+  }
+
+  /// هل النص المكتوب مادة غير موجودة في القائمة؟ (مثال: مادة جديدة كتبها
+  /// مدرس بعد آخر تحديث للقائمة) — نعرض خيار «البحث بها» حتى لا يُحبَس
+  /// المستخدم.
+  String? get _customSubject {
+    final String typed = _subjectQuery.text.trim();
+    if (typed.isEmpty) {
+      return null;
+    }
+    final bool exists = widget.subjectOptions.any(
+      (String subject) =>
+          ArabicText.normalize(subject) == ArabicText.normalize(typed),
+    );
+    return exists ? null : typed;
   }
 
   @override
@@ -96,6 +145,74 @@ class _GroupFilterSheetState extends State<GroupFilterSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
+                    const SectionHeader(title: 'المادة'),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextField(
+                      key: GroupFilterSheet.subjectSearchKey,
+                      controller: _subjectQuery,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'ابحث عن مادة…',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _subjectQuery.text.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'مسح',
+                                onPressed: () {
+                                  _subjectQuery.clear();
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.close, size: 16),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    // قائمة المواد تحت الحقل — لا قائمة منسدلة منبثقة: الشريحة
+                    // تُضغط مباشرة، والقائمة تُمرَّر مع الورقة نفسها.
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: <Widget>[
+                        PillChip(
+                          label: 'كل المواد',
+                          selected: _draft.subject == null,
+                          onTap: () => _update(_draft.copyWith(subject: null)),
+                        ),
+                        for (final String subject in _visibleSubjects)
+                          PillChip(
+                            label: subject,
+                            selected: _draft.subject == subject,
+                            onTap: () => _update(
+                              _draft.copyWith(
+                                subject: _draft.subject == subject
+                                    ? null
+                                    : subject,
+                              ),
+                            ),
+                          ),
+                        if (_customSubject != null)
+                          PillChip(
+                            label: 'بحث بـ«$_customSubject»',
+                            icon: Icons.add_rounded,
+                            selected: _draft.subject == _customSubject,
+                            onTap: () => _update(
+                              _draft.copyWith(subject: _customSubject),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (widget.subjectOptions.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                        child: Text(
+                          'لم تُسجَّل مواد بعد — اكتب اسم المادة للبحث بها.',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: AppSpacing.md),
                     if (widget.stageOptions.isNotEmpty) ...<Widget>[
                       const SectionHeader(title: 'المرحلة'),
                       const SizedBox(height: AppSpacing.xs),
@@ -211,6 +328,7 @@ Future<GroupFilter?> showGroupFilterSheet(
   BuildContext context, {
   required GroupFilter filter,
   required List<String> stageOptions,
+  List<String> subjectOptions = const <String>[],
 }) {
   return showModalBottomSheet<GroupFilter>(
     context: context,
@@ -220,6 +338,7 @@ Future<GroupFilter?> showGroupFilterSheet(
     builder: (BuildContext sheetContext) => GroupFilterSheet(
       filter: filter,
       stageOptions: stageOptions,
+      subjectOptions: subjectOptions,
     ),
   );
 }

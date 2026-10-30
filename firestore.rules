@@ -1465,6 +1465,13 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data;
       }
 
+      // (P25) طلب الانضمام الذي يتحدث عنه الإشعار: معرّفه حتمي
+      // (`groupId_studentId`)، والمجموعة هي `targetId`. نقرأه من الخادم فلا
+      // يمكن إرسال «طلب انضمام جديد» بلا طلب حقيقي، ولا «قُبل» قبل القبول.
+      function joinRequestOfNotification(targetId, studentId) {
+        return get(/databases/$(database)/documents/groupJoinRequests/$(targetId + '_' + studentId)).data;
+      }
+
       function validText() {
         return request.resource.data.title is string
           && request.resource.data.title.size() > 0
@@ -1543,6 +1550,20 @@ service cloud.firestore {
              || (request.resource.data.type == 'waitlistPromoted'
                  && groupOfNotification().teacherId == request.auth.uid
                  && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)/members/$(request.resource.data.recipientId)))
+             // (د) طلب انضمام جديد (P25): الطالب يُشعر **مدرس المجموعة**، والطلب
+             // موجود فعلًا بحالة `pending` ويخصّ هذا الطالب وهذا المدرس.
+             || (request.resource.data.type == 'joinRequested'
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).studentId == request.auth.uid
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).teacherId == request.resource.data.recipientId
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).status == 'pending')
+             // (هـ) قرار الانضمام (P25): المدرس يُشعر **الطالب** صاحب الطلب،
+             // ونوع الإشعار يطابق الحالة الفعلية للطلب.
+             || (request.resource.data.type in ['joinAccepted', 'joinRejected']
+                 && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).teacherId == request.auth.uid
+                 && ((request.resource.data.type == 'joinAccepted'
+                      && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).status == 'accepted')
+                  || (request.resource.data.type == 'joinRejected'
+                      && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).status == 'rejected')))
            );
 
       // تعليم مقروء: المستلم وحده، وحقل واحد فقط. `size() > 0` تمنع كتابة

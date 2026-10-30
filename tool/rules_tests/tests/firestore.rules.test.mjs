@@ -3124,6 +3124,130 @@ describe('P12 — الإنشاء: لا تزوير ولا إشعار لشخص ب�
 
 
 // ═════════════════════════════════════════════════════════════════════════════
+// P25 — إشعارات الانضمام: الطالب يُشعر المدرس، والمدرس يُشعر الطالب
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// القاعدة تقرأ طلب الانضمام الفعلي (`groupJoinRequests/{groupId}_{studentId}`)
+// ولا تثق بالحقول المرسلة: النوع لازم يطابق الحالة الحقيقية للطلب، والطرفان
+// لازم يكونا صاحبَي الطلب فعليًا.
+
+const seedJoinRequest = (status) =>
+  seed([
+    { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+    {
+      path: joinPath('g1', 'student-1'),
+      data: joinRequestDoc('g1', 'student-1', { status }),
+    },
+  ]);
+
+describe('P25 — إشعارات الانضمام', () => {
+  it('الطالب يُشعر مدرس المجموعة عند إرسال طلب معلّق', async () => {
+    await seedJoinRequest('pending');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'joinRequested', 'g1', {
+          title: 'طلب انضمام جديد',
+        }),
+      ),
+    );
+  });
+
+  it('لا إشعار انضمام بلا طلب حقيقي', async () => {
+    await seed([{ path: 'studyGroups/g1', data: groupDoc('teacher-1') }]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'joinRequested', 'g1'),
+      ),
+    );
+  });
+
+  it('لا إشعار انضمام لمستلم ليس مدرس المجموعة', async () => {
+    await seedJoinRequest('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('n1')),
+        notificationDoc('student-2', 'student-1', 'joinRequested', 'g1'),
+      ),
+    );
+  });
+
+  it('لا انتحال: طالب آخر يُشعر المدرس بطلب ليس له', async () => {
+    await seedJoinRequest('pending');
+
+    await assertFails(
+      setDoc(
+        doc(asOther(), notificationPath('n1')),
+        notificationDoc('teacher-1', 'student-1', 'joinRequested', 'g1'),
+      ),
+    );
+  });
+
+  it('قرار القبول: المدرس يُشعر الطالب صاحب الطلب المقبول', async () => {
+    await seedJoinRequest('pending');
+
+    // الطلب ما زال معلّقًا ⇒ «قُبل» مرفوض.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('n1')),
+        notificationDoc('student-1', 'teacher-1', 'joinAccepted', 'g1'),
+      ),
+    );
+
+    await seed([
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'accepted' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), notificationPath('n2')),
+        notificationDoc('student-1', 'teacher-1', 'joinAccepted', 'g1'),
+      ),
+    );
+  });
+
+  it('قرار الرفض: المدرس يُشعر الطالب، وطالب آخر لا يستطيع', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1') },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'rejected' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), notificationPath('n1')),
+        notificationDoc('student-1', 'teacher-1', 'joinRejected', 'g1'),
+      ),
+    );
+
+    // نوع لا يطابق الحالة الفعلية.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('n2')),
+        notificationDoc('student-1', 'teacher-1', 'joinAccepted', 'g1'),
+      ),
+    );
+
+    // المستلم ليس صاحب الطلب.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('n3')),
+        notificationDoc('student-2', 'teacher-1', 'joinRejected', 'g1'),
+      ),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // P13 — التقييمات والمفضلة: بوابة G7، ومنع التكرار، والتلاعب بالمتوسط
 // ═════════════════════════════════════════════════════════════════════════════
 

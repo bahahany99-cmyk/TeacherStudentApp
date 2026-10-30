@@ -90,6 +90,9 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
   /// وإلا اختفت الخيارات بعد أول نقرة ولم يستطع المستخدم التراجع.
   List<StudyGroup> _universe = const <StudyGroup>[];
 
+  /// (P25) مواد ورقة الفلترة — من استعلام مستقل على كل المجموعات النشطة.
+  List<String> _subjectPool = const <String>[];
+
   /// (P24) توثيق صاحب كل مجموعة: `teacherId → verified`.
   ///
   /// يُقرأ مرة واحدة لكل قائمة (لا لكل بطاقة أثناء البناء) لأن كل قراءة هنا
@@ -119,6 +122,24 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
     }
     setState(() => _universe = groups);
     await _resolveVerification(services, groups);
+    await _loadSubjects(services);
+  }
+
+  /// (P25) مواد ورقة «فلترة متقدمة» من **كل** المجموعات النشطة لا من
+  /// المعروضة فقط: لو اشتُقّت من نتائج مفلترة لعادت الفلاتر تُخفي خيارات نفسها
+  /// بعد أول اختيار (فخ «لا يمكن اختيار مادة أخرى»). `listSubjects()` استعلام
+  /// مستقل، والسقوط إلى مواد المعروض عند فشله يبقي الورقة صالحة.
+  Future<void> _loadSubjects(AppServices services) async {
+    List<String> subjects;
+    try {
+      subjects = await services.groups.listSubjects();
+    } on Object {
+      subjects = DiscoveryRules.subjectOptions(_universe);
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _subjectPool = subjects);
   }
 
   /// يقرأ حالة التوثيق لكل مدرس ظاهر في القائمة (مرة واحدة لكل معرّف).
@@ -173,7 +194,7 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
       children: <Widget>[
         GroupFilterBar(
           filter: controller.filter,
-          subjectOptions: DiscoveryRules.subjectOptions(_universe),
+          subjectOptions: _subjectPool,
           stageOptions: DiscoveryRules.stageOptions(_universe),
           resultLabel: controller.isLoading
               ? '…'

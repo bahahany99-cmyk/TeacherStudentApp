@@ -92,7 +92,7 @@ void main() {
       expect(find.byKey(GroupFilterBar.filterButtonKey), findsOneWidget);
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsOneWidget);
       expect(find.text('مجموعة الفيزياء — الحديثة'), findsOneWidget);
-      // المادة تُعرض كحبة فلتر.
+      // (P25) المواد لم تبقَ حبّات في الشريط؛ تظهر داخل بطاقات المجموعات.
       expect(find.text('الفيزياء'), findsWidgets);
       // (P24) هوية المدرس على البطاقة: اسمه + شارة توثيقه (المدرسون التجريبيون
       // موثّقون)، فالطالب يعرف من يدرّس قبل أن يفتح التفاصيل.
@@ -101,7 +101,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('فلتر المادة يستبعد بقية المواد', (
+    testWidgets('فلتر المادة (من ورقة الفلترة) يستبعد بقية المواد', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
@@ -109,10 +109,24 @@ void main() {
       await tester.pumpWidget(_host(_services()));
       await tester.pumpAndSettle();
 
-      await tapVisible(tester, find.text('الرياضيات').first);
+      // (P25) حبّات المواد الجامدة أُزيلت من الشريط؛ المادة تُختار الآن من
+      // ورقة «فلترة متقدمة» حيث قائمة مشتقة من مستندات المجموعات.
+      await tester.tap(find.byKey(GroupFilterBar.filterButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(GroupFilterSheet),
+          matching: find.widgetWithText(PillChip, 'الرياضيات'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(GroupFilterSheet.applyKey));
+      await tester.pumpAndSettle();
 
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsOneWidget);
       expect(find.text('مجموعة الفيزياء — الحديثة'), findsNothing);
+      // الاختيار يظهر كملخّص واحد في الشريط، وقابل للمسح.
+      expect(find.widgetWithText(PillChip, 'مادة: الرياضيات'), findsOneWidget);
     });
 
     testWidgets('فلتر المكتملة يُظهر المجموعات الممتلئة', (

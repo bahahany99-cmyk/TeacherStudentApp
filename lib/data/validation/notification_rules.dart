@@ -37,6 +37,15 @@ abstract final class NotificationRules {
       NotificationType.waitlistPromoted => slotLabel == null
           ? 'مقعد متاح لك'
           : 'مقعد متاح لك — $slotLabel',
+      NotificationType.joinRequested => actor.isEmpty
+          ? 'طلب انضمام جديد'
+          : '$actor طلب الانضمام لمجموعتك',
+      NotificationType.joinAccepted => subject == null
+          ? 'قُبل طلب انضمامك'
+          : 'قُبل طلب انضمامك إلى $subject',
+      NotificationType.joinRejected => subject == null
+          ? 'رُفض طلب انضمامك'
+          : 'لم يُقبل طلب انضمامك إلى $subject',
     };
   }
 
@@ -143,6 +152,14 @@ abstract final class NotificationRules {
       NotificationType.directMessage => 'أرسل لك $actor رسالة جديدة.',
       NotificationType.waitlistPromoted =>
         'أصبح لك مقعد في المجموعة — أكمل الخطوات مع المدرس.',
+      NotificationType.joinRequested =>
+        subject == null
+            ? 'افتح المجموعة لقبول الطلب أو رفضه.'
+            : 'المجموعة: $subject. افتحها لقبول الطلب أو رفضه.',
+      NotificationType.joinAccepted =>
+        'أنت الآن عضو في المجموعة. افتحها للاطلاع على المواعيد.',
+      NotificationType.joinRejected =>
+        'يمكنك التقديم على مجموعة أخرى في أي وقت.',
     };
   }
 }

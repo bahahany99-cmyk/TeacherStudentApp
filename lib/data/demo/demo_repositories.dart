@@ -353,6 +353,35 @@ class DemoGroupRepository implements GroupRepository {
     ...DemoData.waitlist,
   ];
 
+  /// (P25) مشتركو مراقبة طلبات الانضمام — لكل مدرس تدفّق واحد.
+  ///
+  /// البثّ `broadcast` لأن الشاشة قد تُبنى أكثر من مرة (تبويبان يقرآن نفس
+  /// المصدر)، ونحن نُصدر القائمة كاملة عند كل تغيير بدل الأحداث الدقيقة.
+  final Map<String, StreamController<List<GroupJoinRequest>>> _requestStreams =
+      <String, StreamController<List<GroupJoinRequest>>>{};
+
+  StreamController<List<GroupJoinRequest>> _requestStreamFor(
+    String teacherId,
+  ) => _requestStreams.putIfAbsent(
+    teacherId,
+    () => StreamController<List<GroupJoinRequest>>.broadcast(),
+  );
+
+  /// يُصدر القائمة الحيّة لكل مدرس متأثر بالطلب (صاحبه فقط في العادة).
+  void _publishRequests() {
+    for (final MapEntry<String, StreamController<List<GroupJoinRequest>>> entry
+        in _requestStreams.entries) {
+      final List<GroupJoinRequest> mine = _sortRequests(
+        _joinRequests
+            .where((GroupJoinRequest r) => r.teacherId == entry.key)
+            .toList(growable: false),
+      );
+      if (!entry.value.isClosed) {
+        entry.value.add(List<GroupJoinRequest>.unmodifiable(mine));
+      }
+    }
+  }
+
   /// «قفل» يحاكي ذرّية المعاملة: كل عملية تُغيّر السعة تُنفَّذ بعد انتهاء ما
   /// قبلها بالترتيب. بدون هذا، قراءتان متزامنتان ترى كلتاهما مقعدًا متاحًا
   /// فتُقبلان معًا — وهي المشكلة نفسها التي تحلّها المعاملة في Firestore.
@@ -578,6 +607,25 @@ class DemoGroupRepository implements GroupRepository {
       // إعادة المحاولة بعد رفض/إلغاء تستبدل الطلب القديم بنفس المعرّف.
       _joinRequests.removeWhere((GroupJoinRequest r) => r.id == request.id);
       _joinRequests.add(request);
+      _publishRequests();
+
+      // (P25) نفس إشعار الخادم: المدرس يعلم بالطلب فورًا.
+      await _notify(
+        type: NotificationType.joinRequested,
+        recipientId: current.teacherId,
+        actorId: studentId,
+        actorName: studentName,
+        targetId: current.id,
+        title: NotificationRules.titleFor(
+          type: NotificationType.joinRequested,
+          actorName: studentName,
+        ),
+        body: NotificationRules.bodyFor(
+          type: NotificationType.joinRequested,
+          actorName: studentName,
+          subject: current.title,
+        ),
+      );
       return request;
     });
   }
@@ -621,6 +669,25 @@ class DemoGroupRepository implements GroupRepository {
   }
 
   @override
+  Stream<List<GroupJoinRequest>> watchIncomingRequests(String teacherId) async* {
+    List<GroupJoinRequest> current() => List<GroupJoinRequest>.unmodifiable(
+      _sortRequests(
+        _joinRequests
+            .where((GroupJoinRequest r) => r.teacherId == teacherId)
+            .toList(growable: false),
+      ),
+    );
+
+    // القيمة الحالية أولًا (كما يفعل `snapshots()` في Firestore)، ثم كل تغيير.
+    yield current();
+    yield* _requestStreamFor(teacherId).stream;
+  }
+
+  @override
+  Future<List<String>> listSubjects() async =>
+      DiscoveryRules.subjectOptions(_groups.where((StudyGroup g) => g.isActive));
+
+  @override
   Future<GroupJoinRequest> decideJoinRequest({
     required GroupJoinRequest request,
     required String teacherId,
@@ -660,6 +727,24 @@ class DemoGroupRepository implements GroupRepository {
           decidedBy: teacherId,
         );
         _joinRequests[requestIndex] = rejected;
+        _publishRequests();
+        await _notify(
+          type: NotificationType.joinRejected,
+          recipientId: rejected.studentId,
+          actorId: teacherId,
+          actorName: group.teacherName,
+          targetId: group.id,
+          title: NotificationRules.titleFor(
+            type: NotificationType.joinRejected,
+            actorName: group.teacherName,
+            subject: group.title,
+          ),
+          body: NotificationRules.bodyFor(
+            type: NotificationType.joinRejected,
+            actorName: group.teacherName,
+            subject: group.title,
+          ),
+        );
         return rejected;
       }
 
@@ -710,7 +795,25 @@ class DemoGroupRepository implements GroupRepository {
         );
       }
       _acceptedMembers[group.id] = members;
+      _publishRequests();
 
+      await _notify(
+        type: NotificationType.joinAccepted,
+        recipientId: accepted.studentId,
+        actorId: teacherId,
+        actorName: group.teacherName,
+        targetId: group.id,
+        title: NotificationRules.titleFor(
+          type: NotificationType.joinAccepted,
+          actorName: group.teacherName,
+          subject: group.title,
+        ),
+        body: NotificationRules.bodyFor(
+          type: NotificationType.joinAccepted,
+          actorName: group.teacherName,
+          subject: group.title,
+        ),
+      );
       return accepted;
     });
   }
@@ -1273,6 +1376,7 @@ class DemoGroupRepository implements GroupRepository {
     required String actorId,
     required String actorName,
     required String targetId,
+    String? title,
     String? body,
   }) async {
     final NotificationRepository? repo = _notifications;
@@ -1286,6 +1390,7 @@ class DemoGroupRepository implements GroupRepository {
         actorId: actorId,
         actorName: actorName,
         targetId: targetId,
+        title: title,
         body: body,
       );
     } on Object catch (error) {
@@ -1373,16 +1478,37 @@ class DemoBookingRepository implements BookingRepository {
   /// Firestore (A-76).
   Future<void> _tail = Future<void>.value();
 
+  /// (P25) مشتركو المراقبة الحيّة. `broadcast` لأن أكثر من شاشة (الحجوزات،
+  /// طلبات المدرس العامة) قد تستمع في الوقت نفسه.
+  final StreamController<List<BookingRequest>> _changes =
+      StreamController<List<BookingRequest>>.broadcast();
+
+  void _publishChanges() {
+    if (!_changes.isClosed) {
+      _changes.add(List<BookingRequest>.unmodifiable(_sorted()));
+    }
+  }
+
   Future<T> _serialized<T>(Future<T> Function() action) {
     final Completer<T> completer = Completer<T>();
     _tail = _tail.then((_) async {
       try {
-        completer.complete(await action());
+        final T result = await action();
+        // (P25) كل قرار/تغيير يُبثّ فورًا: قبول المدرس يظهر في شاشة الطالب
+        // بلا إعادة فتح (نفس أثر `snapshots()` في Firestore).
+        _publishChanges();
+        completer.complete(result);
       } on Object catch (error, stackTrace) {
         completer.completeError(error, stackTrace);
       }
     });
     return completer.future;
+  }
+
+  @override
+  Stream<List<BookingRequest>> watchMine() async* {
+    yield List<BookingRequest>.unmodifiable(_sorted());
+    yield* _changes.stream;
   }
 
   List<BookingRequest> _sorted() {
@@ -1844,6 +1970,7 @@ class DemoBookingRepository implements BookingRepository {
     required String actorId,
     required String actorName,
     required String targetId,
+    String? title,
     String? body,
   }) async {
     final NotificationRepository? repo = _notifications;
@@ -1857,6 +1984,7 @@ class DemoBookingRepository implements BookingRepository {
         actorId: actorId,
         actorName: actorName,
         targetId: targetId,
+        title: title,
         body: body,
       );
     } on Object catch (error) {
@@ -2371,6 +2499,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
     required String actorId,
     required String actorName,
     required String targetId,
+    String? title,
     String? body,
   }) async {
     final NotificationRepository? repo = _notifications;
@@ -2384,6 +2513,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
         actorId: actorId,
         actorName: actorName,
         targetId: targetId,
+        title: title,
         body: body,
       );
     } on Object catch (error) {
@@ -2415,6 +2545,16 @@ class DemoNotificationRepository implements NotificationRepository {
     );
   }
 
+  /// (P25) تدفّق القائمة نفسها (لا العدّاد وحده) لكل مستلم.
+  final Map<String, StreamController<List<AppNotification>>> _listStreams =
+      <String, StreamController<List<AppNotification>>>{};
+
+  StreamController<List<AppNotification>> _listStreamFor(String recipientId) =>
+      _listStreams.putIfAbsent(
+        recipientId,
+        () => StreamController<List<AppNotification>>.broadcast(),
+      );
+
   int _unread(String recipientId) => _items
       .where(
         (AppNotification item) =>
@@ -2424,6 +2564,17 @@ class DemoNotificationRepository implements NotificationRepository {
 
   void _publish(String recipientId) {
     _streamFor(recipientId).add(_unread(recipientId));
+    final StreamController<List<AppNotification>>? list = _listStreams[
+        recipientId];
+    if (list != null && !list.isClosed) {
+      list.add(
+        NotificationRules.newestFirst(
+          _items
+              .where((AppNotification item) => item.recipientId == recipientId)
+              .toList(growable: false),
+        ),
+      );
+    }
   }
 
   @override
@@ -2433,6 +2584,16 @@ class DemoNotificationRepository implements NotificationRepository {
           .where((AppNotification item) => item.recipientId == recipientId)
           .toList(growable: false),
     );
+  }
+
+  @override
+  Stream<List<AppNotification>> watchMine(String recipientId) async* {
+    yield NotificationRules.newestFirst(
+      _items
+          .where((AppNotification item) => item.recipientId == recipientId)
+          .toList(growable: false),
+    );
+    yield* _listStreamFor(recipientId).stream;
   }
 
   @override

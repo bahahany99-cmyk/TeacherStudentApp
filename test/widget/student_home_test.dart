@@ -12,7 +12,7 @@ import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/student/presentation/student_home_screen.dart';
 import 'package:teacher_student_app/features/teachers/presentation/teachers_screen.dart';
-import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_carousel.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_strip.dart';
 
 import '../helpers/test_app.dart';
 
@@ -140,7 +140,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(FeaturedTeachersCarousel), findsOneWidget);
+      // (P25) الشريط صار مبدّل [أونلاين]/[أوفلاين] بدل تمرير أفقي واحد.
+      expect(find.byType(FeaturedTeachersStrip), findsOneWidget);
       expect(find.text('مدرسون مميزون'), findsOneWidget);
       expect(find.text('مجموعاتي'), findsOneWidget);
 

@@ -22,15 +22,16 @@ class GroupFilterBar extends StatefulWidget {
   const GroupFilterBar({
     super.key,
     required this.filter,
-    required this.subjectOptions,
     required this.stageOptions,
     required this.resultLabel,
     required this.onChanged,
+    this.subjectOptions = const <String>[],
   });
 
   final GroupFilter filter;
 
-  /// خيارات مشتقة من البيانات المعروضة (لا قائمة نظرية).
+  /// (P25) مواد **مشتقة من كل المجموعات النشطة** (`listSubjects()`)، تُمرَّر
+  /// إلى ورقة الفلترة حيث تُبحث وتُختار. لا تُعرض هنا كصف شرائح جامد بعد الآن.
   final List<String> subjectOptions;
   final List<String> stageOptions;
 
@@ -72,6 +73,7 @@ class _GroupFilterBarState extends State<GroupFilterBar> {
       context,
       filter: widget.filter,
       stageOptions: widget.stageOptions,
+      subjectOptions: widget.subjectOptions,
     );
     if (next != null && next != widget.filter) {
       widget.onChanged(next);
@@ -166,47 +168,40 @@ class _GroupFilterBarState extends State<GroupFilterBar> {
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          // شريط أفقي واحد: «الكل» + المواد. التمرير الأفقي بدل التكديس
-          // العمودي هو جوهر هذا التعديل.
-          PillRow(
-            children: <Widget>[
-              if (widget.filter.isActive)
+          // (P25) **لا صفّ شرائح مواد جامد.** كان الشريط يعرض كل مادة في
+          // التطبيق كحبة دائمة: يُزدحم الأفقي، ويختفي كل ما لم يتّسع له،
+          // والمادة المخصّصة تُقصّ في المنتصف. الآن المادة تُختار من ورقة
+          // «فلترة متقدمة» (بحث + قائمة مشتقة من البيانات)، ويظهر الاختيار
+          // هنا كملخّص واحد قابل للفتح والمسح — سطر واحد دائمًا.
+          if (widget.filter.activeCount > 0)
+            PillRow(
+              children: <Widget>[
                 PillChip(
                   label: 'تفريغ الفلاتر (${widget.filter.activeCount})',
                   icon: Icons.filter_alt_off_outlined,
                   dense: true,
                   onTap: () => widget.onChanged(widget.filter.cleared()),
                 ),
-              PillChip(
-                label: 'الكل',
-                dense: true,
-                selected: widget.filter.subject == null,
-                onTap: () =>
-                    widget.onChanged(widget.filter.copyWith(subject: null)),
-              ),
-              for (final String subject in widget.subjectOptions)
-                PillChip(
-                  label: subject,
-                  dense: true,
-                  selected: widget.filter.subject == subject,
-                  onTap: () => widget.onChanged(
-                    widget.filter.copyWith(
-                      subject: widget.filter.subject == subject ? null : subject,
+                if (widget.filter.subject != null)
+                  PillChip(
+                    label: 'مادة: ${widget.filter.subject}',
+                    icon: Icons.menu_book_outlined,
+                    dense: true,
+                    selected: true,
+                    onTap: () => widget.onChanged(
+                      widget.filter.copyWith(subject: null),
                     ),
                   ),
-                ),
-              // ملخّص ما اختير في الورقة (مرحلة/حضور/مقاعد) كنص واحد مضغوط،
-              // لا كصفوف إضافية.
-              if (_advancedSummary(widget.filter) != null)
-                PillChip(
-                  label: _advancedSummary(widget.filter)!,
-                  icon: Icons.filter_alt_outlined,
-                  dense: true,
-                  selected: true,
-                  onTap: _openAdvanced,
-                ),
-            ],
-          ),
+                if (_advancedSummary(widget.filter) != null)
+                  PillChip(
+                    label: _advancedSummary(widget.filter)!,
+                    icon: Icons.filter_alt_outlined,
+                    dense: true,
+                    selected: true,
+                    onTap: _openAdvanced,
+                  ),
+              ],
+            ),
           const SizedBox(height: AppSpacing.xxs),
           Align(
             alignment: AlignmentDirectional.centerStart,
