@@ -2911,3 +2911,18 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
 جديدان (`check_rules.py` للـ`if`، و`check_structure.py` للـ`pushNamed<`) بدل
 الاعتماد على الذاكرة.
 
+### 7) بناء APK الإصدار بعد الإصلاحات — التشغيل `41042099344` (`[build-release]`) ✅
+
+| البند | القيمة |
+|---|---|
+| المهام | `analyze · test` ✅، `firestore rules (emulator)` ✅، `build apk` ✅ |
+| المخرَج | `apk-release` — 22,382,381 بايت (المعرّف 12971356073) |
+| المقاسات | arm64-v8a ≈ 21.2 MiB · armeabi-v7a ≈ 18.9 MiB |
+| الصلاحية | تنتهي **2026-11-01T10:37:27Z** (لا تُنشر في Releases) |
+| التوقيع | نفس مفتاح الإصدار: keystore 2656 بايت، SHA-1 `47:48:68:…:E8:6F`، SHA-256 `0B:5B:2E:…:F5:7E` |
+| Firebase | 6 تعريفات مضمّنة في 2/2 ملف APK، ومعرّف عميل الويب مضبوط، و`INTERNET` موجود |
+
+هذا الـAPK **يستبدل** `41034573461`: ذاك بُني قبل إصلاحات P23 الثلاثة، وفيه زر
+«إنشاء مجموعة جديدة» لا يفتح النموذج (`pushNamed<bool>` يرمي `_TypeError`)،
+ونموذج ملف المدرس لا يظهر لمن لا ملف له. البناء الحالي يحتوي الإصلاحين.
+
