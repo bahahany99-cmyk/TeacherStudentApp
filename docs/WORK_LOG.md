@@ -3035,6 +3035,26 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
    فاختبار يبني `MaterialApp` مصغّرة بلا `onGenerateRoute` يفشل بـ«لا مُولِّد
    للمسار `/chat`». أُضيف `chatRouteForTests` في `test/helpers/test_app.dart`.
 
+### 9) بناء APK الإصدار — التشغيل `41064974027` (`[build-release]`) ✅
+
+| البند | القيمة |
+|---|---|
+| المهام | `analyze · test` ✅، `firestore rules (emulator)` ✅ (285)، `build apk` ✅ |
+| المخرَج | `apk-release` — 22,503,892 بايت (المعرّف `12980609819`) |
+| المقاسات | arm64-v8a ≈ 21.3 MiB · armeabi-v7a ≈ 19.1 MiB |
+| الصلاحية | تنتهي **2026-11-01T13:38:51Z** (لا تُنشر في Releases) |
+| التوقيع | نفس مفتاح الإصدار: SHA-1 `47:48:68:…:E8:6F`، SHA-256 `0B:5B:2E:…:F5:7E` |
+| Firebase | 6 تعريفات مضمّنة في 2/2 ملف APK، و`INTERNET` موجود في البيان المدموج |
+
+هذا الـAPK هو **أول بناء يشمل P24 كاملًا**: الفلاتر المضغوطة، شارة توثيق
+المدرس على البطاقة، تهدئة الإلغاء، فتح المحادثة تلقائيًا مع الطلب/الحجز،
+وصور المحادثة بعمر خمسة أيام (`gal` + إذن `WRITE_EXTERNAL_STORAGE` بـ
+`maxSdkVersion=29` في `tool/scaffold_android.sh`).
+
+**ما يجب اختباره على جهاز فعلي (لا يُغطيه أي اختبار آلي):** حفظ صورة محادثة في
+المعرض على أندرويد 10 وأندرويد 13+ (مسارا الإذن مختلفان)، وظهور الصورة
+بالعرض الكامل بعد التكبير بالقرصة وزرّي `+`/`−`.
+
 **⚠️ ما لم يُتحقق محليًا:** لا Flutter ولا محاكي في بيئة العمل — `dart analyze`
 و`flutter test` و`npm --prefix tool/rules_tests test` تُثبت النتيجة في CI وحده.
 `check_structure.py` (239 ملف Dart) و`check_rules.py` (1799 سطرًا) يمرّان، وهما
