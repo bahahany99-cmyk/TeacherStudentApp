@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
@@ -86,11 +87,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // الاسم نفسه يظهر في بطاقات مجموعاته أسفل الصفحة (بحجم 40)، فنُميّز
+      // صورة الرأس بحجمها: 64 = avatarMd + 8.
       expect(
         find.byWidgetPredicate(
           (Widget widget) =>
               widget is UserAvatarLoader &&
-              widget.semanticLabel == 'صورة أ. منى عبد الرحمن',
+              widget.semanticLabel == 'صورة أ. منى عبد الرحمن' &&
+              widget.size == AppSpacing.avatarMd + 8,
         ),
         findsOneWidget,
       );
