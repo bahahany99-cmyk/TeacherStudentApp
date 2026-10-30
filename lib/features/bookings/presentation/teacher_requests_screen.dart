@@ -360,27 +360,25 @@ class _ScaffoldBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              // مرشّحات أفقية مضغوطة (P24: لا صفوف فلاتر ضخمة).
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: <Widget>[
-                    for (final _Filter option in _Filter.values) ...<Widget>[
-                      if (option != _Filter.values.first)
-                        const SizedBox(width: AppSpacing.xxs),
-                      ChoiceChip(
-                        key: Key('requests-filter-${option.name}'),
-                        label: Text(
-                          counts[option] == null
-                              ? option.label
-                              : '${option.label} (${counts[option]})',
-                        ),
-                        selected: filter == option,
-                        onSelected: (_) => onFilter(option),
+              // مرشّحات مضغوطة تلتف بدل التمرير الأفقي (P24 + P28): الصف
+              // الأفقي على 320dp يخفي آخر مرشّح خارج الشاشة، فيبدو للمستخدم
+              // غير موجود — أو يُضغط في موضع فارغ.
+              Wrap(
+                spacing: AppSpacing.xxs,
+                runSpacing: AppSpacing.xxs,
+                children: <Widget>[
+                  for (final _Filter option in _Filter.values)
+                    ChoiceChip(
+                      key: Key('requests-filter-${option.name}'),
+                      label: Text(
+                        counts[option] == null
+                            ? option.label
+                            : '${option.label} (${counts[option]})',
                       ),
-                    ],
-                  ],
-                ),
+                      selected: filter == option,
+                      onSelected: (_) => onFilter(option),
+                    ),
+                ],
               ),
               const SizedBox(height: AppSpacing.sm),
               child,

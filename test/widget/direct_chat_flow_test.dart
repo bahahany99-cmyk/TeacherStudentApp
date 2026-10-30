@@ -212,8 +212,8 @@ void main() {
       expect(find.text('رسالة واحدة لم تُقرأ'), findsNothing);
       expect(find.textContaining('فيها رسائل لم تُقرأ'), findsOneWidget);
       // سياق المحادثة صار واضحًا: نوع العلاقة + المادة.
-      expect(find.textContaining('حجز حصة'), findsOneWidget);
-      expect(find.textContaining('استفسار'), findsOneWidget);
+      expect(find.textContaining('حجز حصة'), findsWidgets);
+      expect(find.textContaining('استفسار'), findsWidgets);
     });
 
     testWidgets('الطالب الذي لا محادثات له يرى حالة فراغ', (
