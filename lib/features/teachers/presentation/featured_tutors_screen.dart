@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_controller.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
@@ -107,10 +110,24 @@ class _FeaturedList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (teachers.isEmpty) {
-      return EmptyState(
-        icon: Icons.person_search_outlined,
-        title: 'لا نتائج في هذه الشريحة',
-        message: emptyMessage,
+      // (P27) الشريحة الفارغة لها مخرج: زر أساسي يعيد الطالب إلى قائمة كل
+      // المدرسين (ومن هناك يمكنه تغيير طريقة الحضور كفلتر). «لا نتائج» بلا
+      // مخرج تُقرأ كعطل، لا كحالة طبيعية أسبوعية.
+      final ShellController? shell = ShellScope.readOrNull(context);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: EmptyState(
+          icon: Icons.person_search_outlined,
+          title: 'لا نتائج في هذه الشريحة',
+          message: emptyMessage,
+          primaryActionLabel: shell == null ? null : 'استكشف كل المدرسين',
+          onPrimaryAction: shell == null
+              ? null
+              : () {
+                  shell.goTo(AppTab.teachers);
+                  Navigator.of(context).maybePop();
+                },
+        ),
       );
     }
 

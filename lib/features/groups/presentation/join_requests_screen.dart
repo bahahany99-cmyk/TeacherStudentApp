@@ -259,11 +259,11 @@ class _TeacherRequestsPanel extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       if (pending.isEmpty)
-                        const AppCard(
-                          child: InfoNote(
-                            text: 'لا طلبات انضمام معلّقة الآن.',
-                            icon: Icons.check_circle_outline,
-                          ),
+                        const _PanelEmpty(
+                          icon: Icons.check_circle_outline,
+                          text: 'لا طلبات انضمام معلّقة الآن.',
+                          hint: 'افتح «مجموعاتي» وشارك رابط المجموعة ليزداد '
+                              'الوصول، أو انتظر — سيظهر الطلب هنا لحظة وصوله.',
                         )
                       else ...<Widget>[
                         Padding(
@@ -344,11 +344,11 @@ class _TeacherRequestsPanel extends StatelessWidget {
                       .toList(growable: false);
 
                   if (pending.isEmpty) {
-                    return const AppCard(
-                      child: InfoNote(
-                        text: 'لا طلبات حجز معلّقة الآن.',
-                        icon: Icons.check_circle_outline,
-                      ),
+                    return const _PanelEmpty(
+                      icon: Icons.check_circle_outline,
+                      text: 'لا طلبات حجز معلّقة الآن.',
+                      hint: 'طلبات الحجز من ملفك تصل هنا تلقائيًا — لا حاجة '
+                          'لتحديث الصفحة.',
                     );
                   }
                   return Column(
@@ -714,6 +714,62 @@ class _RequestCard extends StatelessWidget {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// حالة «لا شيء معلّق» داخل لوحة المدرس (P27).
+///
+/// **لماذا ليست `EmptyState` الكبيرة؟** لأنها تظهر داخل قسم صغير من لوحة
+/// فيها قسمان؛ هالة 88dp + عنوان + شرح + زر لكل قسم تحوّل الصفحة إلى فراغين
+/// ضخمين. هنا: أيقونة صغيرة في مربع ملوّن، سطر واحد، وسطر إرشادي باهت —
+/// بنفس منطق `InfoNote` لكن أقرب إلى لغة بطاقات التطبيق.
+class _PanelEmpty extends StatelessWidget {
+  const _PanelEmpty({
+    required this.icon,
+    required this.text,
+    required this.hint,
+  });
+
+  final IconData icon;
+  final String text;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return AppCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withAlpha(20),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            ),
+            child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(text, style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  hint,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -7,10 +7,10 @@ import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
-import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
@@ -39,11 +39,9 @@ class TeacherProfileScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('ملف المدرس')),
       body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            ResponsiveContent(
-              child: AsyncView<TeacherProfile?>(
+        // (P27) لا `ListView` هنا: الجسم صار عمودًا يضم قائمة تمرير + شريط
+        // إجراءات ثابتًا، فتمرير خارجي كان سيبتلع الشريط.
+        child: AsyncView<TeacherProfile?>(
                 load: () => AppServicesScope.of(
                   context,
                 ).teachers.findById(teacherId),
@@ -65,14 +63,17 @@ class TeacherProfileScreen extends StatelessWidget {
                   return _TeacherProfileBody(teacher: teacher);
                 },
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
+/// جسم الملف: **محتوى قابل للتمرير** + **شريط إجراءات ثابت** أسفله.
+///
+/// (P27) كان الحجز والمحادثة زرين ممتلئين بعرض الشاشة في **نهاية** تمرير طويل،
+/// مع ملاحظة من أربعة أسطر تحتهما. النتيجة: أهم فعلين في الصفحة يختفيان تحت
+/// الطيّة، والزرّان يستهلكان ~120dp من الطول. الآن هما شريط واحد ثابت (48dp)
+/// يظهر دائمًا: أساسي «طلب حجز» وثانوي «محادثة».
 class _TeacherProfileBody extends StatelessWidget {
   const _TeacherProfileBody({required this.teacher});
 
@@ -85,187 +86,160 @@ class _TeacherProfileBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.zero,
             children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  CircleAvatar(
-                    radius: AppSpacing.avatarLg / 2.6,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      teacher.initials,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
+              ResponsiveContent(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              // (P27) صورة الملف الحقيقية كما يراها الطالب في البطاقات،
+                              // لا دائرة بأحرف: نفس الهوية البصرية في كل مكان.
+                              UserAvatarLoader(
+                                userId: teacher.id,
+                                initials: teacher.initials,
+                                size: AppSpacing.avatarMd + 8,
+                                semanticLabel: 'صورة ${teacher.displayName}',
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      teacher.displayName,
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xxs),
+                                    Text(
+                                      '${teacher.subject} • ${teacher.stage}',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Wrap(
+                                      spacing: AppSpacing.xxs,
+                                      runSpacing: AppSpacing.xxs,
+                                      children: <Widget>[
+                                        StatusChip(
+                                          label: 'معتمد',
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                        if (teacher.isFeatured)
+                                          const StatusChip(
+                                            label: 'مميز',
+                                            color: Color(0xFFB26A00),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // المفضلة (P13): النجمة تُخفي نفسها لغير الطالب.
+                              FavoriteStar(
+                                kind: FavoriteKind.teacher,
+                                targetId: teacher.id,
+                                size: 22,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // (P15) طريقة التقديم أولًا ثم المكان: أهم معلومة قرار لمن
+                          // يبحث عن مدرس حضوري في محافظته.
+                          DetailRow(
+                            icon: teacher.isOnline
+                                ? Icons.public_rounded
+                                : Icons.place_outlined,
+                            label: 'طريقة التقديم',
+                            value: teacher.isOnline
+                                ? 'عن بُعد${_locationSuffix(teacher)}'
+                                : 'حضوري — ${teacher.locationLabel}',
+                          ),
+                          _RatingSummaryRow(teacher: teacher),
+                          if (teacher.priceHint != null)
+                            DetailRow(
+                              icon: Icons.payments_outlined,
+                              label: 'السعر',
+                              value: teacher.priceHint!,
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          teacher.displayName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          '${teacher.subject} • ${teacher.stage}',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Wrap(
-                          spacing: AppSpacing.xxs,
-                          runSpacing: AppSpacing.xxs,
-                          children: <Widget>[
-                            StatusChip(
-                              label: 'معتمد',
-                              color: theme.colorScheme.primary,
-                            ),
-                            if (teacher.isFeatured)
-                              const StatusChip(
-                                label: 'مميز',
-                                color: Color(0xFFB26A00),
-                              ),
-                          ],
-                        ),
-                      ],
+                    const SizedBox(height: AppSpacing.sectionGap),
+                    const SectionHeader(
+                      title: 'نبذة',
+                      subtitle: 'كما كتبها المدرس في ملفه',
+                      icon: Icons.article_outlined,
                     ),
-                  ),
-                  // المفضلة (P13): النجمة تُخفي نفسها لغير الطالب.
-                  FavoriteStar(
-                    kind: FavoriteKind.teacher,
-                    targetId: teacher.id,
-                    size: 22,
-                  ),
+                    AppCard(
+                      child: Text(
+                        teacher.bio,
+                        style: theme.textTheme.bodyMedium?.copyWith(height: 1.7),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sectionGap),
+                    const SectionHeader(
+                      title: 'التقييمات',
+                      subtitle: 'من طلاب حصلوا على حصة منفّذة مع هذا المدرس فقط',
+                      icon: Icons.reviews_outlined,
+                    ),
+                    TeacherReviewsSection(teacherId: teacher.id),
+                    const SizedBox(height: AppSpacing.sectionGap),
+                    const SectionHeader(
+                      title: 'مجموعات هذا المدرس',
+                      subtitle: 'افتح المجموعة لإرسال طلب انضمام ينتظر موافقة المدرس',
+                      icon: Icons.groups_outlined,
+                    ),
+                    AsyncView<List<StudyGroup>>(
+                      load: () => AppServicesScope.of(
+                        context,
+                      ).groups.listForTeacher(teacher.id),
+                      isEmpty: (List<StudyGroup> groups) => groups.isEmpty,
+                      emptyBuilder: (BuildContext context) => const EmptyState(
+                        icon: Icons.groups_outlined,
+                        title: 'لا توجد مجموعات متاحة',
+                        message: 'لم ينشر هذا المدرس مجموعات بعد.',
+                      ),
+                      builder: (BuildContext context, List<StudyGroup> groups) {
+                        return Column(
+                          children: groups
+                              .map(
+                                (StudyGroup group) => GroupCard(
+                                  group: group,
+                                  favoriteAction: FavoriteStar(
+                                    kind: FavoriteKind.group,
+                                    targetId: group.id,
+                                  ),
+                                  onTap: () => Navigator.of(context).pushNamed(
+                                    RoutePaths.groupDetails,
+                                    arguments: group.id,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        );
+                      },
+                    ),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              // (P15) طريقة التقديم أولًا ثم المكان: أهم معلومة قرار لمن
-              // يبحث عن مدرس حضوري في محافظته.
-              DetailRow(
-                icon: teacher.isOnline
-                    ? Icons.public_rounded
-                    : Icons.place_outlined,
-                label: 'طريقة التقديم',
-                value: teacher.isOnline
-                    ? 'عن بُعد${_locationSuffix(teacher)}'
-                    : 'حضوري — ${teacher.locationLabel}',
-              ),
-              _RatingSummaryRow(teacher: teacher),
-              if (teacher.priceHint != null)
-                DetailRow(
-                  icon: Icons.payments_outlined,
-                  label: 'السعر',
-                  value: teacher.priceHint!,
-                ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        const SectionHeader(
-          title: 'نبذة',
-          subtitle: 'كما كتبها المدرس في ملفه',
-          icon: Icons.article_outlined,
-        ),
-        AppCard(
-          child: Text(
-            teacher.bio,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.7),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        const SectionHeader(
-          title: 'التقييمات',
-          subtitle: 'من طلاب حصلوا على حصة منفّذة مع هذا المدرس فقط',
-          icon: Icons.reviews_outlined,
-        ),
-        TeacherReviewsSection(teacherId: teacher.id),
-        const SizedBox(height: AppSpacing.sectionGap),
-        const SectionHeader(
-          title: 'مجموعات هذا المدرس',
-          subtitle: 'افتح المجموعة لإرسال طلب انضمام ينتظر موافقة المدرس',
-          icon: Icons.groups_outlined,
-        ),
-        AsyncView<List<StudyGroup>>(
-          load: () => AppServicesScope.of(
-            context,
-          ).groups.listForTeacher(teacher.id),
-          isEmpty: (List<StudyGroup> groups) => groups.isEmpty,
-          emptyBuilder: (BuildContext context) => const EmptyState(
-            icon: Icons.groups_outlined,
-            title: 'لا توجد مجموعات متاحة',
-            message: 'لم ينشر هذا المدرس مجموعات بعد.',
-          ),
-          builder: (BuildContext context, List<StudyGroup> groups) {
-            return Column(
-              children: groups
-                  .map(
-                    (StudyGroup group) => GroupCard(
-                      group: group,
-                      favoriteAction: FavoriteStar(
-                        kind: FavoriteKind.group,
-                        targetId: group.id,
-                      ),
-                      onTap: () => Navigator.of(context).pushNamed(
-                        RoutePaths.groupDetails,
-                        arguments: group.id,
-                      ),
-                    ),
-                  )
-                  .toList(growable: false),
-            );
-          },
-        ),
-        const SizedBox(height: AppSpacing.sectionGap),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            // طلب حجز فعلي (P10): يفتح ورقة الموعد ويكتب للمستودع.
-            // (P24) بعد النجاح يُفتح خيط المحادثة المرتبط بالحجز فورًا، فلا
-            // يبقى الطالب بلا وسيلة تواصل ويظهر «لا توجد محادثات».
-            onPressed: () async {
-              final BookingRequest? created = await showBookingRequestSheet(
-                context,
-                teacher: teacher,
-              );
-              if (created != null && context.mounted) {
-                await openChatForBooking(context, created);
-              }
-            },
-            icon: const Icon(Icons.event_available_outlined, size: 18),
-            label: const Text('طلب حجز'),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        // محادثة مباشرة (P11): تُحترم خصوصية المدرس — إن لم يكن بينكما حجز
-        // ولم يفعّل استقبال الرسائل، تظهر رسالة تشرح السبب بدل خطأ خادم.
-        ChatActionButton(
-          label: 'محادثة',
-          filled: true,
-          onPressed: (BuildContext context) => openChatWithTeacher(
-            context,
-            teacherId: teacher.id,
-            teacherName: teacher.displayName,
-            subject: teacher.subject,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        const InfoNote(
-          text:
-              'إن كان المدرس يسمح بالاستفسارات تُفتح المحادثة فورًا؛ وإلا '
-              'تفتح بعد إرسال طلب حجز أو طلب انضمام (يُفتح الخيط تلقائيًا '
-              'عند الإرسال). الدفع والاتفاق على السعر خارج التطبيق.',
-        ),
-        const SizedBox(height: AppSpacing.lg),
-      ],
+      ),
+      _ProfileActionBar(teacher: teacher),
+    ],
     );
   }
 }
@@ -317,4 +291,79 @@ class _RatingSummaryRow extends StatelessWidget {
 String _locationSuffix(TeacherProfile teacher) {
   final String governorate = teacher.governorate?.trim() ?? '';
   return governorate.isEmpty ? '' : ' · متاح أيضًا حضوريًا في $governorate';
+}
+
+/// شريط الإجراءات الثابت أسفل ملف المدرس (P27).
+///
+/// إجراء واحد أساسي («طلب حجز») وإجراء ثانوي («محادثة») في صف واحد:
+/// - الأساسي يفتح ورقة الموعد ثم خيط المحادثة المرتبط بالحجز تلقائيًا (P24).
+/// - الثانوي يمرّ ببوابة الخصوصية نفسها (`openChatWithTeacher`)، فتظهر رسالة
+///   تشرح السبب إن لم يسمح المدرس بالاستفسارات بدل خطأ خادم.
+///
+/// الحشوة 10dp رأسية: الشريط يبقى ظاهرًا دائمًا، فلا يجوز أن يأكل من مساحة
+/// المحتوى أكثر من ارتفاع زر واحد.
+class _ProfileActionBar extends StatelessWidget {
+  const _ProfileActionBar({required this.teacher});
+
+  final TeacherProfile teacher;
+
+  Future<void> _book(BuildContext context) async {
+    final BookingRequest? created = await showBookingRequestSheet(
+      context,
+      teacher: teacher,
+    );
+    if (created != null && context.mounted) {
+      await openChatForBooking(context, created);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: theme.colorScheme.outlineVariant.withAlpha(120),
+            width: 0.8,
+          ),
+        ),
+      ),
+      // حافة الأمان السفلية يأخذها `SafeArea` الأب، فلا نكرّرها هنا.
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(
+          AppSpacing.pageGutter,
+          AppSpacing.xs + 2,
+          AppSpacing.pageGutter,
+          AppSpacing.xs + 2,
+        ),
+        child: Row(
+            children: <Widget>[
+              Expanded(
+                flex: 2,
+                child: FilledButton.icon(
+                  onPressed: () => _book(context),
+                  icon: const Icon(Icons.event_available_outlined, size: 18),
+                  label: const Text('طلب حجز'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: ChatActionButton(
+                  label: 'محادثة',
+                  onPressed: (BuildContext context) => openChatWithTeacher(
+                    context,
+                    teacherId: teacher.id,
+                    teacherName: teacher.displayName,
+                    subject: teacher.subject,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

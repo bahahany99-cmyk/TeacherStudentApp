@@ -41,7 +41,7 @@ class AccountAvatarEditor extends StatefulWidget {
     required this.initialPreset,
     this.initials,
     this.enabled = true,
-    this.size = 88,
+    this.size = 72,
     this.showPresets = true,
     this.onChanged,
     this.helperText,
@@ -267,6 +267,23 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
     }
   }
 
+  /// نمط موحّد للأزرار الصغيرة: ارتفاع 38dp وحشوة أفقية 12، فيصطفّ ثلاثة
+  /// أزرار في سطر واحد على شاشة 360dp.
+  static ButtonStyle _compactButton(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll<Size>(Size(0, 38)),
+      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      textStyle: WidgetStatePropertyAll<TextStyle?>(
+        theme.textTheme.labelMedium,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -332,9 +349,12 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: <Widget>[
+              // (P27) أزرار مضغوطة: الثيم يفرض ارتفاع 52dp و«حبة دواء»
+              // لكل زر، فكانت ثلاثة أزرار تُشبه شرائح ضخمة داخل بطاقة صغيرة.
               OutlinedButton.icon(
                 key: const Key('avatar-pick'),
                 onPressed: _busy ? null : _pick,
+                style: _compactButton(context),
                 icon: const Icon(Icons.photo_library_outlined, size: 18),
                 label: const Text('اختيار صورة'),
               ),
@@ -342,6 +362,7 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
                 TextButton.icon(
                   key: const Key('avatar-presets'),
                   onPressed: _busy ? null : _openPresetSheet,
+                  style: _compactButton(context),
                   icon: const Icon(Icons.palette_outlined, size: 18),
                   label: const Text('تصميم افتراضي'),
                 ),
@@ -349,6 +370,7 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
                 TextButton.icon(
                   key: const Key('avatar-remove'),
                   onPressed: _busy ? null : _removeCustom,
+                  style: _compactButton(context),
                   icon: const Icon(Icons.hide_image_outlined, size: 18),
                   label: const Text('إزالة الصورة'),
                 ),

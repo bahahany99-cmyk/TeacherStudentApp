@@ -211,6 +211,34 @@ class _GroupDetailsBody extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: AppSpacing.sm),
+              // (P27) شريط المقاعد داخل بطاقة الرأس بدل بطاقة مستقلة: كان
+              // «المقاعد» سطحًا ثانيًا (ظل + حدّ + حشوة) لسطر واحد وشريط تقدّم،
+              // فيبدو الرأس بطاقتين مكدّستين لرقم واحد.
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        AppSpacing.radiusPill,
+                      ),
+                      child: LinearProgressIndicator(
+                        value: fill,
+                        minHeight: 6,
+                        backgroundColor: theme.colorScheme.primary.withAlpha(20),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    '$seatsTaken / ${group.seatsTotal}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -244,76 +272,34 @@ class _GroupDetailsBody extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
 
-        // ── المقاعد ─────────────────────────────────────────────────────────
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'المقاعد',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                  ),
-                  Text(
-                    '$seatsTaken / ${group.seatsTotal}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                child: LinearProgressIndicator(
-                  value: fill,
-                  minHeight: 8,
-                  backgroundColor: theme.colorScheme.primary.withAlpha(20),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                group.isFull
-                    ? 'لا توجد مقاعد متاحة حاليًا'
-                    : 'متاح ${group.seatsAvailable} مقعد',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-
         const SizedBox(height: AppSpacing.md),
         const SectionHeader(
           title: 'الحصص والتواصل',
           subtitle: 'الجدول الأسبوعي ومحادثة المجموعة',
           icon: Icons.forum_outlined,
         ),
-        AppCard(
-          onTap: () => Navigator.of(context).pushNamed(
-            RoutePaths.groupTimetable,
-            arguments: group.id,
-          ),
-          margin: AppSpacing.listGap,
-          child: const _ManagementTile(
-            icon: Icons.calendar_month_outlined,
-            title: 'جدول الحصص',
-          ),
-        ),
-        AppCard(
-          onTap: () => Navigator.of(context).pushNamed(
-            RoutePaths.groupChat,
-            arguments: group.id,
-          ),
-          child: const _ManagementTile(
-            icon: Icons.chat_bubble_outline,
-            title: 'محادثة المجموعة',
-          ),
+        // (P27) بطاقة واحدة لصفّين بدل بطاقتين: كان كل رابط إدارة سطحًا
+        // مستقلًا بظلّه وحدّه وحشوته (16+16) — ثلاثة أسطح لثلاثة أسطر تبدو
+        // «قائمة أزرار» لا قائمة إدارة.
+        _ActionGroup(
+          tiles: <Widget>[
+            _ActionTile(
+              icon: Icons.calendar_month_outlined,
+              title: 'جدول الحصص',
+              onTap: () => Navigator.of(context).pushNamed(
+                RoutePaths.groupTimetable,
+                arguments: group.id,
+              ),
+            ),
+            _ActionTile(
+              icon: Icons.chat_bubble_outline,
+              title: 'محادثة المجموعة',
+              onTap: () => Navigator.of(context).pushNamed(
+                RoutePaths.groupChat,
+                arguments: group.id,
+              ),
+            ),
+          ],
         ),
 
         if (isTeacherView) ...<Widget>[
@@ -323,29 +309,25 @@ class _GroupDetailsBody extends StatelessWidget {
             subtitle: 'التعديل والإيقاف والقبول لصاحب المجموعة فقط',
             icon: Icons.tune,
           ),
-          AppCard(
-            onTap: onRequestsTap,
-            margin: AppSpacing.listGap,
-            child: _ManagementTile(
-              icon: Icons.mark_email_unread_outlined,
-              title: 'طلبات الانضمام',
-              trailing: _PendingBadge(groupId: group.id),
-            ),
-          ),
-          AppCard(
-            onTap: onMembersTap,
-            margin: AppSpacing.listGap,
-            child: _ManagementTile(
-              icon: Icons.groups_2_outlined,
-              title: 'الأعضاء وقائمة الانتظار ($seatsTaken)',
-            ),
-          ),
-          AppCard(
-            onTap: onEditTap,
-            child: const _ManagementTile(
-              icon: Icons.edit_outlined,
-              title: 'تعديل بيانات المجموعة',
-            ),
+          _ActionGroup(
+            tiles: <Widget>[
+              _ActionTile(
+                icon: Icons.mark_email_unread_outlined,
+                title: 'طلبات الانضمام',
+                trailing: _PendingBadge(groupId: group.id),
+                onTap: onRequestsTap,
+              ),
+              _ActionTile(
+                icon: Icons.groups_2_outlined,
+                title: 'الأعضاء وقائمة الانتظار ($seatsTaken)',
+                onTap: onMembersTap,
+              ),
+              _ActionTile(
+                icon: Icons.edit_outlined,
+                title: 'تعديل بيانات المجموعة',
+                onTap: onEditTap,
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.sm),
           const InfoNote(
@@ -363,43 +345,107 @@ class _GroupDetailsBody extends StatelessWidget {
   }
 }
 
-/// سطر إدارة: أيقونة + عنوان + سهم، مع عنصر زائد اختياري.
-class _ManagementTile extends StatelessWidget {
-  const _ManagementTile({
+/// مجموعة روابط إدارة: **بطاقة واحدة** وصفوف مفصولة بخط بادئ.
+///
+/// الحشوة صفر لأن كل صف يحمل حشوته الأفقية والرأسية (≥48dp للمس)، والخط يبدأ
+/// بعد الأيقونة حتى يبقى العمود البصري للأيقونات متصلًا.
+class _ActionGroup extends StatelessWidget {
+  const _ActionGroup({required this.tiles});
+
+  final List<Widget> tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < tiles.length; i++) ...<Widget>[
+            if (i > 0)
+              Divider(
+                height: 0.6,
+                thickness: 0.6,
+                indent: AppSpacing.xxl + AppSpacing.xs,
+                endIndent: AppSpacing.md,
+                color: theme.colorScheme.outlineVariant,
+              ),
+            tiles[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// صف إدارة واحد: أيقونة + عنوان + سهم، مع عنصر زائد اختياري (شارة عدّاد).
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
     required this.icon,
     required this.title,
+    required this.onTap,
     this.trailing,
   });
 
   final IconData icon;
   final String title;
+  final VoidCallback onTap;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Row(
-      children: <Widget>[
-        Icon(icon, color: theme.colorScheme.primary),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: AppSpacing.settingsTileHeight,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withAlpha(22),
+                    borderRadius: BorderRadius.circular(
+                      AppSpacing.radiusSm + 2,
+                    ),
+                  ),
+                  child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  trailing!,
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
+                Icon(
+                  Icons.chevron_left,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
+                ),
+              ],
             ),
           ),
         ),
-        if (trailing != null) ...<Widget>[
-          trailing!,
-          const SizedBox(width: AppSpacing.xs),
-        ],
-        Icon(
-          Icons.chevron_left,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ],
+      ),
     );
   }
 }
