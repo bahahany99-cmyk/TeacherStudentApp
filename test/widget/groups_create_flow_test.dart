@@ -174,18 +174,26 @@ void main() {
         find.widgetWithText(TextFormField, 'المرحلة الدراسية'),
         'الثانوية العامة',
       );
-      // الحفظ: الزر نفسه (لا نصّه) ثم الانتظار حتى ينتهي الحفظ.
-      final Finder saveButton = find.byKey(const Key('group-form-save'));
-      await tester.ensureVisible(saveButton);
+      // الحفظ: نستدعي فعل الزر الأساسي نفسه (كما في `pressProfileSave`) بدل
+      // الاعتماد على إصابة نقرة داخل قائمة قابلة للتمرير — النقر على عنصر
+      // أسفل الشاشة قد «يُخطئ» بلا فشل، فيبدو الاختبار كأنه حفظ وهو لم يحفظ.
+      final FilledButton save = tester.widget<FilledButton>(
+        find.byKey(const Key('group-form-save')),
+      );
+      save.onPressed!();
       await tester.pumpAndSettle();
-      await tester.tap(saveButton);
-      await tester.pumpAndSettle();
+
+      final String onScreen = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((Text text) => text.data ?? '')
+          .where((String data) => data.isNotEmpty)
+          .join(' | ');
 
       // ③ عاد إلى «مجموعاتي»: نموذج الإنشاء أُغلق فعلًا بالحفظ لا بالرجوع.
       expect(
         find.byType(GroupFormScreen),
         findsNothing,
-        reason: 'النموذج ما زال مفتوحًا ⇒ الحفظ لم يحدث (تحقّق من رسالة الخطأ)',
+        reason: 'النموذج ما زال مفتوحًا ⇒ الحفظ لم يحدث. المعروض: $onScreen',
       );
       expect(
         find.text('مجموعة التفاضل — اختبار الزر الواحد'),
