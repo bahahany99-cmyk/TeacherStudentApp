@@ -421,6 +421,10 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
 
     // (P22) إرسال للمراجعة **بلا صورة** مرفوض.
+    //
+    // ⚠️ مستند آخر (`teacher-2`) لا نفسه الذي ننجح عليه: كتابة مرفوضة على
+    // مسار ثم كتابة ناجحة عليه تُعيد المحاولة كـ`update` في عميل JS، فيقع
+    // الفحص على غير ما نقيسه.
     await assertFails(
       setDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
         ...teacherDoc('teacher-2', { status: 'pendingReview' }),
@@ -429,11 +433,11 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
 
     // ومع وجود الصورة فعليًا يُقبل.
-    await seed([{ path: avatarPath('teacher-2'), data: avatarDoc('teacher-2') }]);
+    await seed([{ path: avatarPath('teacher-4'), data: avatarDoc('teacher-4') }]);
     await assertSucceeds(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
-        ...teacherDoc('teacher-2', { status: 'pendingReview' }),
-        photoPath: avatarPath('teacher-2'),
+      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-4'), {
+        ...teacherDoc('teacher-4', { status: 'pendingReview' }),
+        photoPath: avatarPath('teacher-4'),
       }),
     );
 

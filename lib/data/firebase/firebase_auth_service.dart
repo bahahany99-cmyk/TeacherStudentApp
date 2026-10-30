@@ -441,6 +441,10 @@ class FirebaseAuthService implements AuthService {
       doc.data()?[scheduledDeletionField],
     );
 
+    // (P22) الصورة الافتراضية: قيمة قديمة/غير رقمية تُتجاهل وتُشتق من
+    // المعرّف، فلا ينكسر الحساب بسبب حقل عرض واحد.
+    final Object? rawPreset = doc.data()?['avatarPreset'];
+
     final AppUser resolved = AppUser(
       id: user.uid,
       displayName: displayName,
@@ -453,11 +457,7 @@ class FirebaseAuthService implements AuthService {
       // الحقلين يعمل كما هو، فلا حاجة إلى ترحيل بيانات.
       phone: _clean(doc.data()?['phone'] as String?),
       stage: _clean(doc.data()?['stage'] as String?),
-      // (P22) الصورة الافتراضية: قيمة قديمة/غير رقمية تُتجاهل وتُشتق من
-      // المعرّف، فلا ينكسر الحساب بسبب حقل عرض واحد.
-      avatarPreset: doc.data()?['avatarPreset'] is int
-          ? doc.data()?['avatarPreset'] as int
-          : null,
+      avatarPreset: rawPreset is int ? rawPreset : null,
     );
 
     // حساب مجدول للحذف لا يدخل التطبيق: يُوجَّه إلى شاشة الاستعادة.

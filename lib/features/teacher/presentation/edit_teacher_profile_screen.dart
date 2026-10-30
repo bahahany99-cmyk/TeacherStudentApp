@@ -390,8 +390,8 @@ class _ProfileFormState extends State<_ProfileForm> {
           if (_locked) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             // (P22) إشعار صريح: لا «أزرار معطّلة بلا سبب».
-            InfoNote(
-              key: const Key('profile-locked-notice'),
+            const InfoNote(
+              key: Key('profile-locked-notice'),
               icon: Icons.lock_clock_outlined,
               text:
                   'ملفك قيد المراجعة من الإدارة، والتعديل مُعطَّل حتى يصل '
