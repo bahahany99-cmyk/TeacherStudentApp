@@ -119,10 +119,10 @@ abstract final class AcademicOptions {
       return 'أدخل $label';
     }
     if (text.length < minCustomLength) {
-      return 'طول $label قصير جدًا (حرفان على الأقل)';
+      return '$label قصير جدًا (حرفان على الأقل)';
     }
     if (text.length > maxCustomLength) {
-      return 'طول $label يتجاوز الحد ($maxCustomLength حرفًا كحد أقصى)';
+      return '$label طويل جدًا ($maxCustomLength حرفًا كحد أقصى)';
     }
     return null;
   }

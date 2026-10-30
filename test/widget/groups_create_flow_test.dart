@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_form_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
 
 import '../helpers/test_app.dart';
@@ -73,16 +74,39 @@ AppServices _servicesWithGroups(List<StudyGroup> source) {
   return (services, session);
 }
 
-/// كل عناصر الفعل المتعلقة بالإنشاء الظاهرة الآن (أي صيغة: نص أو مفتاح).
-Finder _createActions() => find.byWidgetPredicate(
-  (Widget widget) =>
-      widget.key == const Key('groups-create') ||
-      (widget is Text && widget.data == 'إنشاء مجموعة جديدة') ||
-      (widget is Text && widget.data == 'مجموعة جديدة') ||
-      (widget is Text && widget.data == 'إنشاء مجموعة') ||
-      (widget is Text && widget.data == 'إنشاء'),
-  description: 'أزرار/روابط إنشاء مجموعة',
-);
+/// صيغ النص التي كانت تمثّل مدخلًا ثانيًا للإنشاء قبل P23.
+const List<String> _otherCreateLabels = <String>[
+  'مجموعة جديدة',
+  'إنشاء مجموعة',
+  'إنشاء',
+];
+
+/// يثبت أن **الفعل له مدخل واحد**: الزر المعروف واحد، ونصّه مرة واحدة، ولا
+/// يوجد أي زر آخر (بأي نوع) يحمل صيغة إنشاء.
+///
+/// `find.widgetWithText` يعيد **الزر** لا النص داخله، فلا تُحتسب التسمية نفسها
+/// مدخلًا ثانيًا (وهو الخطأ الذي أسقط الفحص الأول).
+void _expectSingleCreateEntryPoint() {
+  expect(find.byKey(const Key('groups-create')), findsOneWidget);
+  expect(
+    find.widgetWithText(FilledButton, 'إنشاء مجموعة جديدة'),
+    findsOneWidget,
+  );
+  expect(find.text('إنشاء مجموعة جديدة'), findsOneWidget);
+
+  for (final String label in _otherCreateLabels) {
+    for (final Finder button in <Finder>[
+      find.widgetWithText(TextButton, label),
+      find.widgetWithText(FilledButton, label),
+      find.widgetWithText(OutlinedButton, label),
+      find.widgetWithText(ElevatedButton, label),
+      find.widgetWithText(FloatingActionButton, label),
+      find.widgetWithText(IconButton, label),
+    ]) {
+      expect(button, findsNothing, reason: 'مدخل إنشاء ثانٍ بصيغة «$label»');
+    }
+  }
+}
 
 void main() {
   group('(P23) زر واحد لإنشاء المجموعة', () {
@@ -93,22 +117,9 @@ void main() {
       await tester.pumpWidget(_host(services, session));
       await tester.pumpAndSettle();
 
-      // الزر الأساسي موجود ومفتاحه معروف.
-      expect(find.byKey(const Key('groups-create')), findsOneWidget);
-
-      // ونصّه الظاهر مرة واحدة فقط.
-      expect(find.text('إنشاء مجموعة جديدة'), findsOneWidget);
-
-      // لا تكرار بأي صيغة أخرى للفعل نفسه.
-      expect(find.text('مجموعة جديدة'), findsNothing);
-      expect(find.text('إنشاء مجموعة'), findsNothing);
-      expect(find.text('إنشاء'), findsNothing);
-
-      // ولا زر في عنوان القسم.
-      expect(find.widgetWithText(TextButton, 'إنشاء'), findsNothing);
-
-      // العدد الكلي لعناصر الفعل = 1.
-      expect(_createActions(), findsOneWidget);
+      // الزر الأساسي موجود، ونصّه مرة واحدة، ولا مدخل ثانٍ بأي صيغة أو
+      // نوع زر (لا في العنوان، ولا في حالة الفراغ، ولا أسفل القائمة).
+      _expectSingleCreateEntryPoint();
     });
 
     testWidgets('حالة الفراغ تشرح ولا تُكرّر الزر', (
@@ -122,10 +133,8 @@ void main() {
 
       // حالة الفراغ ظاهرة…
       expect(find.text('لم تُنشئ مجموعات بعد'), findsOneWidget);
-      // …وبلا رابط إنشاء ثانٍ داخلها.
-      expect(find.widgetWithText(TextButton, 'إنشاء مجموعة'), findsNothing);
-      // …والزر الأساسي يبقى واحدًا.
-      expect(_createActions(), findsOneWidget);
+      // …وبلا رابط إنشاء ثانٍ داخلها، والزر الأساسي يبقى واحدًا.
+      _expectSingleCreateEntryPoint();
     });
 
     testWidgets('الزر يفتح النموذج الحقيقي ويحفظ في المستودع ثم يُحدّث القائمة', (
@@ -143,6 +152,13 @@ void main() {
       // ① الزر الوحيد ⇒ النموذج الحقيقي.
       await tester.tap(find.byKey(const Key('groups-create')));
       await tester.pumpAndSettle();
+
+      // النموذج الحقيقي مفتوح (نوعه لا نصّه: النص قد يتغيّر، والمسار لا).
+      expect(
+        find.byType(GroupFormScreen),
+        findsOneWidget,
+        reason: 'الزر لم يفتح نموذج الإنشاء',
+      );
       expect(find.text('بيانات المجموعة'), findsOneWidget);
 
       // ② نملأ الحقول ونحفظ (نفس مسار المستخدم، بلا اختصارات).
@@ -229,8 +245,7 @@ void main() {
 
       // الزر يبقى واحدًا مهما كان عدد المجموعات، ويبقى ظاهرًا (لا يختفي
       // أسفل قائمة طويلة).
-      expect(find.byKey(const Key('groups-create')), findsOneWidget);
-      expect(_createActions(), findsOneWidget);
+      _expectSingleCreateEntryPoint();
     });
   });
 }

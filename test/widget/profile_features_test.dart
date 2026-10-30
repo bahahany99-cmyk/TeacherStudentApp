@@ -186,11 +186,19 @@ void main() {
       await tester.enterText(find.byKey(const Key('profile-bio')), 'قصيرة');
       await pressProfileSave(tester);
 
-      // الرسالة العامة دليل على أن التحقق جرى (رسالة الحقل نفسه قد تكون
-      // خارج منطقة العرض على هاتف 360dp).
+      // رسالة عربية تمنع الحفظ دليل على أن التحقق جرى (رسالة الحقل نفسه قد
+      // تكون خارج منطقة العرض على هاتف 360dp).
+      //
+      // (P23) صارت الرسالة تسمّي الحقول الإلزامية الغائبة بدل نصّ عام، ويُعرض
+      // الملخّص نفسه داخل النموذج أيضًا ⇒ يقبل أيًّا من الصيغتين.
       expect(
-        find.text('راجع الحقول المطلوبة قبل الحفظ.'),
-        findsOneWidget,
+        find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Text &&
+              (widget.data == 'راجع الحقول المطلوبة قبل الحفظ.' ||
+                  (widget.data?.startsWith('ملفك غير مكتمل') ?? false)),
+        ),
+        findsWidgets,
       );
       final TeacherProfile? unchanged = await services.teachers.findMine(
         'demo-teacher-1',

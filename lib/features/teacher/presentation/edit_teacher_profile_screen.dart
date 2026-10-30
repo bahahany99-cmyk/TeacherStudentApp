@@ -68,6 +68,16 @@ class _EditTeacherProfileScreenState extends State<EditTeacherProfileScreen> {
                       key: ValueKey<String>(teacherId),
                       load: () =>
                           AppServicesScope.of(context).teachers.findMine(teacherId),
+                      // ⚠️ `AsyncView` يعرض حالة الفراغ حين تكون النتيجة
+                      // `null`، و`null` هنا يعني «لا ملف بعد» لا «لا بيانات».
+                      // بلا هذا الفرع كان المدرس الجديد يرى «لا توجد بيانات
+                      // لعرضها» بدل نموذج الإنشاء — أي طريق مسدود (P23).
+                      emptyBuilder: (BuildContext context) => _ProfileForm(
+                        teacherId: teacherId,
+                        profile: null,
+                        initialName:
+                            SessionScope.read(context).user?.displayName ?? '',
+                      ),
                       builder:
                           (BuildContext context, TeacherProfile? profile) {
                             // لا ملف ⇒ نموذج إنشاء بقيم مبدئية من الحساب.
