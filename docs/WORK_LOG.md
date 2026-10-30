@@ -3261,3 +3261,16 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
   سطرًا) — العمل بصري/تنظيمي فقط، والقيود تُفرض على الخادم كما كان.
 - تغيير مقاييس عالمية يعني ضرورة فحص بصري على جهاز حقيقي (320dp و360dp) قبل
   الاعتماد النهائي؛ CI يثبت التخطيط لا الجمال.
+
+### 8) مسار CI لـ P26
+
+| التشغيل | النتيجة | الملاحظة |
+|---|---|---|
+| `41101515321` | ❌ analyze | `NotificationBell` مستورد من `core/widgets/empty_state.dart` خطأً — يعيش في `app/shell/app_shell.dart` |
+| `41103098310` | ❌ 10 اختبارات | تحويل صفوف «حسابي» إلى `SettingsTile` كسر `find.widgetWithText(OutlinedButton/ListTile, …)`، ونصف قطر البطاقة 24→20 في `design_v3_test` |
+| `41104170352` | ❌ اختبار واحد | `details_screens_test:156` ما زال يبحث عن `ListTile` باسم «ملفي التعريفي» |
+| `41104996756` | ✅ analyze + كل اختبارات Flutter + **291** اختبار قواعد | — |
+
+**الدرس المكتوب في الاختبارات:** كل اختبار يطارد **العنصر** لا **شكله**
+(`find.text('ملفي التعريفي')` بدل `find.widgetWithText(ListTile, …)`)، وكل رقم
+تصميمي يُقرأ من رموز `AppSpacing` لا من رقم مكرّر في الاختبار.
