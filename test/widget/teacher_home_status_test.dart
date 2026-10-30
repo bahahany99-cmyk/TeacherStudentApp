@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:teacher_student_app/app/router/app_router.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
@@ -20,6 +21,9 @@ import '../helpers/test_app.dart';
 /// «هذه معاينة محلية بلا Firebase… (C-06)» مع وسم «حساب تجريبي». هنا نُثبت أن
 /// البطاقة تُبنى من `teacherProfiles/{uid}` فعليًا، وأن كل حالة تُقال بلغة
 /// بشرية، وأن لا نص تطويري يظهر في أي منها.
+/// مضيف بمسار حقيقي: أزرار البطاقة تنتقل بمسارات التطبيق
+/// (`/me/teacher-profile/edit`)، و`MaterialApp(home:)` بلا `onGenerateRoute`
+/// يرمي «Could not find a generator for route» عند أول ضغطة (خطأ مقيس في CI).
 Widget _host(Widget child, AppServices services, SessionController session) {
   return AppServicesScope(
     services: services,
@@ -27,7 +31,11 @@ Widget _host(Widget child, AppServices services, SessionController session) {
       controller: session,
       child: Directionality(
         textDirection: TextDirection.rtl,
-        child: MaterialApp(theme: AppTheme.light, home: Scaffold(body: child)),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          onGenerateRoute: AppRouter.onGenerateRoute,
+          home: Scaffold(body: child),
+        ),
       ),
     ),
   );
