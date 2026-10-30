@@ -57,6 +57,7 @@ class GroupJoinRequest {
     required this.requestedAt,
     this.decidedAt,
     this.decidedBy,
+    this.cooldownUntil,
   });
 
   /// المعرّف الحتمي لطلب واحد: مجموعة واحدة + طالب واحد = مستند واحد.
@@ -83,6 +84,13 @@ class GroupJoinRequest {
   /// `uid` من اتخذ القرار (المدرس عند القبول/الرفض، الطالب عند الإلغاء).
   final String? decidedBy;
 
+  /// (P24) نهاية فترة التهدئة بعد إلغاء الطالب لطلبه.
+  ///
+  /// **لماذا؟** كانت الحلقة «أرسل ⇒ ألغِ ⇒ أرسل» بلا حد، فيستطيع طالب واحد
+  /// إغراق مدرس بعشرات الطلبات في دقيقة. الإلغاء يكتب الآن موعدًا لا يسمح
+  /// بإعادة الإرسال قبله، والقواعد تتحقق من القيمة نفسها على الخادم.
+  final DateTime? cooldownUntil;
+
   bool get isPending => status.isPending;
 
   /// نسخة بعدّلة حالة/قرار — تُستخدم في التنفيذ التجريبي وفي تحديثات المعاملة.
@@ -91,6 +99,8 @@ class GroupJoinRequest {
     DateTime? requestedAt,
     DateTime? decidedAt,
     String? decidedBy,
+    DateTime? cooldownUntil,
+    bool clearCooldown = false,
   }) {
     return GroupJoinRequest(
       id: id,
@@ -103,7 +113,22 @@ class GroupJoinRequest {
       requestedAt: requestedAt ?? this.requestedAt,
       decidedAt: decidedAt ?? this.decidedAt,
       decidedBy: decidedBy ?? this.decidedBy,
+      cooldownUntil: clearCooldown
+          ? null
+          : (cooldownUntil ?? this.cooldownUntil),
     );
+  }
+
+  /// خريطة الإلغاء: الحالة + موعد انتهاء التهدئة (P24).
+  ///
+  /// القواعد ترفض إلغاءً بلا `cooldownUntil`، وتفرض أن يكون في المستقبل بمدة
+  /// لا تقل عن مدة التهدئة، فلا يمكن للعميل تجاوزها بكتابة موعد ماضٍ أو بحذف
+  /// الحقل. المدة نفسها في `JoinRules.cancelCooldown`.
+  Map<String, Object?> cancelMap({required DateTime cooldownUntil}) {
+    return <String, Object?>{
+      'status': 'cancelled',
+      'cooldownUntil': cooldownUntil,
+    };
   }
 
   /// خريطة الإنشاء — الحقول المسموح بها في القواعد فقط.

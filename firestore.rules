@@ -799,19 +799,34 @@ service cloud.firestore {
         && request.resource.data.decidedAt is timestamp
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
 
-      // (ب) إلغاء الطالب لطلبه المعلّق — الحالة فقط.
+      // (ب) إلغاء الطالب لطلبه المعلّق — الحالة **ومعها موعد التهدئة** (P24).
+      //
+      // ⚠️ هذا الحقل ليس تجميليًا: حلقة «أرسل ⇒ ألغِ ⇒ أرسل» كانت بلا حد،
+      // فيستطيع طالب واحد إغراق المدرس بعشرات الطلبات في دقيقة. القواعد تفرض
+      // أن يكتب الإلغاء موعدًا في المستقبل (لا ماضيًا ولا محذوفًا)، فلا يمكن
+      // للعميل تجاوز التهدئة بتعديل الطلب.
+      // - الحد الأدنى 4 دقائق (أقل من مدة التطبيق 5 دقائق بهامش فرق الساعة).
+      // - الحد الأعلى 30 دقيقة: لا يقفل الطالب نفسه سنة بسبب ساعة خاطئة.
       allow update: if signedIn()
         && resource.data.studentId == request.auth.uid
         && resource.data.status == 'pending'
         && request.resource.data.status == 'cancelled'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        && request.resource.data.cooldownUntil is timestamp
+        && request.resource.data.cooldownUntil >= request.time + duration.value(4, 'm')
+        && request.resource.data.cooldownUntil <= request.time + duration.value(30, 'm')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cooldownUntil']);
 
       // (ج) إعادة الطلب بعد رفض/إلغاء: نفس المستند يعود pending، بشرط أن
       // تكون المجموعة ما زالت منشورة وبها مقعد (السعة تُفحص من جديد).
+      //
+      // (P24) **وأن تكون فترة التهدئة انتهت.** `request.time` هو وقت الخادم،
+      // فالساعة المحلية للطالب لا تُقصّر المدة. السجلات القديمة بلا
+      // `cooldownUntil` تُقرأ بصفر ⇒ لا حجب عليها (توافق رجعي).
       allow update: if signedIn()
         && resource.data.studentId == request.auth.uid
         && resource.data.status in ['rejected', 'cancelled']
         && validNewRequest()
+        && request.time >= resource.data.get('cooldownUntil', timestamp.value(0))
         && request.resource.data.groupId == resource.data.groupId
         && request.resource.data.studentId == resource.data.studentId
         && request.resource.data.teacherId == resource.data.teacherId
@@ -1259,6 +1274,18 @@ service cloud.firestore {
         && !('groupId' in request.resource.data.keys())
         && teacherSettingsDoc().allowDirectMessages == true;
 
+      // (ج-٢) خيط طلب انضمام (P24): الطالب أرسل طلبًا معلّقًا (أو قُبل) لهذا
+      // المدرس، فصار بينهما سبب حقيقي للتواصل قبل أن يصبح عضوًا. السند يقرأه
+      // الخادم من مستند الطلب نفسه (لا من العميل)، ولذلك لا يمكن فتح خيط
+      // «طلب انضمام» بلا طلب فعلي.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'joinRequest'
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.groupId is string
+        && !('bookingId' in request.resource.data.keys())
+        && get(/databases/$(database)/documents/groupJoinRequests/$(request.resource.data.groupId + '_' + request.auth.uid)).data.status in ['pending', 'accepted']
+        && get(/databases/$(database)/documents/groupJoinRequests/$(request.resource.data.groupId + '_' + request.auth.uid)).data.teacherId == request.resource.data.teacherId;
+
       // (د) حالة القراءة: كل طرف يكتب حقلَه وحده، ولا يمسّ شيئًا آخر.
       // `size() > 0` ضروري: كتابة القيمة نفسها لا تُنتج فروقًا، فتنجح
       // `hasOnly` على مجموعة فارغة — وهذا منفذ لكتابة «لا شيء» باسم القراءة.
@@ -1320,16 +1347,23 @@ service cloud.firestore {
           return (parentChat().origin == 'booking'
                   && get(/databases/$(database)/documents/bookingRequests/$(parentChat().bookingId)).data.status != 'rejected')
             || parentChat().origin == 'group'
+            // (P24) خيط طلب الانضمام قائم على طلب حقيقي، فلا حاجة لشرط
+            // إعداد الرسائل (الطلب نفسه هو السند، ووجوده فُحص عند الإنشاء).
+            || parentChat().origin == 'joinRequest'
             || (parentChat().origin == 'inquiry'
                 && get(/databases/$(database)/documents/teacherSettings/$(parentChat().teacherId)).data.allowDirectMessages == true);
         }
 
         allow read: if isAdmin() || viewerIsParticipant();
 
+        // (P24) الرسالة قد تكون صورة: `imageId` يسمح بنصّ فارغ (الصورة هي
+        // المحتوى)، والنص بلا صورة يجب أن يبقى غير فارغ — فلا تُكتب «رسالة
+        // صامتة» لا يراها أحد.
         allow create: if viewerIsParticipant()
           && channelAllowsSending()
           && request.resource.data.keys().hasOnly(
-               ['chatId', 'senderId', 'senderName', 'senderRole', 'text', 'sentAt'])
+               ['chatId', 'senderId', 'senderName', 'senderRole', 'text',
+                'sentAt', 'imageId'])
           && request.resource.data.chatId == chatId
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.senderName is string
@@ -1337,11 +1371,66 @@ service cloud.firestore {
           && request.resource.data.senderName.size() <= 80
           && request.resource.data.senderRole in ['student', 'teacher']
           && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
+          && (request.resource.data.text.size() > 0
+              || ('imageId' in request.resource.data.keys()))
+          && (!('imageId' in request.resource.data.keys())
+              || (request.resource.data.imageId is string
+                  && request.resource.data.imageId.size() > 0
+                  && request.resource.data.imageId.size() <= 200))
           && request.resource.data.sentAt is timestamp;
 
         allow update, delete: if isAdminWriter();
+      }
+
+      // ── 7-ج) صور المحادثة المؤقتة (P24) ──────────────────────────────────
+      // صورة لكل مستند بدل حقل في الرسالة: الرسالة تُقرأ دائمًا، والصورة
+      // تُقرأ عند عرضها فقط. و`expiresAt` **مفروض هنا**: بعد خمسة أيام تصبح
+      // القراءة مرفوضة على الخادم، والحذف متاح ليتحرر التخزين.
+      match /images/{imageId} {
+        function imageParentChat() {
+          return get(/databases/$(database)/documents/directChats/$(chatId)).data;
+        }
+
+        function imageViewerIsParticipant() {
+          return signedIn() && (
+            request.auth.uid == imageParentChat().teacherId
+            || request.auth.uid == imageParentChat().studentId
+          );
+        }
+
+        function imageKeys() {
+          return ['chatId', 'senderId', 'imageBase64', 'mimeType', 'createdAt',
+                  'expiresAt'];
+        }
+
+        // لا قراءة بعد الانتهاء: هذا هو «الحذف التلقائي» الذي لا يعتمد على
+        // جهاز المستخدم. الصورة تبقى مخزّنة حتى يمرّ أحد عليها فيُحذف مستندها.
+        allow read: if imageViewerIsParticipant()
+          && request.time < resource.data.expiresAt;
+
+        // المُرسِل نفسه فقط، وبموعد انتهاء في المدى المسموح: لا صورة أبدية
+        // (`<= 5 أيام + ساعة`) ولا صورة تنتهي قبل أن تُقرأ.
+        allow create: if imageViewerIsParticipant()
+          && request.resource.data.keys().hasOnly(imageKeys())
+          && request.resource.data.chatId == chatId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.imageBase64 is string
+          && request.resource.data.imageBase64.size() >= 64
+          && request.resource.data.imageBase64.size() <= 400000
+          && request.resource.data.mimeType in ['image/jpeg', 'image/png']
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time + duration.value(4, 'd')
+          && request.resource.data.expiresAt <= request.time + duration.value(5, 'd');
+
+        // الحذف بعد الانتهاء فقط (تنظيف)، أو من الإدارة. صورة سارية لا يمسحها
+        // أحد — لا المُرسِل ولا الطرف الآخر.
+        allow delete: if (imageViewerIsParticipant()
+                          && request.time >= resource.data.expiresAt)
+          || isAdminWriter();
+
+        allow update: if false;
       }
     }
 

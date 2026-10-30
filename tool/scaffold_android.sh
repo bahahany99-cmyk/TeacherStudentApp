@@ -108,13 +108,23 @@ import sys
 path = sys.argv[1]
 src = open(path, encoding='utf-8').read()
 
+# عناصر الإذن كاملة (لا أسماء فقط) لأن بعضها يحمل سمات — مثل
+# `android:maxSdkVersion` لإذن التخزين (P24):
+#   * gal (تنزيل صور المحادثة) يحتاج WRITE_EXTERNAL_STORAGE على أندرويد 10
+#     وما قبلها فقط (API <= 29). على 11+ الكتابة في المعرض لا تحتاج إذنًا،
+#     وإعلانه بلا `maxSdkVersion` يجعل النظام يطلبه بلا داعٍ.
 needed = [
-    'android.permission.INTERNET',
-    'android.permission.ACCESS_NETWORK_STATE',
+    ('android.permission.INTERNET',
+     '<uses-permission android:name="android.permission.INTERNET"/>'),
+    ('android.permission.ACCESS_NETWORK_STATE',
+     '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>'),
+    ('android.permission.WRITE_EXTERNAL_STORAGE',
+     '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" '
+     'android:maxSdkVersion="29"/>'),
 ]
 
 added = []
-for permission in needed:
+for permission, element in needed:
     if permission in src:
         continue
     if '<application' in src:
@@ -122,11 +132,11 @@ for permission in needed:
         index = src.index('<application')
         line_start = src.rfind('\n', 0, index) + 1
         indent = src[line_start:index]
-        entry = f'{indent}<uses-permission android:name="{permission}"/>\n'
+        entry = f'{indent}{element}\n'
         src = src[:line_start] + entry + src[line_start:]
     else:
         # بلا <application>: نُدرج قبل إغلاق <manifest>
-        entry = f'    <uses-permission android:name="{permission}"/>\n'
+        entry = f'    {element}\n'
         src = src.replace('</manifest>', entry + '</manifest>', 1)
     added.append(permission)
 
@@ -143,6 +153,13 @@ PERMISSIONS
   else
     echo "خطأ: إذن INTERNET غير موجود في $MANIFEST" >&2
     exit 1
+  fi
+
+  # P24: تنزيل صور المحادثة إلى المعرض على أندرويد 10 وما قبلها.
+  if grep -q 'android.permission.WRITE_EXTERNAL_STORAGE' "$MANIFEST"; then
+    echo "✓ إذن WRITE_EXTERNAL_STORAGE مثبّت (maxSdkVersion=29) لتنزيل الصور"
+  else
+    echo "! تحذير: إذن WRITE_EXTERNAL_STORAGE غير موجود — التنزيل سيفشل على API<=29" >&2
   fi
 fi
 

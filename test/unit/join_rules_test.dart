@@ -219,4 +219,121 @@ void main() {
       );
     });
   });
+
+  // (P24) البند 2: تهدئة الإلغاء — إغلاق حلقة «أرسل ⇒ ألغِ ⇒ أرسل».
+  group('JoinRules — تهدئة الإلغاء', () {
+    final DateTime now = DateTime(2026, 10, 30, 12);
+
+    test('الثوابت: 5 دقائق تهدئة، وسقف 30 دقيقة، وأرضية 4 للخادم', () {
+      expect(JoinRules.cancelCooldown, const Duration(minutes: 5));
+      expect(JoinRules.maxCooldown, const Duration(minutes: 30));
+      expect(JoinRules.cooldownFloor, const Duration(minutes: 4));
+      expect(
+        JoinRules.cooldownFloor,
+        lessThan(JoinRules.cancelCooldown),
+        reason: 'الأرضية أقل من المدة لتمتص فرق ساعة الجهاز',
+      );
+    });
+
+    test('بلا موعد تهدئة لا يوجد منع', () {
+      expect(JoinRules.cooldownRemaining(), isNull);
+      expect(JoinRules.cooldownBlockReason(now: now), isNull);
+    });
+
+    test('التهديد السارية تمنع الطلب برسالة تذكر المدة', () {
+      final DateTime until = now.add(const Duration(minutes: 3));
+      final String? reason = JoinRules.requestBlockReason(
+        group: _group(),
+        viewerId: 'student-1',
+        existingStatus: JoinRequestStatus.cancelled,
+        cooldownUntil: until,
+        now: now,
+      );
+
+      expect(reason, isNotNull);
+      expect(reason, contains('ألغيت طلبك'));
+      expect(
+        JoinRules.canRequestJoin(
+          group: _group(),
+          viewerId: 'student-1',
+          cooldownUntil: until,
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('بعد انقضاء التهدئة يعود الطلب متاحًا', () {
+      final DateTime until = now.add(const Duration(minutes: 5));
+      final DateTime later = until.add(const Duration(seconds: 1));
+
+      expect(
+        JoinRules.requestBlockReason(
+          group: _group(),
+          viewerId: 'student-1',
+          existingStatus: JoinRequestStatus.cancelled,
+          cooldownUntil: until,
+          now: later,
+        ),
+        isNull,
+      );
+      expect(JoinRules.cooldownRemaining(cooldownUntil: until, now: later), isNull);
+    });
+
+    test('التهديد لا تتجاوز الحالات الأخرى أولوية: الإيقاف والاكتمال أولًا', () {
+      final DateTime until = now.add(const Duration(minutes: 3));
+
+      expect(
+        JoinRules.requestBlockReason(
+          group: _group(isActive: false),
+          viewerId: 'student-1',
+          cooldownUntil: until,
+          now: now,
+        ),
+        contains('موقوفة'),
+      );
+      expect(
+        JoinRules.requestBlockReason(
+          group: _group(seatsTaken: 12),
+          viewerId: 'student-1',
+          cooldownUntil: until,
+          now: now,
+        ),
+        contains('مكتملة'),
+      );
+      expect(
+        JoinRules.requestBlockReason(
+          group: _group(),
+          viewerId: 'student-1',
+          existingStatus: JoinRequestStatus.pending,
+          cooldownUntil: until,
+          now: now,
+        ),
+        contains('قيد المراجعة'),
+      );
+    });
+
+    test('نص المدة عربي سليم', () {
+      expect(JoinRules.describeCooldown(const Duration(seconds: 40)), '40 ثانية');
+      expect(JoinRules.describeCooldown(const Duration(minutes: 1)), 'دقيقة واحدة');
+      expect(JoinRules.describeCooldown(const Duration(minutes: 2)), 'دقيقتين');
+      expect(JoinRules.describeCooldown(const Duration(minutes: 5)), '5 دقائق');
+      expect(JoinRules.describeCooldown(const Duration(minutes: 20)), '20 دقيقة');
+    });
+
+    test('الطلب الملغى يحمل موعد تهدئة عند الإلغاء ويُقرأ منه', () {
+      final GroupJoinRequest cancelled = _request(
+        status: JoinRequestStatus.cancelled,
+      ).copyWith(cooldownUntil: now.add(JoinRules.cancelCooldown));
+
+      expect(cancelled.cooldownUntil, isNotNull);
+      // الإلغاء يكتب الوضع والموعد فقط — لا تُمسّ حقول أخرى.
+      final Map<String, Object?> map = cancelled.cancelMap(
+        cooldownUntil: now.add(JoinRules.cancelCooldown),
+      );
+      expect(map['status'], 'cancelled');
+      expect(map['cooldownUntil'], now.add(JoinRules.cancelCooldown));
+      expect(map.keys.toSet(), <String>{'status', 'cooldownUntil'});
+    });
+  });
 }

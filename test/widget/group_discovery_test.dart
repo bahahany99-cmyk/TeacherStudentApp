@@ -10,6 +10,9 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_filter_bar.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_filter_sheet.dart';
 
 import '../helpers/test_app.dart';
 
@@ -51,6 +54,29 @@ Widget _host(AppServices services) {
   );
 }
 
+/// (P24) يفتح ورقة «فلترة متقدمة» ويضغط حبة ثم «عرض النتائج».
+///
+/// الفلاتر التي ليست مادة انتقلت من الشاشة إلى الورقة، فالاختبار يمرّ بنفس
+/// مسار المستخدم بدل أن يفترض مكان الحبة.
+Future<void> _pickInAdvancedSheet(
+  WidgetTester tester,
+  String chipLabel,
+) async {
+  await tester.tap(find.byKey(GroupFilterBar.filterButtonKey));
+  await tester.pumpAndSettle();
+
+  await tester.tap(
+    find.descendant(
+      of: find.byType(GroupFilterSheet),
+      matching: find.widgetWithText(PillChip, chipLabel),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  await tester.tap(find.byKey(GroupFilterSheet.applyKey));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('استكشاف المجموعات (P9)', () {
     testWidgets('كل المجموعات المنشورة تظهر أول الأمر', (
@@ -61,11 +87,17 @@ void main() {
       await tester.pumpWidget(_host(_services()));
       await tester.pumpAndSettle();
 
-      expect(find.text('استكشف المجموعات'), findsOneWidget);
+      // (P24) عنوان الشاشة من القسم، وشريط الفلاتر صار بحثًا + زر فلترة.
+      expect(find.text('مجموعات متاحة'), findsOneWidget);
+      expect(find.byKey(GroupFilterBar.filterButtonKey), findsOneWidget);
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsOneWidget);
       expect(find.text('مجموعة الفيزياء — الحديثة'), findsOneWidget);
       // المادة تُعرض كحبة فلتر.
       expect(find.text('الفيزياء'), findsWidgets);
+      // (P24) هوية المدرس على البطاقة: اسمه + شارة توثيقه (المدرسون التجريبيون
+      // موثّقون)، فالطالب يعرف من يدرّس قبل أن يفتح التفاصيل.
+      expect(find.text('أ. سارة الخطيب'), findsWidgets);
+      expect(find.byKey(GroupCard.teacherBadgeKey), findsWidgets);
       expect(tester.takeException(), isNull);
     });
 
@@ -91,8 +123,8 @@ void main() {
       await tester.pumpWidget(_host(_services()));
       await tester.pumpAndSettle();
 
-      // «مكتملة» تظهر أيضًا كشارة على بطاقة المجموعة، فنضغط حبة الفلتر نفسها.
-      await tapVisible(tester, find.widgetWithText(PillChip, 'مكتملة'));
+      // (P24) فلتر المقاعد انتقل إلى ورقة «فلترة متقدمة».
+      await _pickInAdvancedSheet(tester, 'مكتملة');
 
       expect(find.text('مجموعة الفيزياء — الحديثة'), findsOneWidget);
       expect(find.text('مجموعة الرياضيات — التفاضل'), findsNothing);
@@ -142,8 +174,7 @@ void main() {
       await tester.pumpWidget(_host(_services()));
       await tester.pumpAndSettle();
 
-      await tapVisible(tester, find.text('أبجديًا'));
-      await tester.pumpAndSettle();
+      await _pickInAdvancedSheet(tester, 'أبجديًا');
 
       final double firstY = tester.getTopLeft(find.text('تأسيس النحو')).dy;
       final double otherY = tester

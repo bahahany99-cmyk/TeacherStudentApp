@@ -45,6 +45,18 @@ const HOST_PORT = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').spli
 
 const now = () => new Date('2026-10-27T09:00:00Z');
 
+/**
+ * (P24) وقت **حقيقي** لاختبارات التهدئة.
+ *
+ * `request.time` في القواعد هو ساعة المحاكي الحقيقية لا تاريخ [now] المستخدم
+ * في بيانات المستندات، فمقارنة موعد تهدئة بتاريخ ثابت كانت ستعطي نتيجة
+ * عشوائية حسب يوم التشغيل.
+ */
+const realNow = () => Date.now();
+
+/** موعد بعد [ms] مللي ثانية من الآن — يُكتب في `cooldownUntil`. */
+const fromNow = (ms) => new Date(realNow() + ms);
+
 // ── مساعدات بناء البيانات ────────────────────────────────────────────────────
 
 const userDoc = (uid, role = 'student') => ({
@@ -1107,14 +1119,18 @@ describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
       },
     ]);
 
+    // (P24) الإلغاء يكتب **مع الحالة** موعد تهدئة مستقبليًا؛ القواعد ترفض
+    // إلغاءً بلا هذا الموعد لأنه يفتح باب إعادة الإرسال الفورية.
     await assertSucceeds(
       updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
         status: 'cancelled',
+        cooldownUntil: fromNow(5 * 60 * 1000),
       }),
     );
     await assertFails(
       updateDoc(doc(asStudent(), joinPath('g1', 'student-2')), {
         status: 'cancelled',
+        cooldownUntil: fromNow(5 * 60 * 1000),
       }),
     );
   });
@@ -1133,6 +1149,126 @@ describe('P8 — إلغاء الطلب وإعادة إرساله', () => {
         doc(asStudent(), joinPath('g1', 'student-1')),
         joinRequestDoc('g1', 'student-1'),
       ),
+    );
+  });
+
+  // (P24) البند 2: تهدئة الإلغاء على الخادم — لا تكفي الواجهة.
+  it('إلغاء بلا cooldownUntil مرفوض', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        status: 'cancelled',
+      }),
+    );
+  });
+
+  it('cooldownUntil قصير جدًا (دقيقة) أو بعيد جدًا (ساعة) مرفوض', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1'),
+      },
+    ]);
+
+    // أقل من أرضية 4 دقائق: يُقصد به تجاوز التهدئة كلها.
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        status: 'cancelled',
+        cooldownUntil: fromNow(60 * 1000),
+      }),
+    );
+    // أكثر من سقف 30 دقيقة: يمنع الطالب من الطلب لساعة+ بسبب ساعة خاطئة.
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        status: 'cancelled',
+        cooldownUntil: fromNow(60 * 60 * 1000),
+      }),
+    );
+  });
+
+  it('إعادة الطلب أثناء التهدئة مرفوضة، وبعدها مسموحة', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', {
+          status: 'cancelled',
+          cooldownUntil: fromNow(5 * 60 * 1000),
+        }),
+      },
+    ]);
+
+    // داخل التهدئة: نفس المستند لا يعود pending.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+
+    // بعد انتهائها (موعد ماضٍ كتبناه متجاوزًا القواعد): يُقبل الطلب.
+    await seed([
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', {
+          status: 'cancelled',
+          cooldownUntil: fromNow(-60 * 1000),
+        }),
+      },
+    ]);
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('طلب ملغى قديم بلا cooldownUntil لا يُحجب (توافق رجعي)', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'cancelled' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), joinPath('g1', 'student-1')),
+        joinRequestDoc('g1', 'student-1'),
+      ),
+    );
+  });
+
+  it('لا يستطيع الطالب تمديد التهدئة لنفسه ولا لطلب غيره', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'cancelled' }),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asOther(), joinPath('g1', 'student-1')), {
+        cooldownUntil: fromNow(60 * 60 * 1000),
+      }),
+    );
+    // ولا الطالب نفسه يكتب التهدئة على طلب ملغى (القاعدة تسمح بالإلغاء فقط
+    // من `pending`).
+    await assertFails(
+      updateDoc(doc(asStudent(), joinPath('g1', 'student-1')), {
+        cooldownUntil: fromNow(5 * 60 * 1000),
+      }),
     );
   });
 
@@ -5105,6 +5241,267 @@ describe('P22 — users: الصورة الافتراضية', () => {
 
     await assertFails(
       updateDoc(doc(asOther(), 'users/student-1'), { avatarPreset: 2 }),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P24 — البند 3: خيط «طلب انضمام» يُفتح تلقائيًا مع الطلب
+//
+// المشكلة التي تُغلق: الطالب ينضم/يطلب ثم لا يجد محادثة («لا توجد محادثات»)،
+// لأن إنشاء الخيط كان مشروطًا بحجز أو بعضوية مجموعة — ولا شيء منهما موجود
+// لحظة إرسال الطلب. الآن الخيط يُنشأ من **وجود طلب انضمام فعلي**، والقاعدة
+// تقرأ الطلب من الخادم: لا يُنشأ خيط بادّعاء طلب لم يُرسل.
+describe('P24 — خيط المحادثة من طلب الانضمام', () => {
+  const joinChat = (studentId = 'student-1', overrides = {}) =>
+    directChatDoc('teacher-1', studentId, {
+      origin: 'joinRequest',
+      groupId: 'g1',
+      bookingId: undefined,
+      ...overrides,
+    });
+
+  const seedPendingRequest = (studentId = 'student-1') =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', studentId),
+        data: joinRequestDoc('g1', studentId),
+      },
+    ]);
+
+  it('طالب أرسل طلبًا فعليًا: ينشئ الخيط بنجاح', async () => {
+    await seedPendingRequest();
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat(),
+      ),
+    );
+  });
+
+  it('بلا طلب انضمام: الإنشاء مرفوض', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+    ]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat(),
+      ),
+    );
+  });
+
+  it('طلب طالب آخر لا يُنشئ خيطي', async () => {
+    await seedPendingRequest('student-2');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat(),
+      ),
+    );
+  });
+
+  it('طلب لمدرس آخر مرفوض (نسب الخيط لغير صاحب المجموعة)', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { teacherId: 'teacher-2' }),
+      },
+    ]);
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat(),
+      ),
+    );
+  });
+
+  it('خيط joinRequest بلا groupId مرفوض', async () => {
+    await seedPendingRequest();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat('student-1', { groupId: undefined }),
+      ),
+    );
+  });
+
+  it('الطلب المقبول يسمح أيضًا (الخيط يبقى بعد القبول)', async () => {
+    await seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 3 }) },
+      {
+        path: joinPath('g1', 'student-1'),
+        data: joinRequestDoc('g1', 'student-1', { status: 'accepted' }),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1')),
+        joinChat(),
+      ),
+    );
+  });
+
+  it('الرسالة في خيط joinRequest مسموحة للمشارك بلا إعداد رسائل', async () => {
+    await seedPendingRequest();
+    await seed([
+      {
+        path: chatPath('teacher-1', 'student-1'),
+        data: joinChat(),
+      },
+    ]);
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), chatPath('teacher-1', 'student-1') + '/messages/m1'),
+        directMessageDoc('teacher-1', 'student-1', 'student-1'),
+      ),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P24 — البند 4: صور المحادثة تنتهي بعد خمسة أيام
+//
+// الانتهاء ليس تجميليًا: القواعد ترفض **قراءة** الصورة بعد `expiresAt`، فلا
+// تظهر ولو بقي مستندها. والعميل يحذفها عند أول وصول (تنظيف تدريجي).
+describe('P24 — صور المحادثة المؤقتة', () => {
+  const imagePath = (imageId = 'img-1') =>
+    `${chatPath('teacher-1', 'student-1')}/images/${imageId}`;
+
+  const imageDoc = (overrides = {}) => ({
+    chatId: 'teacher-1_student-1',
+    senderId: 'student-1',
+    // 128 حرفًا: فوق الحد الأدنى (64).
+    imageBase64: 'B'.repeat(128),
+    mimeType: 'image/jpeg',
+    createdAt: new Date(realNow()),
+    expiresAt: fromNow(5 * 24 * 60 * 60 * 1000 - 60000),
+    ...overrides,
+  });
+
+  const seedChat = () =>
+    seed([
+      {
+        path: chatPath('teacher-1', 'student-1'),
+        data: directChatDoc('teacher-1', 'student-1'),
+      },
+    ]);
+
+  it('المشارك يرفع صورة تنتهي بعد خمسة أيام', async () => {
+    await seedChat();
+
+    await assertSucceeds(
+      setDoc(doc(asStudent(), imagePath()), imageDoc()),
+    );
+  });
+
+  it('صورة بعمر أطول من خمسة أيام مرفوضة (لا صور أبدية)', async () => {
+    await seedChat();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), imagePath('img-long')),
+        imageDoc({ expiresAt: fromNow(30 * 24 * 60 * 60 * 1000) }),
+      ),
+    );
+  });
+
+  it('صورة تنتهي فورًا (أقل من أربعة أيام) مرفوضة', async () => {
+    await seedChat();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), imagePath('img-short')),
+        imageDoc({ expiresAt: fromNow(60 * 1000) }),
+      ),
+    );
+  });
+
+  it('حجم أكبر من السقف أو نوع غير مسموح مرفوض', async () => {
+    await seedChat();
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), imagePath('img-big')),
+        imageDoc({ imageBase64: 'B'.repeat(400001) }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), imagePath('img-gif')),
+        imageDoc({ mimeType: 'image/gif' }),
+      ),
+    );
+  });
+
+  it('غير المشارك لا يرفع ولا يقرأ', async () => {
+    await seedChat();
+
+    await assertFails(
+      setDoc(
+        doc(asOther(), imagePath('img-x')),
+        imageDoc({ senderId: 'stranger-9' }),
+      ),
+    );
+    await seed([{ path: imagePath('img-seeded'), data: imageDoc() }]);
+    await assertFails(getDoc(doc(asOther(), imagePath('img-seeded'))));
+  });
+
+  it('المشاركان يقرآن الصورة قبل انتهائها، وتُرفض بعده', async () => {
+    await seedChat();
+    await seed([
+      { path: imagePath('img-live'), data: imageDoc() },
+      {
+        path: imagePath('img-dead'),
+        data: imageDoc({
+          createdAt: fromNow(-6 * 24 * 60 * 60 * 1000),
+          expiresAt: fromNow(-24 * 60 * 60 * 1000),
+        }),
+      },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), imagePath('img-live'))));
+    await assertSucceeds(getDoc(doc(asTeacher(), imagePath('img-live'))));
+
+    // بعد الانتهاء: رفض قراءة على الخادم لأي طرف — هذا هو «الحذف التلقائي».
+    await assertFails(getDoc(doc(asStudent(), imagePath('img-dead'))));
+    await assertFails(getDoc(doc(asTeacher(), imagePath('img-dead'))));
+  });
+
+  it('لا حذف لصورة سارية، والحذف متاح بعد انتهائها', async () => {
+    await seedChat();
+    await seed([
+      { path: imagePath('img-live'), data: imageDoc() },
+      {
+        path: imagePath('img-dead'),
+        data: imageDoc({
+          createdAt: fromNow(-6 * 24 * 60 * 60 * 1000),
+          expiresAt: fromNow(-24 * 60 * 60 * 1000),
+        }),
+      },
+    ]);
+
+    await assertFails(deleteDoc(doc(asStudent(), imagePath('img-live'))));
+    await assertSucceeds(deleteDoc(doc(asStudent(), imagePath('img-dead'))));
+  });
+
+  it('لا تعديل على صورة بعد رفعها', async () => {
+    await seedChat();
+    await seed([{ path: imagePath('img-live'), data: imageDoc() }]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), imagePath('img-live')), {
+        expiresAt: fromNow(60 * 24 * 60 * 60 * 1000),
+      }),
     );
   });
 });

@@ -17,6 +17,26 @@ abstract final class JoinRules {
   /// الواجهة/المستودع فقط، وهو حدّ تجربة استخدام لا حدّ أمني.
   static const int maxPendingPerGroup = 40;
 
+  // ── (P24) تهدئة الإلغاء: منع حلقة «أرسل ⇒ ألغِ ⇒ أرسل» ───────────────────
+
+  /// مدة التهدئة بعد إلغاء الطلب قبل السماح بإرسال طلب جديد للمجموعة نفسها.
+  ///
+  /// **الثغرة التي تُغلقها:** كان الإلغاء يفتح الباب فورًا لإعادة إرسال الطلب
+  /// (القواعد تقبل `cancelled → pending` بلا فاصل)، فيستطيع طالب واحد تكرار
+  /// الحلقة عشرات المرات في دقيقة، فيمتلئ صندوق المدرس وعدّاد طلباته بلا
+  /// معنى. الثابت هنا يُستخدم في الواجهة والمستودع، وله نظير رقمي في
+  /// `firestore.rules` (اختبارات المحاكي تُثبت التطابق).
+  static const Duration cancelCooldown = Duration(minutes: 5);
+
+  /// سقف ما يقبله الخادم لموعد التهدئة — يمنع طالبًا من قفل نفسه لسنة.
+  static const Duration maxCooldown = Duration(minutes: 30);
+
+  /// أقل مدة تهدئة يقبلها الخادم عند كتابة الإلغاء.
+  ///
+  /// أقل بقليل من [cancelCooldown] لهوامش فرق الساعة بين الجهاز والخادم؛
+  /// الإلغاء يُكتب بعد «الآن» على الخادم لا على الجهاز.
+  static const Duration cooldownFloor = Duration(minutes: 4);
+
   /// سبب عدم إمكانية إرسال طلب جديد — أو `null` إن كان ممكنًا.
   ///
   /// [existingStatus] حالة طلب سابق لنفس الطالب في نفس المجموعة (إن وُجد).
@@ -25,6 +45,8 @@ abstract final class JoinRules {
     required String? viewerId,
     JoinRequestStatus? existingStatus,
     bool isDemoAccount = false,
+    DateTime? cooldownUntil,
+    DateTime? now,
   }) {
     if (viewerId != null && viewerId == group.teacherId) {
       return 'أنت صاحب المجموعة؛ لا تحتاج إلى طلب انضمام.';
@@ -41,8 +63,67 @@ abstract final class JoinRules {
     if (existingStatus == JoinRequestStatus.accepted) {
       return 'أنت عضو في هذه المجموعة بالفعل.';
     }
+    final String? cooldown = cooldownBlockReason(
+      cooldownUntil: cooldownUntil,
+      now: now,
+    );
+    if (cooldown != null) {
+      return cooldown;
+    }
     // ملاحظة: وضع الزائر يسمح بالتجربة محليًا، والتنبيه في الشاشة يوضّح ذلك.
     return null;
+  }
+
+  /// هل لا تزال فترة التهدئة سارية؟ يعيد المدة المتبقية أو `null`.
+  ///
+  /// تُستدعى بالوقت الحقيقي عند البناء وعند الضغط، والقواعد تفحص الموعد نفسه
+  /// على الخادم (`request.time`)، فهذه الطبقة للرسالة العربية لا للأمان.
+  static Duration? cooldownRemaining({
+    DateTime? cooldownUntil,
+    DateTime? now,
+  }) {
+    if (cooldownUntil == null) {
+      return null;
+    }
+    final Duration remaining = cooldownUntil.difference(now ?? DateTime.now());
+    return remaining.isNegative || remaining == Duration.zero
+        ? null
+        : remaining;
+  }
+
+  /// سبب منع الإرسال بسبب التهدئة (أو `null`).
+  static String? cooldownBlockReason({
+    DateTime? cooldownUntil,
+    DateTime? now,
+  }) {
+    final Duration? remaining = cooldownRemaining(
+      cooldownUntil: cooldownUntil,
+      now: now,
+    );
+    if (remaining == null) {
+      return null;
+    }
+    return 'ألغيت طلبك لهذه المجموعة قبل قليل؛ يمكنك إعادة الإرسال بعد '
+        '${describeCooldown(remaining)}. هذا الحد يمنع تكرار الطلبات على المدرس.';
+  }
+
+  /// نص مختصر للمدة المتبقية: «4 دقائق»، «دقيقة واحدة»، «30 ثانية».
+  static String describeCooldown(Duration remaining) {
+    if (remaining.inSeconds < 60) {
+      final int seconds = remaining.inSeconds <= 0 ? 1 : remaining.inSeconds;
+      return '$seconds ثانية';
+    }
+    final int minutes = remaining.inMinutes < 1 ? 1 : remaining.inMinutes;
+    if (minutes == 1) {
+      return 'دقيقة واحدة';
+    }
+    if (minutes == 2) {
+      return 'دقيقتين';
+    }
+    if (minutes <= 10) {
+      return '$minutes دقائق';
+    }
+    return '$minutes دقيقة';
   }
 
   /// هل يمكن إرسال طلب جديد الآن؟ (فقط لإخفاء/تعطيل الزر)
@@ -50,11 +131,15 @@ abstract final class JoinRules {
     required StudyGroup group,
     required String? viewerId,
     JoinRequestStatus? existingStatus,
+    DateTime? cooldownUntil,
+    DateTime? now,
   }) =>
       requestBlockReason(
         group: group,
         viewerId: viewerId,
         existingStatus: existingStatus,
+        cooldownUntil: cooldownUntil,
+        now: now,
       ) ==
       null;
 

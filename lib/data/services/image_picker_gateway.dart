@@ -27,7 +27,38 @@ abstract interface class ImagePickerGateway {
   /// يعيد الصورة المختارة، أو `null` إن ألغى المستخدم الاختيار.
   ///
   /// إلغاء المستخدم **ليس خطأ**: لا رسالة فشل، ولا تغيير للحالة.
-  Future<PickedImage?> pickFromGallery();
+  ///
+  /// (P24) [preset] يحدّد أبعاد الضغط المطلوبة من المنصّة: صورة الحساب تُعرض
+  /// مصغّرة (512px)، وصورة المحادثة تُفتح بملء الشاشة مع تكبير (1024px).
+  /// الضغط يحدث **قبل** القراءة، فلا تمرّ صورة كاميرا خام إلى الشبكة أبدًا.
+  Future<PickedImage?> pickFromGallery({
+    ImagePickPreset preset = ImagePickPreset.avatar,
+  });
+}
+
+/// غرض الاختيار — يحمل الأبعاد والجودة المطلوبتين من منتقي النظام (P24).
+///
+/// القيم هنا هي «طلب»ٌ للمنصّة، وليست ضمانًا: بعض الأجهزة تتجاهل `imageQuality`
+/// فتُعيد صورة أكبر. لذلك يبقى التحقق من الحجم النهائي في
+/// [ChatImageLimits.maxBase64Length] وفي `firestore.rules` بعد الترميز.
+enum ImagePickPreset {
+  /// صورة حساب: تُعرض دائمًا في دائرة صغيرة.
+  avatar(
+    maxDimension: AvatarLimits.pickMaxDimension,
+    quality: AvatarLimits.pickQuality,
+  ),
+
+  /// صورة محادثة: تُعرض بملء الشاشة، فتحتاج تفاصيل أكثر من صورة الحساب —
+  /// لكن تبقى مقيّدة بسقف base64 (≈300KB) وبعمر خمسة أيام.
+  chat(maxDimension: 1024, quality: 70);
+
+  const ImagePickPreset({required this.maxDimension, required this.quality});
+
+  /// أقصى عرض/ارتفاع يطلبه المنتقي من المنصّة.
+  final int maxDimension;
+
+  /// جودة ضغط JPEG المطلوبة (0–100).
+  final int quality;
 }
 
 /// التنفيذ الحقيقي عبر `image_picker` (المعرض فقط).
@@ -41,13 +72,15 @@ class PlatformImagePickerGateway implements ImagePickerGateway {
   final ImagePicker _picker;
 
   @override
-  Future<PickedImage?> pickFromGallery() async {
+  Future<PickedImage?> pickFromGallery({
+    ImagePickPreset preset = ImagePickPreset.avatar,
+  }) async {
     try {
       final XFile? file = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: AvatarLimits.pickMaxDimension.toDouble(),
-        maxHeight: AvatarLimits.pickMaxDimension.toDouble(),
-        imageQuality: AvatarLimits.pickQuality,
+        maxWidth: preset.maxDimension.toDouble(),
+        maxHeight: preset.maxDimension.toDouble(),
+        imageQuality: preset.quality,
         requestFullMetadata: false,
       );
       if (file == null) {
@@ -94,7 +127,9 @@ class UnavailableImagePickerGateway implements ImagePickerGateway {
   const UnavailableImagePickerGateway();
 
   @override
-  Future<PickedImage?> pickFromGallery() {
+  Future<PickedImage?> pickFromGallery({
+    ImagePickPreset preset = ImagePickPreset.avatar,
+  }) {
     throw const AppException(
       AppErrorKind.unavailable,
       debugMessage: 'image picker gateway not configured',

@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/teacher_rating.dart';
@@ -228,7 +229,17 @@ class _TeacherProfileBody extends StatelessWidget {
           width: double.infinity,
           child: OutlinedButton.icon(
             // طلب حجز فعلي (P10): يفتح ورقة الموعد ويكتب للمستودع.
-            onPressed: () => showBookingRequestSheet(context, teacher: teacher),
+            // (P24) بعد النجاح يُفتح خيط المحادثة المرتبط بالحجز فورًا، فلا
+            // يبقى الطالب بلا وسيلة تواصل ويظهر «لا توجد محادثات».
+            onPressed: () async {
+              final BookingRequest? created = await showBookingRequestSheet(
+                context,
+                teacher: teacher,
+              );
+              if (created != null && context.mounted) {
+                await openChatForBooking(context, created);
+              }
+            },
             icon: const Icon(Icons.event_available_outlined, size: 18),
             label: const Text('طلب حجز'),
           ),
@@ -249,8 +260,9 @@ class _TeacherProfileBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         const InfoNote(
           text:
-              'تفتح المحادثة بعد حجز مؤكَّد أو انضمام إلى مجموعة. الدفع '
-              'والاتفاق على السعر يتمان بينك وبين المدرس خارج التطبيق.',
+              'إن كان المدرس يسمح بالاستفسارات تُفتح المحادثة فورًا؛ وإلا '
+              'تفتح بعد إرسال طلب حجز أو طلب انضمام (يُفتح الخيط تلقائيًا '
+              'عند الإرسال). الدفع والاتفاق على السعر خارج التطبيق.',
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

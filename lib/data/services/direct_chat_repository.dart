@@ -52,12 +52,16 @@ abstract interface class DirectChatRepository {
   });
 
   /// إرسال رسالة — [senderId] يجب أن يكون أحد طرفي المحادثة.
+  ///
+  /// (P24) [imageId] يجعل الرسالة مصوّرة: النص حينها اختياري (تعليق على
+  /// الصورة)، والصورة نفسها في [ChatImageRepository] بموعد انتهاء.
   Future<DirectChatMessage> sendMessage({
     required String chatId,
     required String senderId,
     required String senderName,
     required UserRole senderRole,
     required String text,
+    String? imageId,
   });
 
   /// تعليم المحادثة مقروءة لهذا الطرف (يكتب حقل الطرف فقط).

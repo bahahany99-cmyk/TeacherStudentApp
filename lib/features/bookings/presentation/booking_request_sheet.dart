@@ -17,11 +17,13 @@ import 'package:teacher_student_app/features/bookings/widgets/slot_picker_sheet.
 /// ورقة «طلب حجز» للطالب (P10).
 ///
 /// تُعيد `true` إذا أُنشئ الطلب فعلًا، حتى يُحدّث المستدعي ما يعرضه.
-Future<bool?> showBookingRequestSheet(
+/// (P24) تُعيد طلب الحجز المُنشأ (لا `bool`) حتى يفتح المستدعي محادثة الحجز
+/// مباشرة، فلا يبقى الطالب في شاشة المدرس بعد إرسال الطلب بلا خيط تواصل.
+Future<BookingRequest?> showBookingRequestSheet(
   BuildContext context, {
   required TeacherProfile teacher,
 }) {
-  return showModalBottomSheet<bool>(
+  return showModalBottomSheet<BookingRequest>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -109,7 +111,7 @@ class _BookingRequestSheetState extends State<_BookingRequestSheet> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(created);
       AppSnackBar.show(
         context,
         'أُرسل طلبك لموعد ${BookingRules.slotLabel(created)}. '

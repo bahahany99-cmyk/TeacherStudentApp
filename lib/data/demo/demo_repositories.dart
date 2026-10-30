@@ -10,6 +10,8 @@ import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
+import 'package:teacher_student_app/data/models/chat_image.dart';
+import 'package:teacher_student_app/data/services/chat_image_repository.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
@@ -260,6 +262,19 @@ class DemoTeacherRepository implements TeacherRepository {
         overrideMessage:
             'أضف صورة شخصية واضحة قبل حفظ ملفك — بدونها لا يُرسل الملف '
             'للمراجعة.',
+      );
+    }
+
+    // (P23/P24) المادة والمرحلة إلزاميتان مثل الصورة — نفس شرط الخادم
+    // (`academicFieldsSatisfiedFor`) حتى لا ينجح مسار في الجولة ويفشل في
+    // الإنتاج.
+    final String? academicProblem = draft.academicProblem;
+    if (academicProblem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        debugMessage: 'teacher profile saved without academic fields (demo)',
+        overrideTitle: 'بيانات ناقصة',
+        overrideMessage: '$academicProblem — لا يُرسل ملفك للمراجعة بدونها.',
       );
     }
 
@@ -547,6 +562,8 @@ class DemoGroupRepository implements GroupRepository {
         group: current,
         viewerId: studentId,
         existingStatus: existing?.status,
+        // (P24) نفس شرط الخادم: لا إعادة إرسال أثناء فترة التهدئة.
+        cooldownUntil: existing?.cooldownUntil,
       );
       if (reason != null) {
         throw AppException(
@@ -1247,10 +1264,15 @@ class DemoGroupRepository implements GroupRepository {
         );
       }
 
+      // (P24) تهدئة الإلغاء: نفس مدة القواعد، ويُحتفظ بها على السجل نفسه.
+      final DateTime cooldownUntil = DateTime.now().add(
+        JoinRules.cancelCooldown,
+      );
       final GroupJoinRequest cancelled = existing.copyWith(
         status: JoinRequestStatus.cancelled,
         decidedAt: DateTime.now(),
         decidedBy: studentId,
+        cooldownUntil: cooldownUntil,
       );
       _joinRequests[index] = cancelled;
       return cancelled;
@@ -2005,6 +2027,8 @@ class DemoDirectChatRepository implements DirectChatRepository {
     Future<BookingRequest?> Function(String id)? findBooking,
     Future<bool> Function({required String groupId, required String userId})?
     isMember,
+    Future<bool> Function({required String groupId, required String studentId})?
+    hasJoinRequest,
   }) : _chats = <DirectChat>[...(source ?? DemoData.directChats)],
        _messages = <DirectChatMessage>[...(messages ?? DemoData.directMessages)],
        _settings = <String, bool>{
@@ -2013,6 +2037,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
        },
        _findBooking = findBooking,
        _isMember = isMember,
+       _hasJoinRequest = hasJoinRequest,
        _notifications = notifications;
 
   final List<DirectChat> _chats;
@@ -2023,6 +2048,12 @@ class DemoDirectChatRepository implements DirectChatRepository {
   final Future<BookingRequest?> Function(String id)? _findBooking;
   final Future<bool> Function({required String groupId, required String userId})?
   _isMember;
+
+  /// ربط اختياري بمستودع المجموعات: (P24) خيط «طلب انضمام» يُنشأ فقط إن وُجد
+  /// طلب حقيقي — نظير فحص القواعد على الخادم.
+  final Future<bool>
+      Function({required String groupId, required String studentId})?
+  _hasJoinRequest;
 
   /// اختياري: كاتب الإشعارات (P12) — يُخطر الطرف الآخر بالرسائل.
   final NotificationRepository? _notifications;
@@ -2180,6 +2211,21 @@ class DemoDirectChatRepository implements DirectChatRepository {
             overrideMessage: 'المحادثة متاحة لأعضاء المجموعة فقط.',
           );
         }
+      case DirectChatOrigin.joinRequest:
+        if (groupId == null || groupId.trim().isEmpty) {
+          throw const AppException.invalidInput(
+            debugMessage: 'join-request chat without groupId',
+            overrideMessage: 'المحادثة المرتبطة بطلب انضمام تحتاج رقم المجموعة.',
+          );
+        }
+        if (_hasJoinRequest != null &&
+            !await _hasJoinRequest!(groupId: groupId, studentId: studentId)) {
+          throw const AppException.permission(
+            debugMessage: 'no join request for this chat',
+            overrideMessage:
+                'أرسل طلب انضمام للمجموعة أولًا لتُفتح المحادثة مع المدرس.',
+          );
+        }
       case DirectChatOrigin.inquiry:
         if (!await allowDirectMessages(teacherId)) {
           throw AppException(
@@ -2204,7 +2250,11 @@ class DemoDirectChatRepository implements DirectChatRepository {
       subject: subject,
       origin: origin,
       bookingId: origin == DirectChatOrigin.booking ? bookingId : null,
-      groupId: origin == DirectChatOrigin.group ? groupId : null,
+      groupId:
+          origin == DirectChatOrigin.group ||
+              origin == DirectChatOrigin.joinRequest
+          ? groupId
+          : null,
       createdAt: DateTime.now(),
     );
     _chats.add(chat);
@@ -2228,6 +2278,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
     required String senderName,
     required UserRole senderRole,
     required String text,
+    String? imageId,
   }) async {
     final DirectChat? chat = _find(chatId);
     if (chat == null) {
@@ -2237,8 +2288,11 @@ class DemoDirectChatRepository implements DirectChatRepository {
       );
     }
 
+    // (P24) رسالة مصوّرة بلا تعليق مقبولة — الصورة هي المحتوى.
+    final bool hasImage = imageId != null && imageId.isNotEmpty;
     final ValidationResult valid = MessageRules.validate(text);
-    if (!valid.isValid) {
+    if (!valid.isValid &&
+        !(hasImage && MessageRules.normalize(text).isEmpty)) {
       throw AppException(
         AppErrorKind.invalidInput,
         overrideMessage: valid.problems.first.issue == FieldIssue.tooLong
@@ -2271,12 +2325,15 @@ class DemoDirectChatRepository implements DirectChatRepository {
       senderRole: senderRole,
       text: MessageRules.normalize(text),
       sentAt: DateTime.now(),
+      imageId: hasImage ? imageId : null,
     );
     _messages.add(message);
     _replace(
       chat.copyWith(
         lastMessageAt: message.sentAt,
-        lastMessageText: message.text,
+        lastMessageText: message.text.isEmpty && hasImage
+            ? '📷 صورة'
+            : message.text,
         lastSenderId: senderId,
       ),
     );
@@ -2911,5 +2968,96 @@ class DemoAdminRepository implements AdminRepository {
       );
     }
     _reviews.removeAt(index);
+  }
+}
+
+/// صور المحادثة المؤقتة في الوضع التجريبي (P24) — ذاكرة فقط.
+///
+/// **نفس السلوك** الذي تفرضه القواعد: خمسة أيام ثم تُحذف، وحذف ما لم ينتهِ
+/// مرفوض. السبب أن المعاينة يجب أن تُظهر «انتهت مدة الصورة» كما سيحدث فعلًا،
+/// لا أن تدّعي بقاءها للأبد.
+class DemoChatImageRepository implements ChatImageRepository {
+  DemoChatImageRepository({DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+
+  /// (chatId, imageId) → الصورة.
+  final Map<String, ChatImage> _images = <String, ChatImage>{};
+
+  String _key(String chatId, String imageId) => '$chatId/$imageId';
+
+  @override
+  Future<ChatImage> upload({
+    required String chatId,
+    required String senderId,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    if (!ChatImageLimits.mimeTypes.contains(mimeType)) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideTitle: 'صيغة غير مدعومة',
+        overrideMessage: 'اختر صورة بصيغة JPG أو PNG.',
+        debugMessage: 'unsupported chat image mime type',
+      );
+    }
+    final String encoded = base64Encode(bytes);
+    if (encoded.length > ChatImageLimits.maxBase64Length) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideTitle: 'الصورة كبيرة',
+        overrideMessage: 'حجم الصورة أكبر من المسموح في المحادثة.',
+        debugMessage: 'chat image payload too large',
+      );
+    }
+
+    final DateTime now = _now();
+    final String imageId = ChatImage.newId(now, senderId: senderId);
+    final ChatImage image = ChatImage(
+      id: imageId,
+      chatId: chatId,
+      senderId: senderId,
+      bytes: bytes,
+      mimeType: mimeType,
+      createdAt: now,
+      expiresAt: now.add(ChatImageLimits.lifetime),
+    );
+    _images[_key(chatId, imageId)] = image;
+    return image;
+  }
+
+  @override
+  Future<ChatImage?> findById({
+    required String chatId,
+    required String imageId,
+  }) async {
+    final ChatImage? image = _images[_key(chatId, imageId)];
+    if (image == null) {
+      return null;
+    }
+    if (image.isExpired(now: _now())) {
+      _images.remove(_key(chatId, imageId));
+      return null;
+    }
+    return image;
+  }
+
+  @override
+  Future<void> deleteExpired({
+    required String chatId,
+    required String imageId,
+  }) async {
+    final ChatImage? image = _images[_key(chatId, imageId)];
+    if (image == null) {
+      return;
+    }
+    if (!image.isExpired(now: _now())) {
+      throw const AppException.permission(
+        debugMessage: 'chat image not expired',
+        overrideMessage: 'لا يمكن حذف صورة ما زالت سارية.',
+      );
+    }
+    _images.remove(_key(chatId, imageId));
   }
 }

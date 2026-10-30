@@ -11,6 +11,8 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/discovery_rules.dart';
 import 'package:teacher_student_app/features/favorites/presentation/favorite_star.dart';
@@ -88,6 +90,13 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
   /// وإلا اختفت الخيارات بعد أول نقرة ولم يستطع المستخدم التراجع.
   List<StudyGroup> _universe = const <StudyGroup>[];
 
+  /// (P24) توثيق صاحب كل مجموعة: `teacherId → verified`.
+  ///
+  /// يُقرأ مرة واحدة لكل قائمة (لا لكل بطاقة أثناء البناء) لأن كل قراءة هنا
+  /// مستند `teacherProfiles/{id}`، والقائمة قد تحمل مجموعات كثيرة لنفس المدرس.
+  /// من لا يُقرأ ملفه يبقى غائبًا عن الخريطة ⇒ لا شارة توثيق (لا ادّعاء).
+  Map<String, bool> _teacherVerified = const <String, bool>{};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -103,13 +112,43 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
   }
 
   Future<void> _loadUniverse() async {
-    final List<StudyGroup> groups = await AppServicesScope.of(
-      context,
-    ).groups.listDiscoverable();
+    final AppServices services = AppServicesScope.of(context);
+    final List<StudyGroup> groups = await services.groups.listDiscoverable();
     if (!mounted) {
       return;
     }
     setState(() => _universe = groups);
+    await _resolveVerification(services, groups);
+  }
+
+  /// يقرأ حالة التوثيق لكل مدرس ظاهر في القائمة (مرة واحدة لكل معرّف).
+  Future<void> _resolveVerification(
+    AppServices services,
+    List<StudyGroup> groups,
+  ) async {
+    final Set<String> ids = <String>{
+      for (final StudyGroup group in groups) group.teacherId,
+    };
+    if (ids.isEmpty) {
+      return;
+    }
+    final Map<String, bool> resolved = <String, bool>{};
+    for (final String id in ids) {
+      if (_teacherVerified.containsKey(id)) {
+        resolved[id] = _teacherVerified[id]!;
+        continue;
+      }
+      try {
+        final TeacherProfile? profile = await services.teachers.findById(id);
+        resolved[id] = profile?.isVisibleToStudents ?? false;
+      } on Object {
+        // فشل قراءة ملف مدرس لا يُفشل الاستكشاف: البطاقة تُعرض بلا شارة.
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _teacherVerified = resolved);
   }
 
   void _onControllerChanged() {
@@ -174,6 +213,12 @@ class _DiscoverBodyState extends State<_DiscoverBody> {
           for (final StudyGroup group in controller.groups)
             GroupCard(
               group: group,
+              // (P24) هوية المدرس على البطاقة: صورة + اسم + شارة توثيق.
+              teacherVerified: _teacherVerified[group.teacherId],
+              onTeacherTap: () => Navigator.of(context).pushNamed(
+                RoutePaths.teacherProfile,
+                arguments: group.teacherId,
+              ),
               // المفضلة للطالب (P13): الشاشة استكشاف، فلا حاجة لفحص الدور هنا.
               favoriteAction: FavoriteStar(
                 kind: FavoriteKind.group,

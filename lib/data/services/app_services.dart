@@ -7,8 +7,11 @@ import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/admin_repository.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
+import 'package:teacher_student_app/data/services/chat_image_repository.dart';
+import 'package:teacher_student_app/data/services/chat_image_saver.dart';
 import 'package:teacher_student_app/data/services/image_picker_gateway.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
 import 'package:teacher_student_app/data/services/booking_repository.dart';
@@ -40,9 +43,13 @@ class AppServices {
     required this.admin,
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
+    ChatImageRepository? chatImages,
+    ChatImageSaver? imageSaver,
     ValueNotifier<int>? groupsRevision,
   }) : avatars = avatars ?? const EmptyAvatarRepository(),
        imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
+       chatImages = chatImages ?? const EmptyChatImageRepository(),
+       imageSaver = imageSaver ?? const UnavailableChatImageSaver(),
        groupsRevision = groupsRevision ?? ValueNotifier<int>(0);
 
   final AuthService auth;
@@ -101,6 +108,15 @@ class AppServices {
   /// وهميًا يعيد بايتات جاهزة.
   final ImagePickerGateway imagePicker;
 
+  /// (P24) صور المحادثة المؤقتة: رفع وقراءة وحذف بعد انتهاء صلاحيتها.
+  ///
+  /// الافتراضي [EmptyChatImageRepository] يخدم الاختبارات القديمة؛ الحزمتان
+  /// الحقيقيتان تحقنان التنفيذ الفعلي.
+  final ChatImageRepository chatImages;
+
+  /// (P24) حفظ صورة المحادثة في معرض الجهاز — زر «تنزيل» في العارض.
+  final ChatImageSaver imageSaver;
+
   /// الحزمة المناسبة للبيئة الحالية.
   ///
   /// - Firebase جاهز ← مصادقة وقراءة حقيقية من Firestore (P4 + P5).
@@ -135,6 +151,8 @@ class AppServices {
       admin: FirestoreAdminRepository(),
       avatars: FirestoreAvatarRepository(),
       imagePicker: PlatformImagePickerGateway(),
+      chatImages: FirestoreChatImageRepository(),
+      imageSaver: const PlatformChatImageSaver(),
     );
   }
 
@@ -144,6 +162,8 @@ class AppServices {
   factory AppServices.demo({
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
+    ChatImageRepository? chatImages,
+    ChatImageSaver? imageSaver,
   }) {
     // المستودعات مترابطة عمدًا: المحادثة تتحقق من «الأصل الموثّق» (حجز قائم أو
     // عضوية مجموعة) من نفس مصادر البيانات، فلا يمرّ خيط بلا علاقة حقيقية.
@@ -169,6 +189,16 @@ class AppServices {
       chats: DemoDirectChatRepository(
         findBooking: bookings.findById,
         isMember: groups.isMember,
+        // (P24) خيط «طلب انضمام» يُنشأ فقط بعد وجود طلب فعلي — كما تفرضه
+        // القواعد على الخادم.
+        hasJoinRequest: ({required String groupId, required String studentId}) =>
+            groups
+                .findMyRequest(groupId: groupId, studentId: studentId)
+                .then(
+                  (GroupJoinRequest? request) =>
+                      request != null &&
+                      (request.isPending || request.status.isAccepted),
+                ),
         notifications: notifications,
       ),
       notifications: notifications,
@@ -182,6 +212,8 @@ class AppServices {
       // نفس مسار الصور في الجولة: اختيار ومعاينة، لكن في الذاكرة فقط.
       avatars: avatars ?? DemoAvatarRepository(),
       imagePicker: imagePicker ?? PlatformImagePickerGateway(),
+      chatImages: chatImages ?? DemoChatImageRepository(),
+      imageSaver: imageSaver ?? const PlatformChatImageSaver(),
     );
   }
 }

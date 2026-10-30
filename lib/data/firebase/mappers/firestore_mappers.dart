@@ -331,6 +331,8 @@ GroupJoinRequest? joinRequestFromMap(String id, Map<String, Object?> data) {
         DateTime.fromMillisecondsSinceEpoch(0),
     decidedAt: readDate(data['decidedAt']),
     decidedBy: readString(data['decidedBy']),
+    // (P24) موعد انتهاء التهدئة بعد الإلغاء — غيابه = لا تهدئة (سجل قديم).
+    cooldownUntil: readDate(data['cooldownUntil']),
   );
 }
 
@@ -429,8 +431,11 @@ DirectChatMessage? directChatMessageFromMap(
   String? chatId,
 }) {
   final String? senderId = readString(data['senderId']);
-  final String? text = readString(data['text']);
   final String? parentId = readString(data['chatId']) ?? chatId;
+  // (P24) رسالة صورة قد يكون نصّها فارغًا: `readString` يعيد `null` للفراغ،
+  // فلا نُسقط الرسالة — وجود `imageId` يجعل النص اختياريًا.
+  final String? imageId = readString(data['imageId']);
+  final String? text = readString(data['text']) ?? (imageId == null ? null : '');
   if (senderId == null || text == null || parentId == null) {
     return null;
   }
@@ -442,6 +447,7 @@ DirectChatMessage? directChatMessageFromMap(
     senderName: readString(data['senderName']) ?? 'مستخدم',
     senderRole: parseSenderRole(data['senderRole']),
     text: text,
+    imageId: imageId,
     sentAt:
         readDate(data['sentAt']) ??
         readDate(data['createdAt']) ??

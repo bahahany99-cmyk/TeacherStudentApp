@@ -4,15 +4,20 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
-import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_filter_sheet.dart';
 
-/// شريط فلاتر الاستكشاف (P9).
+/// شريط فلاتر الاستكشاف — **مضغوط**: بحث + شريط أفقي واحد (P24).
 ///
-/// **قاعدة بصرية من v3:** كل فلتر «حبة» في صف أفقي قابل للتمرير، ولا قوائم
-/// منسدلة ولا لوحة فلاتر منبثقة — أقل نقرات وأوضح حالة: الحبة المختارة تُلوَّن.
+/// ما تغيّر ولماذا:
+/// - كان الشريط خمسة صفوف مكدّسة (المادة، المرحلة، طريقة الحضور، المقاعد،
+///   الترتيب) داخل بطاقة واحدة، فيأكل ارتفاع الشاشة قبل أول نتيجة. صار:
+///   ① حقل بحث، ② زر «فلترة» (بعدد الفلاتر النشطة) يفتح [GroupFilterSheet]
+///   حيث كل ما ليس مادة، ③ شريط أفقي واحد للمواد (الفعل الأكثر استخدامًا)
+///   يُمرَّر أفقيًا بدل أن ينزل سطرًا لكل ثلاث حبات.
+/// - **لا فلتر يُطبَّق بالنيّة:** كل نقرة هنا تُعيد الفلتر عبر [onChanged]،
+///   والورقة تُطبّق مرة واحدة عند «عرض النتائج».
 ///
-/// المكوّن عرض فقط: يستقبل الفلتر الحالي ويعيد الفلتر الجديد عبر [onChanged]،
-/// فلا يعرف مستودعًا ولا حالة.
+/// المكوّن عرض فقط: يستقبل الفلتر الحالي ويعيد الجديد، فلا يعرف مستودعًا.
 class GroupFilterBar extends StatefulWidget {
   const GroupFilterBar({
     super.key,
@@ -33,6 +38,9 @@ class GroupFilterBar extends StatefulWidget {
   final String resultLabel;
 
   final ValueChanged<GroupFilter> onChanged;
+
+  /// مفتاح زر «فلترة» — يستخدمه الاختبار للوصول إلى الفعل بلا نص.
+  static const Key filterButtonKey = Key('group-filter-open');
 
   @override
   State<GroupFilterBar> createState() => _GroupFilterBarState();
@@ -59,155 +67,176 @@ class _GroupFilterBarState extends State<GroupFilterBar> {
     super.dispose();
   }
 
-  void _pickedSubject(String subject) {
-    final bool isSelected = widget.filter.subject == subject;
-    widget.onChanged(
-      widget.filter.copyWith(subject: isSelected ? null : subject),
+  Future<void> _openAdvanced() async {
+    final GroupFilter? next = await showGroupFilterSheet(
+      context,
+      filter: widget.filter,
+      stageOptions: widget.stageOptions,
     );
-  }
-
-  void _pickedStage(String stage) {
-    final bool isSelected = widget.filter.stage == stage;
-    widget.onChanged(widget.filter.copyWith(stage: isSelected ? null : stage));
-  }
-
-  void _pickedMode(GroupMeetingMode mode) {
-    final bool isSelected = widget.filter.meetingMode == mode;
-    widget.onChanged(
-      widget.filter.copyWith(meetingMode: isSelected ? null : mode),
-    );
+    if (next != null && next != widget.filter) {
+      widget.onChanged(next);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool hasActiveAdvanced = widget.filter.activeCount > 0;
 
     return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.sm),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             children: <Widget>[
               Expanded(
-                child: Text('استكشف المجموعات', style: theme.textTheme.titleSmall),
+                child: TextField(
+                  controller: _query,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (String value) =>
+                      widget.onChanged(widget.filter.copyWith(query: value)),
+                  decoration: InputDecoration(
+                    hintText: 'ابحث بالمادة أو المدرس أو المرحلة',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    suffixIcon: widget.filter.query.trim().isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'مسح البحث',
+                            onPressed: () {
+                              _query.clear();
+                              widget.onChanged(
+                                widget.filter.copyWith(query: ''),
+                              );
+                            },
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                  ),
+                ),
               ),
-              PillChip(
-                label: widget.resultLabel,
-                icon: Icons.groups_outlined,
-                dense: true,
+              const SizedBox(width: AppSpacing.xs),
+              // زر واحد للفلاتر المتقدمة: أيقونة + شارة عدد، بلا نص طويل يزاحم
+              // حقل البحث على 360dp.
+              Semantics(
+                button: true,
+                label: hasActiveAdvanced
+                    ? 'فلترة متقدمة، ${widget.filter.activeCount} فلتر نشط'
+                    : 'فلترة متقدمة',
+                child: Material(
+                  color: hasActiveAdvanced
+                      ? theme.colorScheme.primary.withAlpha(22)
+                      : theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  child: InkWell(
+                    key: GroupFilterBar.filterButtonKey,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    onTap: _openAdvanced,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xs + 2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            Icons.tune,
+                            size: 18,
+                            color: hasActiveAdvanced
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          if (hasActiveAdvanced) ...<Widget>[
+                            const SizedBox(width: AppSpacing.xxs),
+                            Text(
+                              '${widget.filter.activeCount}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          TextField(
-            controller: _query,
-            textInputAction: TextInputAction.search,
-            onChanged: (String value) =>
-                widget.onChanged(widget.filter.copyWith(query: value)),
-            decoration: InputDecoration(
-              hintText: 'ابحث بالمادة أو المدرس أو المرحلة',
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              suffixIcon: widget.filter.query.trim().isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'مسح البحث',
-                      onPressed: () {
-                        _query.clear();
-                        widget.onChanged(widget.filter.copyWith(query: ''));
-                      },
-                      icon: const Icon(Icons.close, size: 18),
-                    ),
-            ),
-          ),
-          if (widget.subjectOptions.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            Text('المادة', style: theme.textTheme.labelSmall),
-            const SizedBox(height: AppSpacing.xxs),
-            PillRow(
-              children: <Widget>[
-                for (final String subject in widget.subjectOptions)
-                  PillChip(
-                    label: subject,
-                    selected: widget.filter.subject == subject,
-                    onTap: () => _pickedSubject(subject),
-                  ),
-              ],
-            ),
-          ],
-          if (widget.stageOptions.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            Text('المرحلة', style: theme.textTheme.labelSmall),
-            const SizedBox(height: AppSpacing.xxs),
-            PillRow(
-              children: <Widget>[
-                for (final String stage in widget.stageOptions)
-                  PillChip(
-                    label: stage,
-                    selected: widget.filter.stage == stage,
-                    onTap: () => _pickedStage(stage),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          Text('طريقة الحضور', style: theme.textTheme.labelSmall),
-          const SizedBox(height: AppSpacing.xxs),
+          // شريط أفقي واحد: «الكل» + المواد. التمرير الأفقي بدل التكديس
+          // العمودي هو جوهر هذا التعديل.
           PillRow(
             children: <Widget>[
-              for (final GroupMeetingMode mode in GroupMeetingMode.values)
+              if (widget.filter.isActive)
                 PillChip(
-                  label: mode.label,
-                  selected: widget.filter.meetingMode == mode,
-                  onTap: () => _pickedMode(mode),
+                  label: 'تفريغ الفلاتر (${widget.filter.activeCount})',
+                  icon: Icons.filter_alt_off_outlined,
+                  dense: true,
+                  onTap: () => widget.onChanged(widget.filter.cleared()),
                 ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text('المقاعد', style: theme.textTheme.labelSmall),
-          const SizedBox(height: AppSpacing.xxs),
-          PillRow(
-            children: <Widget>[
-              for (final GroupAvailability availability
-                  in GroupAvailability.values)
+              PillChip(
+                label: 'الكل',
+                dense: true,
+                selected: widget.filter.subject == null,
+                onTap: () =>
+                    widget.onChanged(widget.filter.copyWith(subject: null)),
+              ),
+              for (final String subject in widget.subjectOptions)
                 PillChip(
-                  label: availability.label,
-                  selected: widget.filter.availability == availability,
+                  label: subject,
+                  dense: true,
+                  selected: widget.filter.subject == subject,
                   onTap: () => widget.onChanged(
-                    widget.filter.copyWith(availability: availability),
+                    widget.filter.copyWith(
+                      subject: widget.filter.subject == subject ? null : subject,
+                    ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text('الترتيب', style: theme.textTheme.labelSmall),
-          const SizedBox(height: AppSpacing.xxs),
-          PillRow(
-            children: <Widget>[
-              for (final GroupSort sort in GroupSort.values)
+              // ملخّص ما اختير في الورقة (مرحلة/حضور/مقاعد) كنص واحد مضغوط،
+              // لا كصفوف إضافية.
+              if (_advancedSummary(widget.filter) != null)
                 PillChip(
-                  label: sort.label,
-                  selected: widget.filter.sort == sort,
-                  onTap: () =>
-                      widget.onChanged(widget.filter.copyWith(sort: sort)),
+                  label: _advancedSummary(widget.filter)!,
+                  icon: Icons.filter_alt_outlined,
+                  dense: true,
+                  selected: true,
+                  onTap: _openAdvanced,
                 ),
             ],
           ),
-          if (widget.filter.isActive) ...<Widget>[
-            const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: () => widget.onChanged(widget.filter.cleared()),
-                icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
-                label: Text(
-                  'تفريغ الفلاتر (${widget.filter.activeCount})',
-                ),
+          const SizedBox(height: AppSpacing.xxs),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              widget.resultLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
+  }
+
+  /// سطر واحد يصف فلاتر الورقة النشطة (بدون البحث والمادة، فلهما حبّاتهما).
+  static String? _advancedSummary(GroupFilter filter) {
+    final List<String> parts = <String>[];
+    if (filter.stage != null) {
+      parts.add('مرحلة: ${filter.stage}');
+    }
+    if (filter.meetingMode != null) {
+      parts.add(filter.meetingMode!.label);
+    }
+    if (filter.availability != GroupAvailability.any) {
+      parts.add(filter.availability.label);
+    }
+    if (filter.sort != GroupSort.recommended) {
+      parts.add(filter.sort.label);
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 }

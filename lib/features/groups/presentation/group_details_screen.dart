@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
@@ -26,6 +28,7 @@ import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
+import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
 
 /// تفاصيل مجموعة دراسية — الشاشة الداخلية الأهم في P8.
 ///
@@ -462,10 +465,42 @@ class _JoinPanelState extends State<_JoinPanel> {
   Future<_JoinState>? _future;
   bool _busy = false;
 
+  /// (P24) مؤقّت **واحد** ينتهي بانتهاء التهدئة، فيُعاد البناء ويتحرّر الزر.
+  ///
+  /// مؤقّت دوري كان سيُعيد البناء كل ثانية بلا داعٍ ويُبقي إطارًا مجدولًا في
+  /// الاختبارات؛ هذا يُجدوَل مرة واحدة عند تغيّر موعد التهدئة فقط.
+  Timer? _cooldownTimer;
+  DateTime? _cooldownScheduledFor;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _future ??= _load();
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  /// يضمن وجود مؤقّت ينتهي مع التهدئة الحالية (لا يُكرَّر للموعد نفسه).
+  void _syncCooldownTimer(DateTime? until) {
+    if (_cooldownScheduledFor == until) {
+      return;
+    }
+    _cooldownScheduledFor = until;
+    _cooldownTimer?.cancel();
+    final Duration? remaining = JoinRules.cooldownRemaining(cooldownUntil: until);
+    if (remaining == null) {
+      _cooldownTimer = null;
+      return;
+    }
+    _cooldownTimer = Timer(remaining + const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Future<_JoinState> _load() async {
@@ -575,7 +610,7 @@ class _JoinPanelState extends State<_JoinPanel> {
     final GroupRepository groups = AppServicesScope.of(context).groups;
     setState(() => _busy = true);
     try {
-      await groups.requestToJoin(
+      final GroupJoinRequest request = await groups.requestToJoin(
         group: widget.group,
         studentId: CurrentStudent.idOf(session),
         studentName: CurrentStudent.nameOf(session),
@@ -587,6 +622,14 @@ class _JoinPanelState extends State<_JoinPanel> {
         context,
         'أُرسل الطلب إلى المدرس، وستظهر الموافقة هنا.',
         type: AppMessageType.success,
+      );
+      // (P24) الخيط يُفتح تلقائيًا بعد الطلب: كان الطالب يبقى بلا وسيلة
+      // تواصل حتى القبول، فيرى «لا توجد محادثات» وهو ينتظر ردًّا.
+      setState(() => _busy = false);
+      await openChatForJoinRequest(
+        context,
+        group: widget.group,
+        request: request,
       );
     } on AppException catch (error) {
       if (!mounted) {
@@ -636,6 +679,8 @@ class _JoinPanelState extends State<_JoinPanel> {
     return FutureBuilder<_JoinState>(
       future: _future,
       builder: (BuildContext context, AsyncSnapshot<_JoinState> snapshot) {
+        // (P24) مؤقّت التهدئة يُضبط من البيانات المقروءة، لا من الواجهة.
+        _syncCooldownTimer(snapshot.data?.request?.cooldownUntil);
             return AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -688,6 +733,7 @@ class _JoinPanelState extends State<_JoinPanel> {
       group: widget.group,
       viewerId: null,
       existingStatus: request?.status,
+      cooldownUntil: request?.cooldownUntil,
     );
 
     // تم قبول المنتظر ⇒ صار عضوًا.
@@ -788,29 +834,58 @@ class _JoinPanelState extends State<_JoinPanel> {
       );
     }
 
+    // (P24) تهدئة الإلغاء: الزر يبقى ظاهرًا ومعطّلًا ومعه المدة المتبقية، فلا
+    // يرى الطالب زرًا «لا يعمل» بلا سبب.
+    final Duration? cooldown = JoinRules.cooldownRemaining(
+      cooldownUntil: request?.cooldownUntil,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (blocked != null) ...<Widget>[
-          Text(
-            blocked,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: AppColors.statusNeutral,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (cooldown != null) ...<Widget>[
+                const Icon(
+                  Icons.timer_outlined,
+                  size: 16,
+                  color: AppColors.statusPending,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+              ],
+              Expanded(
+                child: Text(
+                  blocked,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.statusNeutral,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
         SizedBox(
           width: double.infinity,
           child: FilledButton(
-            onPressed: (_busy || full) ? null : _sendRequest,
+            key: const Key('join-request-send'),
+            onPressed: (_busy || full || cooldown != null)
+                ? null
+                : _sendRequest,
             child: _busy
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(label),
+                : Text(
+                    cooldown == null
+                        ? label
+                        : 'إعادة الإرسال بعد '
+                              '${JoinRules.describeCooldown(cooldown)}',
+                  ),
           ),
         ),
       ],

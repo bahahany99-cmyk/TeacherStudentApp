@@ -9,6 +9,8 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
+import 'package:teacher_student_app/data/models/group_join_request.dart';
+import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
@@ -116,6 +118,61 @@ Future<void> openChatWithTeacher(
       error.overrideMessage ?? error.message,
       type: AppMessageType.error,
     );
+  }
+}
+
+/// (P24) يفتح — أو يُنشئ — خيط المحادثة المرتبط بطلب انضمام أرسله الطالب.
+///
+/// **المشكلة التي يحلّها:** بعد إرسال طلب انضمام (وقبل قبوله) لم يكن للطالب أي
+/// طريق لمراسلة المدرس: `group` يشترط عضوية مقبولة، و`inquiry` يشترط أن يفعّل
+/// المدرس استقبال الرسائل. النتيجة «لا توجد محادثات» رغم وجود طلب قائم.
+///
+/// الخيط يُنشأ بأصل `joinRequest`، ويسنده على الخادم مستند الطلب نفسه
+/// (`groupJoinRequests/{groupId}_{studentId}`) بحالة `pending` أو `accepted`.
+///
+/// تُعيد `true` إن فُتحت المحادثة، و`false` إن تعذّر (بعد عرض السبب للمستخدم).
+Future<bool> openChatForJoinRequest(
+  BuildContext context, {
+  required StudyGroup group,
+  required GroupJoinRequest request,
+}) async {
+  final AppServices services = AppServicesScope.of(context);
+  final SessionController session = SessionScope.read(context);
+
+  if (session.role != UserRole.student) {
+    AppSnackBar.show(
+      context,
+      'المحادثة مع الطالب تُفتح من صفّه في «طلبات الانضمام».',
+      type: AppMessageType.info,
+    );
+    return false;
+  }
+
+  try {
+    final DirectChat chat = await services.chats.openChat(
+      teacherId: group.teacherId,
+      teacherName: group.teacherName,
+      studentId: CurrentStudent.idOf(session),
+      studentName: CurrentStudent.nameOf(session),
+      origin: DirectChatOrigin.joinRequest,
+      subject: group.subject,
+      groupId: group.id,
+    );
+    if (!context.mounted) {
+      return false;
+    }
+    await _pushChat(context, chat.id);
+    return true;
+  } on AppException catch (error) {
+    if (!context.mounted) {
+      return false;
+    }
+    AppSnackBar.show(
+      context,
+      error.overrideMessage ?? error.message,
+      type: AppMessageType.warning,
+    );
+    return false;
   }
 }
 

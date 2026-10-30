@@ -15,14 +15,17 @@ import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/core/widgets/error_state.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
+import 'package:teacher_student_app/data/models/chat_image.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
+import 'package:teacher_student_app/data/services/image_picker_gateway.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
+import 'package:teacher_student_app/features/chat/presentation/widgets/chat_image_thumbnail.dart';
 
 /// محادثة مباشرة بين طالب ومدرس (P11).
 ///
@@ -179,6 +182,126 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     }
   }
 
+  /// اختيار صورة وإرسالها (P24).
+  ///
+  /// الترتيب **مقصود**: الرفع أولًا ثم الرسالة. لو أُرسلت الرسالة أولًا وفشل
+  /// الرفع لبقي في المحادثة مصغّر يشير إلى صورة غير موجودة لا يمكن إصلاحه.
+  /// أما الصورة اليتيمة (رفع نجح وإرسال فشل) فلا يراها أحد، وتنتهي صلاحيتها
+  /// بعد خمسة أيام فتصبح غير قابلة للقراءة أصلًا.
+  Future<void> _sendImage(
+    DirectChat chat,
+    String viewerId,
+    String viewerName,
+  ) async {
+    if (_blockedReason != null) {
+      AppSnackBar.show(
+        context,
+        _blockedReason!,
+        type: AppMessageType.warning,
+      );
+      return;
+    }
+    if (_sending) {
+      return;
+    }
+
+    final AppServices services = AppServicesScope.of(context);
+    final UserRole role = SessionScope.read(context).role ?? UserRole.student;
+
+    PickedImage? picked;
+    try {
+      picked = await services.imagePicker.pickFromGallery(
+        preset: ImagePickPreset.chat,
+      );
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+      return;
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        toAppException(error).message,
+        type: AppMessageType.error,
+      );
+      return;
+    }
+    // إلغاء الاختيار ليس خطأ: لا رسالة ولا تغيير حالة.
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    final String caption = _input.text.trim();
+    setState(() => _sending = true);
+    try {
+      final ChatImage image = await services.chatImages.upload(
+        chatId: chat.id,
+        senderId: viewerId,
+        bytes: picked.bytes,
+        mimeType: picked.mimeType,
+      );
+      await services.chats.sendMessage(
+        chatId: chat.id,
+        senderId: viewerId,
+        senderName: viewerName,
+        senderRole: role,
+        text: caption,
+        imageId: image.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      _input.clear();
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        toAppException(error).message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
+    }
+  }
+
+  /// إرسال: نص فقط، أو صورة مع تعليق اختياري.
+  ///
+  /// زر الإرسال واحد للنص والصورة، فالفقاعة النصية لم تعد تتطلب مسارًا منفصلًا
+  /// — الصورة تُرسل من زر المرفق مباشرة (اختيارها يعني «أرسلها»).
+  Future<void> _sendOrPick(
+    DirectChat chat,
+    String viewerId,
+    String viewerName,
+    bool attach,
+  ) async {
+    if (attach) {
+      await _sendImage(chat, viewerId, viewerName);
+      return;
+    }
+    await _send(chat, viewerId, viewerName);
+  }
+
   @override
   Widget build(BuildContext context) {
     final SessionController session = SessionScope.of(context);
@@ -245,6 +368,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     input: _input,
                     sending: _sending,
                     onSend: () => _send(chat, viewerId, viewerName),
+                    onPickImage: () =>
+                        _sendOrPick(chat, viewerId, viewerName, true),
                     // التدفّقان يُنشآن في `build`، فإعادة البناء = إعادة اشتراك
                     // (التدفّق المنتهي بالخطأ لا يُعاد تشغيله تلقائيًا).
                     onRetryStreams: () => setState(() {}),
@@ -265,6 +390,7 @@ class _ChatBody extends StatelessWidget {
     required this.input,
     required this.sending,
     required this.onSend,
+    required this.onPickImage,
     required this.onRetryStreams,
   });
 
@@ -274,6 +400,9 @@ class _ChatBody extends StatelessWidget {
   final TextEditingController input;
   final bool sending;
   final VoidCallback onSend;
+
+  /// اختيار صورة من المعرض وإرسالها.
+  final VoidCallback onPickImage;
 
   /// يعيد الاشتراك في تدفّقي المحادثة والرسائل بعد انقطاعهما.
   final VoidCallback onRetryStreams;
@@ -395,6 +524,7 @@ class _ChatBody extends StatelessWidget {
                           _MessageBubble(
                             message: message,
                             isMine: message.isMine(viewerId),
+                            chatId: chat.id,
                             readByPartner: isLast
                                 ? message.isReadByPartner(partnerRead, viewerId)
                                 : null,
@@ -416,6 +546,7 @@ class _ChatBody extends StatelessWidget {
             controller: input,
             sending: sending,
             onSend: onSend,
+            onPickImage: onPickImage,
           ),
         const SizedBox(height: AppSpacing.xs),
       ],
@@ -461,11 +592,13 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     required this.isMine,
+    required this.chatId,
     required this.readByPartner,
   });
 
   final DirectChatMessage message;
   final bool isMine;
+  final String chatId;
 
   /// `null` يعني «لا نعرض حالة القراءة» (ليست آخر رسالة لي).
   final bool? readByPartner;
@@ -505,13 +638,24 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              message.text,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.textPrimary,
-                height: 1.6,
+            // (P24) الصورة أولًا ثم التعليق: المصغّر هو المحتوى، والنص تحته.
+            if (message.hasImage) ...<Widget>[
+              ChatImageThumbnail(
+                chatId: chatId,
+                imageId: message.imageId!,
+                isMine: isMine,
               ),
-            ),
+              if (message.text.trim().isNotEmpty)
+                const SizedBox(height: AppSpacing.xxs),
+            ],
+            if (message.text.trim().isNotEmpty)
+              Text(
+                message.text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                  height: 1.6,
+                ),
+              ),
             const SizedBox(height: 2),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -558,17 +702,25 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSend,
+    required this.onPickImage,
   });
 
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
+  final VoidCallback onPickImage;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
+        IconButton(
+          key: const Key('chat-image-pick'),
+          tooltip: 'إرسال صورة',
+          onPressed: sending ? null : onPickImage,
+          icon: const Icon(Icons.image_outlined),
+        ),
         Expanded(
           child: TextField(
             controller: controller,

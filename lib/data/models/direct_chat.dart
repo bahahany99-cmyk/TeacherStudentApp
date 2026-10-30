@@ -12,7 +12,16 @@ enum DirectChatOrigin {
   group('عضو مجموعة'),
 
   /// استفسار قبل الحجز — مسموح فقط إذا فعّل المدرس استقبال الرسائل.
-  inquiry('استفسار قبل الحجز');
+  inquiry('استفسار قبل الحجز'),
+
+  /// (P24) طالب أرسل طلب انضمام لمجموعة هذا المدرس.
+  ///
+  /// **لماذا أصل جديد؟** لأن `group` يشترط **عضوية مقبولة**، و`inquiry` يشترط
+  /// تفعيل المدرس استقبال الرسائل. فمن أرسل طلب انضمام (ما زال معلّقًا) لم
+  /// يكن يملك أي طريق لفتح محادثة: لا هو عضو بعد، وقد لا يسمح المدرس
+  /// بالاستفسارات — فيصل الطالب إلى «لا توجد محادثات». هذا الأصل يجعل طلب
+  /// الانضمام نفسه سندًا يتحقق منه الخادم (`groupJoinRequests/{groupId}_{uid}`).
+  joinRequest('طلب انضمام');
 
   const DirectChatOrigin(this.label);
 
@@ -22,6 +31,7 @@ enum DirectChatOrigin {
     return switch (raw) {
       'booking' => DirectChatOrigin.booking,
       'group' => DirectChatOrigin.group,
+      'joinRequest' => DirectChatOrigin.joinRequest,
       _ => DirectChatOrigin.inquiry,
     };
   }
@@ -161,6 +171,7 @@ class DirectChatMessage {
     required this.senderRole,
     required this.text,
     required this.sentAt,
+    this.imageId,
   });
 
   final String id;
@@ -170,6 +181,18 @@ class DirectChatMessage {
   final UserRole senderRole;
   final String text;
   final DateTime sentAt;
+
+  /// (P24) معرّف الصورة المرفقة في `directChats/{chatId}/images/{imageId}`.
+  ///
+  /// `null` = رسالة نصية. الرسالة المصوّرة قد يكون نصّها فارغًا، والملخّص في
+  /// صندوق المحادثات يُكتب «📷 صورة» بدل سطر فارغ.
+  final String? imageId;
+
+  /// هل تحمل الرسالة صورة؟ (تُعرض كمصغّر قابل للفتح)
+  bool get hasImage => imageId != null && imageId!.isNotEmpty;
+
+  /// هل النص وحده فارغ بلا صورة؟ (رسالة غير قابلة للإرسال)
+  bool get isEmpty => text.trim().isEmpty && !hasImage;
 
   bool isMine(String? viewerId) => viewerId != null && viewerId == senderId;
 
@@ -190,6 +213,7 @@ class DirectChatMessage {
       'senderRole': senderRole.name,
       'text': text,
       'sentAt': sentAt,
+      if (hasImage) 'imageId': imageId,
     };
   }
 }

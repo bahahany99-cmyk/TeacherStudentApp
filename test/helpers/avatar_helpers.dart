@@ -31,9 +31,16 @@ class FakeImagePickerGateway implements ImagePickerGateway {
 
   int pickCalls = 0;
 
+  /// (P24) آخر غرض اختيار طُلب — يتحقق الاختبار منه أن صور المحادثة تُطلب
+  /// بأبعاد أكبر من صور الحساب.
+  ImagePickPreset? lastPreset;
+
   @override
-  Future<PickedImage?> pickFromGallery() async {
+  Future<PickedImage?> pickFromGallery({
+    ImagePickPreset preset = ImagePickPreset.avatar,
+  }) async {
     pickCalls++;
+    lastPreset = preset;
     final AppException? failure = error;
     if (failure != null) {
       throw failure;

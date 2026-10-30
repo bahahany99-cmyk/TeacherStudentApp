@@ -18,6 +18,7 @@ import 'package:teacher_student_app/data/models/app_notification.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
+import 'package:teacher_student_app/data/models/chat_image.dart';
 import 'package:teacher_student_app/data/models/direct_chat.dart';
 import 'package:teacher_student_app/data/models/group_member.dart';
 import 'package:teacher_student_app/data/models/group_message.dart';
@@ -36,6 +37,7 @@ import 'package:teacher_student_app/data/services/booking_repository.dart';
 import 'package:teacher_student_app/data/services/favorite_repository.dart';
 import 'package:teacher_student_app/data/services/notification_repository.dart';
 import 'package:teacher_student_app/data/services/review_repository.dart';
+import 'package:teacher_student_app/data/services/chat_image_repository.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/services/message_repository.dart';
@@ -80,6 +82,9 @@ abstract final class FirestoreCollections {
   /// المحادثات المباشرة (P11) — خيط واحد لكل زوج (مدرس، طالب).
   static const String directChats = 'directChats';
   static const String directChatMessages = 'messages';
+
+  /// صور المحادثة المؤقتة (P24) — مجموعة فرعية تحت كل محادثة.
+  static const String directChatImages = 'images';
 
   /// إشعارات داخل التطبيق (P12) — مستند لكل إشعار لمستلم واحد.
   static const String notifications = 'notifications';
@@ -661,11 +666,17 @@ class FirestoreGroupRepository implements GroupRepository {
                 requestSnapshot.data()?['status'],
               )
             : null;
+        // (P24) تهدئة الإلغاء: القيمة تُقرأ من المستند لا من الواجهة، فلا
+        // يستطيع العميل تجاوزها بإرسال طلب «نظيف».
+        final DateTime? cooldownUntil = requestSnapshot.exists
+            ? _readCooldown(requestSnapshot.data()?['cooldownUntil'])
+            : null;
 
         final String? reason = JoinRules.requestBlockReason(
           group: current,
           viewerId: studentId,
           existingStatus: existing,
+          cooldownUntil: cooldownUntil,
         );
         if (reason != null) {
           throw AppException(
@@ -867,6 +878,21 @@ class FirestoreGroupRepository implements GroupRepository {
     });
   }
 
+
+  /// يقرأ حقل تاريخ (Timestamp) من مستند ويُعيده، أو `null` لأي نوع آخر.
+  ///
+  /// (P24) مُستخدَم لموعد التهدئة: القيمة قد تكون `Timestamp` أو غائبة في
+  /// سجلات قديمة، والتحويل الأعمى يرمي استثناءً في منتصف معاملة.
+  static DateTime? _readCooldown(Object? raw) {
+    if (raw is Timestamp) {
+      return raw.toDate();
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
+    return null;
+  }
+
   @override
   Future<GroupJoinRequest> cancelJoinRequest({
     required GroupJoinRequest request,
@@ -907,15 +933,20 @@ class FirestoreGroupRepository implements GroupRepository {
           );
         }
 
-        final DateTime now = DateTime.now();
-        // الإلغاء يكتب الحالة فقط: القواعد تقبل تغييرًا لا يمسّ بقية الحقول.
-        transaction.update(requestRef, <String, Object?>{
-          'status': JoinRequestStatus.cancelled.name,
-        });
+        // (P24) الإلغاء يكتب الحالة **وموعد التهدئة** في كتابة واحدة؛
+        // القواعد ترفض إلغاءً بلا موعد، فلا يمكن للعميل تجاوز التهدئة بحذفه.
+        final DateTime cooldownUntil = DateTime.now().add(
+          JoinRules.cancelCooldown,
+        );
+        transaction.update(
+          requestRef,
+          current.cancelMap(cooldownUntil: cooldownUntil),
+        );
         return current.copyWith(
           status: JoinRequestStatus.cancelled,
-          decidedAt: now,
+          decidedAt: DateTime.now(),
           decidedBy: studentId,
+          cooldownUntil: cooldownUntil,
         );
       });
     });
@@ -2670,8 +2701,13 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
       final bool allowed = await allowDirectMessages(teacherId);
       final String? blocked = DirectChatRules.startBlockedReason(
         viewerId: studentId,
+        // (P24) خيط طلب الانضمام مسموح بسند الطلب نفسه، فلا يحتاج حجزًا ولا
+        // عضوية ولا إعداد رسائل — لكنه لا يُنشأ إلا بعد وجود الطلب فعلًا
+        // (والقواعد تتحقق من المستند عند الإنشاء).
         hasBooking: origin == DirectChatOrigin.booking,
-        isGroupMember: origin == DirectChatOrigin.group,
+        isGroupMember:
+            origin == DirectChatOrigin.group ||
+            origin == DirectChatOrigin.joinRequest,
         allowDirectMessages: allowed,
       );
       if (origin == DirectChatOrigin.inquiry && blocked != null) {
@@ -2687,10 +2723,11 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
           debugMessage: 'booking-origin chat without bookingId',
         );
       }
-      if (origin == DirectChatOrigin.group &&
+      if ((origin == DirectChatOrigin.group ||
+              origin == DirectChatOrigin.joinRequest) &&
           (groupId == null || groupId.isEmpty)) {
         throw const AppException.invalidInput(
-          debugMessage: 'group-origin chat without groupId',
+          debugMessage: 'group/join-request chat without groupId',
         );
       }
 
@@ -2704,7 +2741,9 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
           'subject': subject.trim(),
         'origin': origin.name,
         if (origin == DirectChatOrigin.booking) 'bookingId': bookingId,
-        if (origin == DirectChatOrigin.group) 'groupId': groupId,
+        if (origin == DirectChatOrigin.group ||
+            origin == DirectChatOrigin.joinRequest)
+          'groupId': groupId,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -2744,10 +2783,13 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
     required String senderName,
     required UserRole senderRole,
     required String text,
+    String? imageId,
   }) {
     return _guard(() async {
+      final bool hasImage = imageId != null && imageId.isNotEmpty;
       final ValidationResult valid = MessageRules.validate(text);
-      if (!valid.isValid) {
+      // (P24) رسالة مصوّرة بلا نص مقبولة: الصورة هي المحتوى، والتعليق اختياري.
+      if (!valid.isValid && !(hasImage && DirectChatRules.normalize(text).isEmpty)) {
         throw AppException(
           AppErrorKind.invalidInput,
           overrideMessage: DirectChatRules.normalize(text).isEmpty
@@ -2791,15 +2833,21 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
         senderRole: senderRole,
         text: normalized,
         sentAt: DateTime.now(),
+        imageId: hasImage ? imageId : null,
       );
 
       // دفعة واحدة: الرسالة وملخّص المحادثة. لو كُتبت الرسالة وحدها لظلّ
       // صندوق المحادثات يعرض نصًا قديمًا بلا إشعار.
       final WriteBatch batch = _firestore.batch();
       batch.set(ref, message.toCreateMap());
+      // القواعد تشترط ملخّصًا غير فارغ، ورسالة صورة بلا تعليق نصّها فارغ —
+      // فالصندوق يعرض «📷 صورة» بدل سطر فارغ أو فشل كتابة.
+      final String summary = normalized.isNotEmpty
+          ? normalized
+          : (hasImage ? '📷 صورة' : normalized);
       batch.update(_chats.doc(chatId), <String, Object?>{
         'lastMessageAt': FieldValue.serverTimestamp(),
-        'lastMessageText': normalized,
+        'lastMessageText': summary,
         'lastSenderId': senderId,
       });
       await batch.commit();
@@ -3746,5 +3794,148 @@ class FirestoreAvatarRepository implements AvatarRepository {
         debugMessage: error.message,
       );
     }
+  }
+}
+
+/// صور المحادثة المؤقتة (P24) — `directChats/{chatId}/images/{imageId}`.
+///
+/// **لماذا مجموعة فرعية لا حقلاً في الرسالة؟** لأن الرسالة تُقرأ في كل فتح
+/// للمحادثة، والصورة تُقرأ عند عرضها فقط. والفصل يجعل حذف الصورة بعد خمسة
+/// أيام لا يمسّ نص الرسالة ولا ترتيبها.
+///
+/// **المنع في القواعد لا هنا:** القواعد ترفض قراءة مستند بعد `expiresAt`،
+/// وترفض حذف صورة سارية. هذه الطبقة تُترجم ذلك إلى رسالة عربية وتُدير التنظيف
+/// التدريجي (حذف المستند لحظة اكتشاف انتهائه).
+class FirestoreChatImageRepository implements ChatImageRepository {
+  FirestoreChatImageRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> _images(String chatId) => _firestore
+      .collection(FirestoreCollections.directChats)
+      .doc(chatId)
+      .collection(FirestoreCollections.directChatImages);
+
+  @override
+  Future<ChatImage> upload({
+    required String chatId,
+    required String senderId,
+    required Uint8List bytes,
+    required String mimeType,
+  }) {
+    return _guard(() async {
+      if (!ChatImageLimits.mimeTypes.contains(mimeType)) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideTitle: 'صيغة غير مدعومة',
+          overrideMessage: 'اختر صورة بصيغة JPG أو PNG.',
+          debugMessage: 'unsupported chat image mime type',
+        );
+      }
+      final String encoded = base64Encode(bytes);
+      if (encoded.length > ChatImageLimits.maxBase64Length) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideTitle: 'الصورة كبيرة',
+          overrideMessage:
+              'حجم الصورة أكبر من المسموح في المحادثة. اختر صورة أصغر.',
+          debugMessage: 'chat image payload too large',
+        );
+      }
+      if (encoded.length < ChatImageLimits.minBase64Length) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideMessage: 'الصورة غير صالحة. اختر صورة أخرى.',
+          debugMessage: 'chat image payload too small',
+        );
+      }
+
+      final DateTime now = DateTime.now();
+      final String imageId = ChatImage.newId(now, senderId: senderId);
+      final ChatImage image = ChatImage(
+        id: imageId,
+        chatId: chatId,
+        senderId: senderId,
+        bytes: bytes,
+        mimeType: mimeType,
+        createdAt: now,
+        expiresAt: now.add(ChatImageLimits.lifetime),
+      );
+
+      await _images(chatId).doc(imageId).set(image.toCreateMap());
+
+      // سطر تشخيصي بلا محتوى الصورة: الحجم والنوع فقط.
+      log(
+        'chat image upload ok: bytes=${bytes.length} mime=$mimeType',
+        name: 'chat-images',
+      );
+      return image;
+    });
+  }
+
+  @override
+  Future<ChatImage?> findById({
+    required String chatId,
+    required String imageId,
+  }) {
+    return _guard(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _images(
+        chatId,
+      ).doc(imageId);
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
+      final Map<String, dynamic>? data = snapshot.data();
+      if (data == null) {
+        return null;
+      }
+      final DateTime? expiresAt = _toDate(data['expiresAt']);
+      final DateTime? createdAt = _toDate(data['createdAt']);
+      final Object? raw = data['imageBase64'];
+      final String? mimeType = data['mimeType'] as String?;
+      if (expiresAt == null ||
+          createdAt == null ||
+          raw is! String ||
+          mimeType == null) {
+        return null;
+      }
+
+      final ChatImage image = ChatImage(
+        id: snapshot.id,
+        chatId: chatId,
+        senderId: (data['senderId'] as String?) ?? '',
+        bytes: base64Decode(raw),
+        mimeType: mimeType,
+        createdAt: createdAt,
+        expiresAt: expiresAt,
+      );
+
+      if (image.isExpired()) {
+        // تنظيف تدريجي: المستند انتهى، فنحذفه هنا ليتحرر التخزين بدل أن يبقى
+        // نسخة لا يمكن قراءتها أصلًا.
+        await deleteExpired(chatId: chatId, imageId: imageId);
+        return null;
+      }
+      return image;
+    });
+  }
+
+  @override
+  Future<void> deleteExpired({
+    required String chatId,
+    required String imageId,
+  }) {
+    return _guard(
+      () => _images(chatId).doc(imageId).delete(),
+    );
+  }
+
+  static DateTime? _toDate(Object? raw) {
+    if (raw is Timestamp) {
+      return raw.toDate();
+    }
+    if (raw is DateTime) {
+      return raw;
+    }
+    return null;
   }
 }
