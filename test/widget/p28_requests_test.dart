@@ -7,7 +7,6 @@ import 'package:teacher_student_app/app/shell/shell_controller.dart';
 import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
-import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
@@ -96,7 +95,7 @@ void main() {
       );
       expect(find.text('حجز حصة'), findsWidgets);
       // الحالة تظهر بالنص العربي لا بالرمز الداخلي.
-      expect(find.text(BookingStatus.pending.label), findsWidgets);
+      expect(find.text('بانتظار قرارك'), findsWidgets);
 
       // 3) فلتر «جديد» يحوي الطلب، وفلتر «مرفوض» لا يحويه.
       await tester.tap(find.byKey(const Key('requests-filter-pending')));
@@ -156,7 +155,7 @@ void main() {
         _host(services, const TeacherRequestsScreen()),
       );
       await tester.pumpAndSettle();
-      expect(find.text(BookingStatus.pending.label), findsWidgets);
+      expect(find.text('بانتظار قرارك'), findsWidgets);
 
       // القبول يكتب في المستودع نفسه الذي تبثّ منه الشاشة.
       await services.bookings.decideRequest(
@@ -167,7 +166,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(BookingStatus.accepted.label),
+        find.text('مقبول'),
         findsWidgets,
         reason: 'القبول لم يظهر بلا إعادة فتح الشاشة',
       );

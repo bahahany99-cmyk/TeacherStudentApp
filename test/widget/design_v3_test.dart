@@ -167,7 +167,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('أزرار بطاقة حالة الملف في سطر واحد بلا فيض', (
+    testWidgets('(P28) صف حالة الملف على سطر واحد بلا فيض', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
@@ -177,16 +177,26 @@ void main() {
       await tapVisible(tester, find.text('واجهة المدرس'));
       expect(find.byType(AppShell), findsOneWidget);
 
-      // (P21) البطاقة صارت «حالة الملف» بقراءة حقيقية: زرّا «ملفي التعريفي»
-      // و«تعديل» في صف واحد، وسطر واحد لكل نص (سبب العطل الأصلي: التفاف النص
-      // على سطرين داخل صف ضيّق).
-      final Finder profile = find.text('ملفي التعريفي');
-      final Finder edit = find.text('تعديل');
-      expect(profile, findsWidgets);
-      expect(edit, findsWidgets);
-
-      final Text profileText = tester.widget<Text>(profile.first);
-      expect(profileText.maxLines, 1);
+      // (P28) البطاقة الضخمة أُلغيت: صف واحد يحمل العنوان وشارة الحالة وأيقونة
+      // تعديل. الاختبار يحرس الحدّ الأعلى للارتفاع كي لا تعود البطاقة.
+      final Finder onboarding = find.byKey(
+        const Key('teacher-onboarding-card'),
+      );
+      final Finder status = find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AppCard &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'teacher-status-card-',
+            ),
+      );
+      expect(
+        onboarding.evaluate().isNotEmpty || status.evaluate().isNotEmpty,
+        isTrue,
+        reason: 'لا صفّ حالة ملف على الرئيسية',
+      );
+      final Finder shown = onboarding.evaluate().isNotEmpty ? onboarding : status;
+      expect(tester.getSize(shown.first).height, lessThanOrEqualTo(160));
       expect(tester.takeException(), isNull);
     });
 
@@ -207,17 +217,18 @@ void main() {
   });
 
   group('لوحة v4.2 — صفحة بيضاء وشريط بلاش علوي فقط', () {
-    test('التدرّج ينتهي بأبيض صريح معتم (لا تسرّب تحته)', () {
+    test('التدرّج ينتهي بخلفية الصفحة المعتمة (لا تسرّب تحته)', () {
       final LinearGradient page = AppGradients.page;
 
       expect(page.begin, Alignment.topCenter);
       expect(page.colors.first, AppColors.blushTop);
       expect(
         page.colors.last,
-        Colors.white,
-        reason: 'حافة الشريط السفلية يجب أن تكون بيضاء معتمة',
+        AppColors.lightBackground,
+        reason: '(P28) الشريط ينتهي بلون خلفية الصفحة: البطاقات البيضاء '
+            'تحتاج خلفية مختلفة عنها لتبدو أسطحًا لا صفحة واحدة مسطّحة',
       );
-      expect(page.colors.last.a, 1.0, reason: 'الأبيض معتم لا شفاف');
+      expect(page.colors.last.a, 1.0, reason: 'الخلفية معتمة لا شفافة');
       expect(page.stops!.last, 1.0);
       // لا لافندر ولا أي غسيل أسفل الشريط.
       expect(page.colors.contains(AppColors.washLilac), isFalse);

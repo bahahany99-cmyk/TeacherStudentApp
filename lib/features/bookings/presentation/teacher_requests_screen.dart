@@ -106,6 +106,17 @@ class _TeacherRequestsScreenState extends State<TeacherRequestsScreen> {
     );
   }
 
+  /// تسمية حالة قصيرة للبطاقة (النص الكامل يبقى في شاشة التفاصيل).
+  static String _shortLabel(BookingStatus status) => switch (status) {
+    BookingStatus.pending => 'بانتظار قرارك',
+    BookingStatus.accepted => 'مقبول',
+    BookingStatus.rejected => 'مرفوض',
+    BookingStatus.cancelled => 'ملغى',
+    BookingStatus.cancelledLate => 'ملغى متأخرًا',
+    BookingStatus.rescheduleProposed => 'وقت بديل',
+    BookingStatus.completed => 'منفّذ',
+  };
+
   Color _bookingColor(BookingStatus status) => switch (status) {
     BookingStatus.pending => AppColors.statusPending,
     BookingStatus.accepted => AppColors.statusAccepted,
@@ -151,7 +162,9 @@ class _TeacherRequestsScreenState extends State<TeacherRequestsScreen> {
               ? '${booking.subject} · ${BookingRules.slotLabel(booking)}'
               : booking.subject,
           sentAt: booking.requestedAt,
-          statusLabel: booking.status.label,
+          // تسمية قصيرة على البطاقة: النص الكامل («بانتظار موافقة المدرس»)
+          // يفيض على شاشة 320dp ويقطع الاسم.
+          statusLabel: _shortLabel(booking.status),
           statusColor: _bookingColor(booking.status),
           filter: _bookingFilter(booking.status),
           isJoin: false,
@@ -471,9 +484,11 @@ class _RequestCard extends StatelessWidget {
                         style: theme.textTheme.titleSmall,
                       ),
                     ),
-                    StatusChip(
-                      label: entry.statusLabel,
-                      color: entry.statusColor,
+                    Flexible(
+                      child: StatusChip(
+                        label: entry.statusLabel,
+                        color: entry.statusColor,
+                      ),
                     ),
                   ],
                 ),
