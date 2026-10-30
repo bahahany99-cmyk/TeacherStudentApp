@@ -111,14 +111,30 @@ void main() {
       await tester.pumpWidget(_host(_services(), const StudentHomeScreen()));
       await tester.pumpAndSettle();
 
+      // نطابق **داخل الشريط** لا في الشاشة كلها: اسم المدرس قد يظهر أيضًا في
+      // بطاقة حجز أو مجموعة أسفل الصفحة.
+      final Finder strip = find.byType(FeaturedTeachersStrip);
+
       // في البيانات التجريبية الأونلاين: منى + هدى فقط.
-      expect(find.text('أ. منى عبد الرحمن'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: strip,
+          matching: find.text('أ. منى عبد الرحمن'),
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(featuredSegmentOfflineKey));
       await tester.pumpAndSettle();
 
       // الأوفلاين شريحة أخرى: منى (أونلاين) تختفي، وتبقى بطاقات حضورية.
-      expect(find.text('أ. منى عبد الرحمن'), findsNothing);
+      expect(
+        find.descendant(
+          of: strip,
+          matching: find.text('أ. منى عبد الرحمن'),
+        ),
+        findsNothing,
+      );
       expect(find.byType(TeacherShowcaseCard), findsWidgets);
     });
 

@@ -28,7 +28,9 @@ void main() {
 
     test('السطر التحفيزي يتبع الفترة نفسها', () {
       expect(Greetings.subtitleFor(at(6)), contains('يومك'));
-      expect(Greetings.subtitleFor(at(22)), contains('المراجعة'));
+      // «ليلة هادئة للمراجعة» — نطابق الكلمة لا تعريفها بـ«ال»، لأن الصياغة
+      // الطبيعية تستخدم «للمراجعة» وهي لا تحتوي «المراجعة» حرفيًا.
+      expect(Greetings.subtitleFor(at(22)), contains('مراجعة'));
     });
   });
 }

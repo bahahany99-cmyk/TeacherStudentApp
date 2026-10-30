@@ -78,7 +78,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('بانتظار قرارك'), findsOneWidget);
-      expect(find.text('طالب تجريبي'), findsOneWidget);
+      // (P25) اللوحة تجمع الانضمام والحجز: الاسم نفسه يظهر في بطاقة الطلب
+      // وفي بطاقة الحجز المعلّق للطالب ذاته، فلا نتوقّع ظهورًا واحدًا.
+      expect(find.text('طالب تجريبي'), findsWidgets);
       expect(find.text('قيد الانتظار'), findsWidgets);
 
       await tapVisible(tester, find.text('قبول'));

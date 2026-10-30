@@ -80,6 +80,21 @@ void main() {
       expect(second.weekIndex, first.weekIndex);
     });
 
+    test('حدود الأسبوع يوم الاثنين لا الخميس', () {
+      // 2026-10-19 اثنين، و2026-10-25 أحد ⇒ الأسبوع نفسه.
+      final int monday = FeaturedRules.weekIndexOf(DateTime.utc(2026, 10, 19));
+      expect(
+        FeaturedRules.weekIndexOf(DateTime.utc(2026, 10, 25, 23, 59)),
+        monday,
+        reason: 'الأحد يجب أن يبقى في أسبوع الاثنين السابق',
+      );
+      // الاثنين التالي = أسبوع جديد.
+      expect(
+        FeaturedRules.weekIndexOf(DateTime.utc(2026, 10, 26)),
+        monday + 1,
+      );
+    });
+
     test('الأسبوع التالي يغيّر الترشيح على الأقل في أسبوع من أربعة', () {
       final List<String> baseline = FeaturedRules.selectWeekly(
         _pool(),

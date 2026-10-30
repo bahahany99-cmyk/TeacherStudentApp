@@ -65,12 +65,15 @@ Future<void> _pickInAdvancedSheet(
   await tester.tap(find.byKey(GroupFilterBar.filterButtonKey));
   await tester.pumpAndSettle();
 
-  await tester.tap(
-    find.descendant(
-      of: find.byType(GroupFilterSheet),
-      matching: find.widgetWithText(PillChip, chipLabel),
-    ),
+  final Finder chip = find.descendant(
+    of: find.byType(GroupFilterSheet),
+    matching: find.widgetWithText(PillChip, chipLabel),
   );
+  // (P25) الورقة صارت أطول (قسم «المادة» في أعلاها)، فبعض الحبّات تحتاج
+  // تمريرًا قبل أن تصبح قابلة للضغط. `ensureVisible` يمرّر الورقة نفسها.
+  await tester.ensureVisible(chip);
+  await tester.pumpAndSettle();
+  await tester.tap(chip);
   await tester.pumpAndSettle();
 
   await tester.tap(find.byKey(GroupFilterSheet.applyKey));
@@ -113,12 +116,13 @@ void main() {
       // ورقة «فلترة متقدمة» حيث قائمة مشتقة من مستندات المجموعات.
       await tester.tap(find.byKey(GroupFilterBar.filterButtonKey));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(GroupFilterSheet),
-          matching: find.widgetWithText(PillChip, 'الرياضيات'),
-        ),
+      final Finder subjectChip = find.descendant(
+        of: find.byType(GroupFilterSheet),
+        matching: find.widgetWithText(PillChip, 'الرياضيات'),
       );
+      await tester.ensureVisible(subjectChip);
+      await tester.pumpAndSettle();
+      await tester.tap(subjectChip);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(GroupFilterSheet.applyKey));
       await tester.pumpAndSettle();

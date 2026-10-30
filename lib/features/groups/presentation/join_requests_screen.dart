@@ -219,9 +219,11 @@ class _TeacherRequestsPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const SectionHeader(
-                title: 'طلبات الانضمام',
+                // النص نفسه الذي كان في الشاشة القديمة: الطلب المعلّق يحتاج
+                // قرارًا، وهو أول ما يجب أن يقرأه المدرس.
+                title: 'بانتظار قرارك',
                 icon: Icons.person_add_alt_1_outlined,
-                subtitle: 'كل مجموعاتك — تظهر لحظة إرسالها',
+                subtitle: 'طلب الانضمام من كل مجموعاتك — يظهر لحظة إرساله',
               ),
               StreamBuilder<List<GroupJoinRequest>>(
                 stream: AppServicesScope.of(

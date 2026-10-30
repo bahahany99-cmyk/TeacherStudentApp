@@ -16,7 +16,6 @@ import 'package:teacher_student_app/core/utils/greetings.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
-import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
@@ -243,22 +242,22 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: <Widget>[
-                        PillChip(
-                          key: const Key('home-quick-groups'),
+                        _QuickPill(
+                          key: homeQuickGroupsKey,
                           icon: Icons.groups_outlined,
-                          label: 'المجموعات',
+                          label: 'المجموعات الدراسية',
                           onTap: () => _go(AppTab.groups),
                         ),
                         const SizedBox(width: AppSpacing.xs),
-                        PillChip(
-                          key: const Key('home-quick-teachers'),
+                        _QuickPill(
+                          key: homeQuickTeachersKey,
                           icon: Icons.person_search_outlined,
                           label: 'ابحث عن مدرس',
                           onTap: () => _go(AppTab.teachers),
                         ),
                         const SizedBox(width: AppSpacing.xs),
-                        PillChip(
-                          key: const Key('home-quick-featured'),
+                        _QuickPill(
+                          key: homeQuickFeaturedKey,
                           icon: Icons.workspace_premium_outlined,
                           label: 'المميزون',
                           onTap: _openFeatured,
@@ -501,6 +500,50 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 /// مفتاح حقل البحث في الرئيسية — تثبته الاختبارات.
 const Key homeSearchFieldKey = Key('home-search-field');
 
+/// مفاتيح حبوب التنقّل السريع.
+const Key homeQuickGroupsKey = Key('home-quick-groups');
+const Key homeQuickTeachersKey = Key('home-quick-teachers');
+const Key homeQuickFeaturedKey = Key('home-quick-featured');
+
+/// حبّة تنقّل مضغوطة في الرئيسية.
+///
+/// **لماذا `ActionChip` لا `PillChip`؟** لأن `ActionChip` عنصر إجراء قياسي:
+/// يعمل مع قارئ الشاشة كزر، ويحمل `MaterialState` الصحيح، ويُبقي حشو اللمس
+/// 48dp رغم مظهره المضغوط. الشكل «حبة» يبقى عبر `shape` + `visualDensity`.
+class _QuickPill extends StatelessWidget {
+  const _QuickPill({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ActionChip(
+      avatar: Icon(icon, size: 17, color: theme.colorScheme.primary),
+      label: Text(label),
+      labelStyle: theme.textTheme.labelMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimary,
+      ),
+      onPressed: onTap,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: theme.colorScheme.surface,
+      side: BorderSide(color: theme.colorScheme.outlineVariant),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+      ),
+    );
+  }
+}
+
 /// رأس الرئيسية: تحيّة + صورة + جرس إشعارات.
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({
@@ -561,7 +604,7 @@ class _HomeHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                '${Greetings.lineFor(now)}، $name',
+                'أهلًا $name',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -569,7 +612,9 @@ class _HomeHeader extends StatelessWidget {
                 ),
               ),
               Text(
-                Greetings.subtitleFor(now),
+                // التحية الذكية + السطر التحفيزي في سطر واحد: اسم الطالب يبقى
+                // في العنوان (ثابت ومألوف)، والمتغيّر بالساعة يأتي تحته.
+                '${Greetings.lineFor(now)} · ${Greetings.subtitleFor(now)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(

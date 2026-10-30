@@ -11,7 +11,9 @@ import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/student/presentation/student_home_screen.dart';
 import 'package:teacher_student_app/features/teachers/presentation/teachers_screen.dart';
 import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_carousel.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/featured_teachers_strip.dart';
 import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_card.dart';
+import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_showcase_card.dart';
 
 import '../helpers/test_app.dart';
 
@@ -150,25 +152,29 @@ void main() {
     });
   });
 
-  group('الرئيسية (P15)', () {
-    testWidgets('شريط المميزين أفقي داخل الرئيسية', (
+  group('الرئيسية (P15/P25)', () {
+    testWidgets('قسم المميزين يعرض مدرسين بمبدّل أونلاين/أوفلاين', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
       await tester.pumpWidget(_host(const StudentHomeScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.byType(FeaturedTeachersCarousel), findsOneWidget);
+      // (P25) الشريط القديم (تمرير أفقي لكل المميزين) صار قسّمًا بمبدّل
+      // شرائح: خمسة أونلاين وخمسة أوفلاين أسبوعيًا.
+      expect(find.byType(FeaturedTeachersStrip), findsOneWidget);
       expect(find.text('مدرسون مميزون'), findsOneWidget);
+      expect(find.byKey(featuredSegmentOnlineKey), findsOneWidget);
 
-      // البطاقة الأولى: الاسم وطريقة التقديم ظاهران.
-      final Finder carousel = find.byType(FeaturedTeachersCarousel);
+      // البطاقة الأولى (أونلاين): الاسم، والمكان يُعرض للمدرسين الحضوريين
+      // فقط — لذلك نتحقق من الاسم داخل الشريط لا من نص «حضوري فقط» القديم.
+      final Finder strip = find.byType(FeaturedTeachersStrip);
       expect(
-        find.descendant(of: carousel, matching: find.text('أ. سارة الخطيب')),
-        findsOneWidget,
+        find.descendant(of: strip, matching: find.byType(TeacherShowcaseCard)),
+        findsWidgets,
       );
       expect(
-        find.descendant(of: carousel, matching: find.text('حضوري فقط · المعادي — القاهرة')),
+        find.descendant(of: strip, matching: find.text('أ. منى عبد الرحمن')),
         findsOneWidget,
       );
     });

@@ -59,12 +59,21 @@ abstract final class FeaturedRules {
   /// المجموع المطلوب (5 + 5).
   static const int totalSlots = slotsPerSegment * 2;
 
-  /// رقم الأسبوع منذ الحقبة (ISO أسبوعيًا: ٧ أيام بالضبط).
+  /// رقم الأسبوع منذ الحقبة — **أسبوع يبدأ الاثنين**، وسبعة أيام بالضبط.
   ///
   /// يعتمد UTC ليكون ثابتًا مهما كان توقيت الجهاز — وإلا رأى مستخدمان في مصر
   /// والأردن مجموعتين مختلفتين في الأسبوع نفسه.
-  static int weekIndexOf(DateTime now) =>
-      (now.toUtc().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay) ~/ 7;
+  ///
+  /// **لماذا `+ 3`؟** 1 يناير 1970 كان **خميسًا**؛ فقسمة عدد الأيام على 7
+  /// مباشرةً تجعل حدود «الأسبوع» يوم الخميس — أي أن الجمعة والسبت يقعان في
+  /// أسبوعين مختلفين. الإزاحة `+3` تُرجع الحدود إلى **الاثنين**، وهو أول
+  /// أسبوع العمل الدراسي في مصر. الأثر العملي: بطاقات «المميزين» لا تتبدّل
+  /// في منتصف العطلة الأسبوعية.
+  static int weekIndexOf(DateTime now) {
+    final int days =
+        now.toUtc().millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+    return (days + 3) ~/ 7;
+  }
 
   /// الترتيب اليومي الحتمي لقائمة مرشّحين في أسبوع معيّن.
   ///
