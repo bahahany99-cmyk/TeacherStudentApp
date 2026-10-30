@@ -79,11 +79,23 @@ class _GlobalSearchPanelState extends State<GlobalSearchPanel> {
   /// حماية من سباق الردود: نتيجة استعلام قديم تصل بعد نتيجة أحدث فتطمسها.
   int _sequence = 0;
 
+  /// هل بدأنا الاستعلام الأول؟ (نبدأه مرة واحدة فقط.)
+  bool _started = false;
+
   @override
-  void initState() {
-    super.initState();
-    if (widget.query.trim().isNotEmpty) {
-      _run(widget.query.trim());
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // **لا `initState`:** `_run` يقرأ `AppServicesScope.of(context)`، وقراءة
+    // وراثة أثناء `initState` غير مسموحة (`dependOnInheritedWidgetOfExactType`
+    // قبل اكتمال `initState`) — وهي تُطلق استثناءً يُبقي مؤشّر التحميل يدور
+    // بلا نهاية. `didChangeDependencies` أول موضع قانوني للقراءة.
+    if (_started) {
+      return;
+    }
+    _started = true;
+    final String query = widget.query.trim();
+    if (query.isNotEmpty) {
+      _run(query);
     }
   }
 
