@@ -3128,3 +3128,34 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
 3. إشعار انضمام يصل للمدرس على جهاز آخر **بينما** شاشة «طلبات الانضمام»
    مفتوحة (بثّ حقيقي).
 4. إرسال رسالة في محادثة مباشرة ثم تدوير الجهاز أثناء الإرسال — لا اختفاء.
+
+### 7) أعطال التحليل والاختبار التي كشفها CI — وإصلاحها بالجذر
+
+| التشغيل | النتيجة | الأسباب |
+|---|---|---|
+| `41093851393` | ❌ `analyze` | ① `REFERENCED_BEFORE_DECLARATION` + `READ_POTENTIALLY_UNASSIGNED_FINAL` في `requestToJoin`: كنت أُعلن `final StudyGroup? group = joinedGroup;` والمعامل نفسه اسمه `group`، فصار المرجع قبل التصريح. ② `ARGUMENT_TYPE_NOT_ASSIGNABLE`: `Iterable<StudyGroup>` إلى `subjectOptions(List<StudyGroup>)` في `DemoGroupRepository.listSubjects`. ③ `AMBIGUOUS_IMPORT` + `INVOCATION_OF_NON_FUNCTION`: اسم `FeaturedTeachersScreen` موجود في لوحة الإدارة، فتعارض مع شاشة الطالب. |
+| `41094078811` | ❌ ١٢ اختبارًا | تبديل الرئيسية/الورقة/لوحة الطلبات غيّر نصوصًا ومسارات يعتمدها اختبار الانحدار. |
+| `41095969099` | ❌ اختباران | `AppServicesScope.of` داخل `initState` في `GlobalSearchPanel` ⇒ استثناء ⇒ دوّارة بلا نهاية ⇒ `pumpAndSettle` تنتهي مهلتها. |
+| `41096415558` | ✅ `analyze` + كل اختبارات Flutter + **291** اختبار قواعد | — |
+
+**الإصلاحات:**
+
+1. **`group` المتظلِّل:** أُعيدت تسمية المتغيّر المحلي إلى `joined` (ونُقلت
+   القراءة داخل فرع `if (joined != null)`)، فلا مرجع قبل التصريح ولا قراءة
+   لقيمة قد تكون غير مُسنَدة.
+2. **`Iterable` ≠ `List`:** `listSubjects` تمرّر
+   `_groups.where(...).toList(growable: false)` صريحًا.
+3. **تنازع الاسم:** شاشة الطالب صارت `FeaturedTutorsScreen` في
+   `features/teachers/presentation/featured_tutors_screen.dart`، وشاشة الإدارة
+   `FeaturedTeachersScreen` كما هي — استيراد واحد غير ملتبس في `AppRouter`.
+4. **الاختبارات:** «عرض الكل» يفتح صفحة المميزين (لا قسم المدرسين)، حبّات
+   المواد لم تبقَ في الشريط، ولوحة المدرس صارت «بانتظار قرارك» + «طلبات
+   الحجز». كل تغيير في الاختبار يطابق تغييرًا مقصودًا في المواصفة، لا إرضاءً
+   للاختبار.
+5. **بداية البحث في `didChangeDependencies`:** أول موضع قانوني لقراءة
+   وراثةٍ في `State`. المؤشّر الآن ينتهي دائمًا لأن الطلب يُطلق فعلًا.
+6. **حدود الأسبوع:** `FeaturedRules.weekIndexOf` صار أسبوعًا يبدأ **الاثنين**
+   (إزاحة `+3` على أيام الحقبة لأن 1970-01-01 خميس)، فالبطاقات لا تتبدّل يوم
+   الجمعة.
+7. **التحيّة:** «أهلًا <الاسم>» يبقى سطر العنوان الثابت، والتحيّة الذكية
+   والسطر التحفيزي في السطر تحته — لا استبدال لنص يعرفه المستخدم.
