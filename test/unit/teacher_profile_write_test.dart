@@ -99,7 +99,7 @@ void main() {
     });
 
     test('fromProfile يعيد نفس الحقول الوصفية', () {
-      final TeacherProfile profile = TeacherProfile(
+      final TeacherProfile profile = const TeacherProfile(
         id: 't1',
         displayName: 'أ. هدى',
         subject: 'الكيمياء',

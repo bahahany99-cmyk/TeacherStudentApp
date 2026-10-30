@@ -36,7 +36,7 @@ class _StubAuthService implements AuthService {
   Future<AuthResult> signInWithEmail({
     required String email,
     required String password,
-  }) async => AuthSignedIn(
+  }) async => const AuthSignedIn(
     AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
   );
 
@@ -217,7 +217,7 @@ void main() {
       WidgetTester tester,
     ) async {
       final _StubAuthService auth = _StubAuthService(
-        restoreResult: AuthSignedIn(
+        restoreResult: const AuthSignedIn(
           AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
         ),
       );

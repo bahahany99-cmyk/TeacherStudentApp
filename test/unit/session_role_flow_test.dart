@@ -25,7 +25,7 @@ class _FakeAuthService implements AuthService {
   }
 
   @override
-  Future<AuthResult> signInWithGoogle() async => AuthNeedsRole(
+  Future<AuthResult> signInWithGoogle() async => const AuthNeedsRole(
     uid: 'uid-google',
     displayName: 'مستخدم Google',
     email: 'user@example.com',
@@ -35,7 +35,7 @@ class _FakeAuthService implements AuthService {
   Future<AuthResult> signInWithEmail({
     required String email,
     required String password,
-  }) async => AuthSignedIn(
+  }) async => const AuthSignedIn(
     AppUser(id: 'uid-email', displayName: 'طالب', role: UserRole.student),
   );
 

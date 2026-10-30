@@ -85,7 +85,7 @@ void main() {
 
   group('الهوية 5 — نيلي درسلي', () {
     test('الهوية نيلية (أزرق مسيطر) والخلفية باردة لا وردية', () {
-      final Color seed = AppColors.seed;
+      const Color seed = AppColors.seed;
       // أزرق صريح: القناة الزرقاء هي الأقوى بوضوح.
       expect(seed.b, greaterThan(seed.r));
       expect(seed.b, greaterThan(seed.g));

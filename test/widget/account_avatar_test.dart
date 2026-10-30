@@ -59,7 +59,7 @@ void main() {
     testWidgets('مع صورة مخصّصة: تُعرض الصورة لا الحرف', (
       WidgetTester tester,
     ) async {
-      final UserAvatar avatar = UserAvatar(
+      final UserAvatar avatar = const UserAvatar(
         ownerId: 'uid-1',
         imageBase64: kTinyPngBase64,
         mimeType: 'image/png',
