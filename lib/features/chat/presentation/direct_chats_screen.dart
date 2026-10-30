@@ -85,7 +85,7 @@ class _DirectChatsScreenState extends State<DirectChatsScreen> {
                       AsyncSnapshot<List<DirectChat>> snapshot,
                     ) {
                       if (snapshot.hasError) {
-                        return EmptyState(
+                        return const EmptyState(
                           icon: Icons.wifi_off_rounded,
                           title: 'تعذّر تحميل المحادثات',
                           message: 'تحقّق من الاتصال ثم أعد المحاولة.',
@@ -320,7 +320,11 @@ class _ChatRow extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                         // دلالة غير لونية كذلك (قارئ الشاشة).
-                        child: const Semantics(label: 'رسائل غير مقروءة'),
+                        child: Semantics(
+                          label: 'رسائل غير مقروءة',
+                          container: true,
+                          child: const SizedBox.expand(),
+                        ),
                       ),
                     ],
                   ],

@@ -2833,6 +2833,7 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
     );
   }
 
+  @override
   Future<List<DirectChat>> listMine(String viewerId) {
     return _guard(() async {
       if (viewerId.isEmpty) {

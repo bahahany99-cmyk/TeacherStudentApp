@@ -129,6 +129,8 @@ class _TeacherRequestsScreenState extends State<TeacherRequestsScreen> {
     JoinRequestStatus.pending => _Filter.pending,
     JoinRequestStatus.accepted => _Filter.accepted,
     JoinRequestStatus.rejected => _Filter.rejected,
+    // ألغاه الطالب: انتهى بلا قرار، فيُقرأ مع «مرفوض» لا «جديد».
+    JoinRequestStatus.cancelled => _Filter.rejected,
   };
 
   List<_RequestEntry> _entries(
@@ -174,11 +176,13 @@ class _TeacherRequestsScreenState extends State<TeacherRequestsScreen> {
             JoinRequestStatus.pending => 'بانتظار قرارك',
             JoinRequestStatus.accepted => 'مقبول',
             JoinRequestStatus.rejected => 'مرفوض',
+            JoinRequestStatus.cancelled => 'ألغاه الطالب',
           },
           statusColor: switch (request.status) {
             JoinRequestStatus.pending => AppColors.statusPending,
             JoinRequestStatus.accepted => AppColors.statusAccepted,
             JoinRequestStatus.rejected => AppColors.statusRejected,
+            JoinRequestStatus.cancelled => AppColors.statusNeutral,
           },
           filter: _joinFilter(request.status),
           isJoin: true,

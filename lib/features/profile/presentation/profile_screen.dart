@@ -6,7 +6,9 @@ import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
@@ -14,7 +16,9 @@ import 'package:teacher_student_app/core/widgets/settings_group.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
+import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 import 'package:teacher_student_app/features/account/presentation/account_deletion_dialog.dart';
 import 'package:teacher_student_app/features/profile/presentation/widgets/account_avatar_editor.dart';
@@ -171,7 +175,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: <Widget>[
               // 1) الهوية: صورة + اسم + نوع الحساب + البريد، والضغط يفتح
               //    «بياناتي» — أقصر طريق إلى أهم فعل في الصفحة.
-              _IdentityCard(user: user, onTap: () => _open(RoutePaths.myData)),
+              _IdentityCard(
+                user: user,
+                onTap: () => _open(RoutePaths.myData),
+                onOpenPublicProfile: user?.role == UserRole.teacher
+                    ? () => _open(RoutePaths.myTeacherProfile)
+                    : null,
+              ),
               const SizedBox(height: AppSpacing.md),
 
               // 2) الصورة الشخصية: محرّر واحد، متاح للطالب والمدرس معًا —
@@ -356,10 +366,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 /// التأكد منها فورًا (بأي حساب أنا داخل؟ وما بريدي؟)، ثم ضغطة واحدة تنقله إلى
 /// تعديلها. الاسم والبريد هنا للقراءة فقط، والقرار في «بياناتي».
 class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.user, required this.onTap});
+  const _IdentityCard({
+    required this.user,
+    required this.onTap,
+    this.onOpenPublicProfile,
+  });
 
   final AppUser? user;
   final VoidCallback onTap;
+
+  /// فتح الملف العام كما يراه الطلاب (للمدرس فقط).
+  final VoidCallback? onOpenPublicProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -412,6 +429,16 @@ class _IdentityCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // (P28) حالة الملف العام كما يراها الطالب — داخل الهوية لا في
+                // صفحة منفصلة، لأنها جزء من «من أنا في هذا التطبيق».
+                if (user?.role == UserRole.teacher && user != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xxs + 2),
+                    child: _TeacherProfileState(
+                      teacherId: user!.id,
+                      onTap: onOpenPublicProfile,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -423,6 +450,57 @@ class _IdentityCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+/// حالة الملف التعريفي للمدرس: مكتمل/ناقص + حالة التوثيق + مدخل للملف العام.
+///
+/// **لماذا هنا؟** لأن المدرس يحتاج أن يعرف بلحظة واحدة: هل ملفي جاهز ومقبول،
+/// وما الذي يراه الطالب الآن؟ وضعها في بطاقة الهوية يمنع تكرارها في مكانين.
+class _TeacherProfileState extends StatelessWidget {
+  const _TeacherProfileState({required this.teacherId, this.onTap});
+
+  final String teacherId;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return AsyncView<TeacherProfile?>(
+      load: () => AppServicesScope.of(context).teachers.findMine(teacherId),
+      builder: (BuildContext context, TeacherProfile? profile) {
+        final (String, Color) state = switch (profile?.status) {
+          TeacherProfileStatus.verified => ('موثّق ويظهر للطلاب', AppColors.statusAccepted),
+          TeacherProfileStatus.pendingReview => ('قيد المراجعة', AppColors.statusPending),
+          TeacherProfileStatus.rejected => ('يحتاج تعديلًا', AppColors.statusRejected),
+          TeacherProfileStatus.draft => ('مسودة غير مكتملة', AppColors.statusPending),
+          null => ('لا يوجد ملف تعريفي بعد', AppColors.statusNeutral),
+        };
+
+        return Row(
+          children: <Widget>[
+            StatusChip(label: state.$1, color: state.$2),
+            const SizedBox(width: AppSpacing.xs),
+            if (onTap != null)
+              Flexible(
+                child: TextButton(
+                  key: const Key('profile-public-profile'),
+                  onPressed: onTap,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: theme.textTheme.labelSmall,
+                  ),
+                  child: const Text('ما يراه الطلاب'),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

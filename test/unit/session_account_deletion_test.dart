@@ -37,7 +37,7 @@ class _FakeAuthService implements AuthService {
   Future<AuthResult> signInWithEmail({
     required String email,
     required String password,
-  }) async => AuthSignedIn(
+  }) async => const AuthSignedIn(
     AppUser(id: 'uid-email', displayName: 'طالب', role: UserRole.student),
   );
 
@@ -108,7 +108,7 @@ void main() {
 
     test('حساب نشط: لا شيء يتغيّر عن السلوك السابق', () async {
       final _FakeAuthService auth = _FakeAuthService(
-        restoreResult: AuthSignedIn(
+        restoreResult: const AuthSignedIn(
           AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
         ),
       );
@@ -125,7 +125,7 @@ void main() {
   group('طلب الحذف', () {
     test('يكتب في الخدمة أولًا ثم يسجّل الخروج ويعيد الموعد', () async {
       final _FakeAuthService auth = _FakeAuthService(
-        restoreResult: AuthSignedIn(
+        restoreResult: const AuthSignedIn(
           AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.teacher),
         ),
       );
@@ -195,7 +195,7 @@ void main() {
 
     test('حساب نشط: استعادة غير منطقية تُرفض بلا نداء', () async {
       final _FakeAuthService auth = _FakeAuthService(
-        restoreResult: AuthSignedIn(
+        restoreResult: const AuthSignedIn(
           AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
         ),
       );
