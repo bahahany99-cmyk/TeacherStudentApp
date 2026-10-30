@@ -136,6 +136,10 @@ class _ProfileFormState extends State<_ProfileForm> {
   /// (P22) هل توجد صورة شخصية للملف؟ يأتي من الصورة المرفوعة/المحمّلة.
   bool _hasPhoto = false;
 
+  /// (P23) رسالة النقص المعروضة داخل النموذج (لا Toast عابر فقط): تسمّي
+  /// الحقول الإلزامية الغائبة فعلًا — الصورة والمادة والمرحلة.
+  String? _missingNotice;
+
   /// هل الملف مقفل بانتظار قرار الإدارة؟
   bool get _locked =>
       widget.profile?.status == TeacherProfileStatus.pendingReview;
@@ -227,8 +231,7 @@ class _ProfileFormState extends State<_ProfileForm> {
     // (P23) الحقول الإلزامية الثلاثة تُفحص معًا وتُسمّى في رسالة واحدة.
     final String? missing = _missingMandatorySummary();
     if (!valid || missing != null) {
-      final String message =
-          missing ?? 'راجع الحقول المطلوبة قبل الحفظ.';
+      final String message = missing ?? 'راجع الحقول المطلوبة قبل الحفظ.';
       setState(() => _missingNotice = missing);
       AppSnackBar.show(context, message, type: AppMessageType.warning);
       return;

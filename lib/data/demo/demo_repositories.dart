@@ -1491,9 +1491,8 @@ class DemoBookingRepository implements BookingRepository {
       }
       final String? cleanNote = note?.trim();
       if (cleanNote != null && cleanNote.length > BookingRules.noteMax) {
-        throw AppException.invalidInput(
-          overrideMessage:
-              'الملاحظة أطول من ${BookingRules.noteMax} حرفًا.',
+        throw const AppException.invalidInput(
+          overrideMessage: 'الملاحظة أطول من ${BookingRules.noteMax} حرفًا.',
         );
       }
 

@@ -306,7 +306,7 @@ class _MyProfileBody extends StatelessWidget {
           subtitle: 'من يستطيع مراسلتك قبل أن يحجز؟',
           icon: Icons.lock_outline,
         ),
-        _DirectMessageSetting(),
+        const _DirectMessageSetting(),
         const SizedBox(height: AppSpacing.md),
         SizedBox(
           width: double.infinity,

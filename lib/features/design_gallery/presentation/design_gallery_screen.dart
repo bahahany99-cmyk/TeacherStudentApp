@@ -212,17 +212,17 @@ class DesignGalleryScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const _GradientPreview(
+                      _GradientPreview(
                         label: 'page',
                         gradient: AppGradients.page,
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      const _GradientPreview(
+                      SizedBox(height: AppSpacing.xs),
+                      _GradientPreview(
                         label: 'pageWarm',
                         gradient: AppGradients.pageWarm,
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      const _GradientPreview(
+                      SizedBox(height: AppSpacing.xs),
+                      _GradientPreview(
                         label: 'hero',
                         gradient: AppGradients.hero,
                         onDark: true,
@@ -310,7 +310,7 @@ class DesignGalleryScreen extends StatelessWidget {
                     runSpacing: AppSpacing.xs,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
-                      const PillChip(label: 'وسم ثابت', dense: true),
+                      PillChip(label: 'وسم ثابت', dense: true),
                       PillBadge(label: 'مدرس مميز', icon: Icons.workspace_premium),
                       PillBadge(
                         label: 'متاح',

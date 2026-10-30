@@ -120,7 +120,7 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
           builder: (BuildContext context, List<StudyGroup> groups) {
             if (groups.isEmpty) {
               // بلا زر: الفعل له مدخل واحد (الزر أعلاه).
-              return EmptyState(
+              return const EmptyState(
                 icon: Icons.groups_outlined,
                 title: 'لم تُنشئ مجموعات بعد',
                 message:

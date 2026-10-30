@@ -3483,7 +3483,8 @@ class FirestoreAdminRepository implements AdminRepository {
       }
       await _profiles.doc(teacherId).update(<String, Object?>{
         'status': status.wireValue,
-        'reviewNote': note == null ? FieldValue.delete() : note,
+        // `??` هو الشكل الذي يطلبه المحلّل: قيمة أو حذف الحقل.
+        'reviewNote': note ?? FieldValue.delete(),
         'reviewedAt': FieldValue.serverTimestamp(),
         if (_adminUid != null) 'reviewedBy': _adminUid,
       });

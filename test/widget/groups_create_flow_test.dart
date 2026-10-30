@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:teacher_student_app/app/router/app_router.dart';
-import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
@@ -14,7 +13,6 @@ import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
-import 'package:teacher_student_app/features/groups/presentation/widgets/teacher_groups_section.dart';
 
 import '../helpers/test_app.dart';
 

@@ -168,6 +168,17 @@ def main() -> int:
         if match not in code:
             problems.append(f'قاعدة مفقودة: {match}')
 
+    # 4-ب) لغة القواعد **تعبيرية فقط**: لا `if`/`for`/`while` كأوامر.
+    #
+    # هذه فئة خطأ مقيسة: كُتبت دالة بـ`if (...) { return …; }` فمرّ الفحص
+    # المحلي ثم رفضها المحاكي بـ«Unexpected 'if'» — فسقطت اختبارات القواعد
+    # كلها (265). `return <تعبير>;` وحده مسموح داخل الدوال، و`allow … : if`
+    # هي الصيغة الوحيدة المشروعة لكلمة `if`.
+    stripped = re.sub(r'//[^\n]*', '', code)
+    for match in re.finditer(r'^(\s*)(if|for|while)\b', stripped, re.MULTILINE):
+        line = stripped[: match.start()].count('\n') + 1
+        problems.append(f'سطر {line}: «{match.group(2)}» كأمر غير مدعوم في لغة القواعد')
+
     # 5) ثبات الدور والحالة
     if 'request.resource.data.role == resource.data.role' not in code:
         problems.append('users: لا يوجد شرط لثبات الدور عند التحديث')
