@@ -265,19 +265,6 @@ class DemoTeacherRepository implements TeacherRepository {
       );
     }
 
-    // (P23/P24) المادة والمرحلة إلزاميتان مثل الصورة — نفس شرط الخادم
-    // (`academicFieldsSatisfiedFor`) حتى لا ينجح مسار في الجولة ويفشل في
-    // الإنتاج.
-    final String? academicProblem = draft.academicProblem;
-    if (academicProblem != null) {
-      throw AppException(
-        AppErrorKind.invalidInput,
-        debugMessage: 'teacher profile saved without academic fields (demo)',
-        overrideTitle: 'بيانات ناقصة',
-        overrideMessage: '$academicProblem — لا يُرسل ملفك للمراجعة بدونها.',
-      );
-    }
-
     final int index = _source.indexWhere((TeacherProfile t) => t.id == uid);
 
     if (index < 0) {
@@ -2219,7 +2206,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
           );
         }
         if (_hasJoinRequest != null &&
-            !await _hasJoinRequest!(groupId: groupId, studentId: studentId)) {
+            !await _hasJoinRequest(groupId: groupId, studentId: studentId)) {
           throw const AppException.permission(
             debugMessage: 'no join request for this chat',
             overrideMessage:

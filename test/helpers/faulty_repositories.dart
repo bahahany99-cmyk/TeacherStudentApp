@@ -187,6 +187,7 @@ class FaultyDirectChatRepository extends DemoDirectChatRepository {
     required String senderName,
     required UserRole senderRole,
     required String text,
+    String? imageId,
   }) async {
     if (plan.take()) {
       throw plan.exception;
@@ -197,6 +198,7 @@ class FaultyDirectChatRepository extends DemoDirectChatRepository {
       senderName: senderName,
       senderRole: senderRole,
       text: text,
+      imageId: imageId,
     );
   }
 }
