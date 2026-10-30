@@ -290,17 +290,17 @@ void main() {
       );
     });
 
-    test('البلاش داخل «النقطة الحلوة»: لا باهت ولا صارخ', () {
+    test('تدرّج أعلى الصفحة داخل «النقطة الحلوة»: لا باهت ولا صارخ', () {
+      // (P28) التدرّج نيلي بارد لا وردي: القناة الزرقاء هي الأعلى، والتشبّع
+      // كافٍ ليُرى الفرق بين الشريط والخلفية بلا أن يصرخ.
       final HSLColor blush = HSLColor.fromColor(AppColors.blushTop);
 
-      // فاتح جدًا (L عالٍ) لكنه ليس أبيض مغبَّشًا: تشبّع كافٍ ليكون مرئيًا.
       expect(blush.lightness, greaterThanOrEqualTo(0.85));
-      expect(blush.lightness, lessThanOrEqualTo(0.97));
-      expect(blush.saturation, greaterThanOrEqualTo(0.35));
-      expect(blush.saturation, lessThanOrEqualTo(0.75));
-      // قناة حمراء أعلى من الخضراء والزرقاء ⇒ وردي دافئ لا أخضر ولا رمادي.
-      expect(AppColors.blushTop.r, greaterThan(AppColors.blushTop.g));
-      expect(AppColors.blushTop.b, greaterThan(AppColors.blushTop.g));
+      expect(blush.lightness, lessThanOrEqualTo(0.98));
+      expect(blush.saturation, greaterThanOrEqualTo(0.2));
+      expect(blush.saturation, lessThanOrEqualTo(0.8));
+      expect(AppColors.blushTop.b, greaterThan(AppColors.blushTop.r));
+      expect(AppColors.blushTop.r, greaterThanOrEqualTo(AppColors.blushTop.g));
     });
 
     test('النص داكن بتباين حادّ على الأبيض', () {
@@ -320,17 +320,25 @@ void main() {
       expect(AppTheme.light.colorScheme.surface, Colors.white);
     });
 
-    test('لا لون أخضر في أي هكس داخل lib (القناة الخضراء ليست الأعلى)', () {
-      // فحص شامل بدل مطاردة ألوان بعينها: أي هكس في الشجرة تكون فيه G أكبر
-      // من R وB يفشل — وهذا يغطي «أخضر»، «نعناعي»، «ليموني»، «زيتوني».
+    test('الألوان مركزية: لا هكس أخضر خارج ملف الألوان', () {
+      // (P28) الأخضر صار لونًا **دلاليًا** («مقبول/موثّق»)، فلم يبقَ محرَّمًا
+      // كما كان في الهوية الوردية. القاعدة الجديدة تحمي ما يهم فعلًا: أن تُعرَّف
+      // الألوان في مكان واحد (`app_colors.dart`) لا أن تُكتب أرقامًا في الشاشات.
       final RegExp hex = RegExp(r'0x[Ff][Ff]([0-9A-Fa-f]{6})');
       final List<String> offenders = <String>[];
 
-      for (final FileSystemEntity entity in Directory('lib').listSync(recursive: true)) {
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) {
           continue;
         }
-        for (final RegExpMatch match in hex.allMatches(entity.readAsStringSync())) {
+        if (entity.path.endsWith('app_colors.dart')) {
+          continue;
+        }
+        for (final RegExpMatch match in hex.allMatches(
+          entity.readAsStringSync(),
+        )) {
           final String digits = match.group(1)!;
           final int r = int.parse(digits.substring(0, 2), radix: 16);
           final int g = int.parse(digits.substring(2, 4), radix: 16);
