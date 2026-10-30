@@ -299,8 +299,13 @@ void main() {
       expect(blush.lightness, lessThanOrEqualTo(0.98));
       expect(blush.saturation, greaterThanOrEqualTo(0.2));
       expect(blush.saturation, lessThanOrEqualTo(0.8));
+      // أزرق هو الأعلى بوضوح، والأحمر/الأخضر متقاربان (تدرّج بارد محايد).
       expect(AppColors.blushTop.b, greaterThan(AppColors.blushTop.r));
-      expect(AppColors.blushTop.r, greaterThanOrEqualTo(AppColors.blushTop.g));
+      expect(AppColors.blushTop.b, greaterThan(AppColors.blushTop.g));
+      expect(
+        (AppColors.blushTop.r - AppColors.blushTop.g).abs(),
+        lessThanOrEqualTo(12),
+      );
     });
 
     test('النص داكن بتباين حادّ على الأبيض', () {
