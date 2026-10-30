@@ -280,13 +280,25 @@ void main() {
       final AppServices services = _services();
 
       // طلب حجز جديد بموعد مستقبلي (لا يعتمد على تواريخ البيانات التجريبية).
+      //
+      // ⚠️ الساعة تُثبَّت على 17:00 بعد ثلاثة أيام: القاعدة ترفض أي موعد خارج
+      // نافذة 8–22 أو أقل من ساعة من الآن. صياغة «الآن + 3 أيام + ساعتين»
+      // تجعل الاختبار يفشل مساءً فقط (23:30 مثلًا) — عيب في الاختبار لا في
+      // التطبيق، ظهر فعلًا في التشغيل 41112720382.
+      final DateTime target = DateTime.now().add(const Duration(days: 3));
+      final DateTime slot = DateTime(
+        target.year,
+        target.month,
+        target.day,
+        17,
+      );
       final BookingRequest created = await services.bookings.createRequest(
         teacherId: DemoData.demoTeacherId,
         teacherName: DemoData.teacherName,
         studentId: DemoData.demoStudentId,
         studentName: DemoData.studentName,
         subject: 'الرياضيات — التفاضل',
-        startsAt: DateTime.now().add(const Duration(days: 3, hours: 2)),
+        startsAt: slot,
         durationMinutes: 60,
       );
 
