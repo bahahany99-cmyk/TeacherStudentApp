@@ -45,7 +45,10 @@ Future<void> bootstrap() async {
 
   // المصادقة الحقيقية إن كان Firebase جاهزًا، وإلا الحزمة التجريبية.
   final AppServices services = AppServices.bootstrap();
-  final SessionController session = SessionController(services.auth);
+  final SessionController session = SessionController(
+    services.auth,
+    avatars: services.avatars,
+  );
   await session.restore();
 
   runApp(TeacherStudentApp(services: services, session: session));

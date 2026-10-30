@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/account_status.dart';
+import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 
 /// مستخدم التطبيق كما يحتاجه الواجهة.
@@ -17,6 +18,7 @@ class AppUser {
     this.scheduledDeletionAt,
     this.phone,
     this.stage,
+    this.avatarPreset,
   });
 
   final String id;
@@ -55,6 +57,16 @@ class AppUser {
   /// المرحلة الدراسية للطالب (P18) — اختيارية، تُستخدم في تخصيص العرض لاحقًا.
   final String? stage;
 
+  /// معرّف الصورة الافتراضية المرسومة (P22) — يُثبَّت عند أول دخول.
+  ///
+  /// `null` يعني «لم يُثبَّت بعد»، والواجهة تعرض الصورة الحتمية المشتقة من
+  /// المعرّف (`AvatarPresets.forId`). لا صورة مخصّصة هنا: تلك تُقرأ من
+  /// `avatars/{uid}` عند العرض فقط، حتى لا يُقرأ ~30KB في كل تسجيل دخول.
+  final int? avatarPreset;
+
+  /// معرّف الصورة الافتراضية المعروض الآن (يستوعب قيمة قديمة/خارجة عن المدى).
+  int get resolvedAvatarPreset => AvatarPresets.normalize(avatarPreset, id);
+
   /// هل الحساب مجدول للحذف؟
   bool get isPendingDeletion => status == AccountStatus.pendingDeletion;
 
@@ -78,6 +90,7 @@ class AppUser {
       scheduledDeletionAt: scheduledDeletionAt,
       phone: phone,
       stage: stage,
+      avatarPreset: avatarPreset,
     );
   }
 
@@ -102,6 +115,24 @@ class AppUser {
           : scheduledDeletionAt,
       phone: phone,
       stage: stage,
+      avatarPreset: avatarPreset,
+    );
+  }
+
+  /// نسخة باختيار صورة افتراضية آخر (P22) — يكتبه صاحب الحساب وحده.
+  AppUser withAvatarPreset(int preset) {
+    return AppUser(
+      id: id,
+      displayName: displayName,
+      role: role,
+      email: email,
+      isDemoAccount: isDemoAccount,
+      hasAdminClaim: hasAdminClaim,
+      status: status,
+      scheduledDeletionAt: scheduledDeletionAt,
+      phone: phone,
+      stage: stage,
+      avatarPreset: AvatarPresets.normalize(preset, id),
     );
   }
 

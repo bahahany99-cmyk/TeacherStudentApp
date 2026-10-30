@@ -6,6 +6,8 @@ import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/models/account_status.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
+import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/firebase/google_sign_in_gateway.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
@@ -33,7 +35,7 @@ import 'package:teacher_student_app/data/validation/account_deletion_rules.dart'
 /// {
 ///   ownerId: uid,
 ///   displayName: String,
-///   status: 'pendingReview',   // لا يصبح 'verified' إلا بقرار إداري
+///   status: 'draft',   // لا يصبح 'verified' إلا بقرار إداري
 ///   createdAt: Timestamp,
 /// }
 /// ```
@@ -318,21 +320,29 @@ class FirebaseAuthService implements AuthService {
         // الدور محفوظ مسبقًا: نقرأه ولا نغيّره. تغييره يحتاج إجراءً إداريًا.
         final UserRole? stored = _roleFrom(existingRole);
         if (stored != null) {
+          final Object? preset = existing.data()?['avatarPreset'];
           return AppUser(
             id: uid,
             displayName: displayName,
             role: stored,
             email: email,
+            avatarPreset: preset is int ? preset : null,
           );
         }
       }
 
       final WriteBatch batch = _firestore.batch();
 
+      // (P22) صورة افتراضية عند إنشاء الحساب: الحساب لا يُنشأ بصورة فارغة.
+      // نكتبها **مرة واحدة** فقط: لو اختار المستخدم صورة أخرى لاحقًا فلا
+      // نُعيد ضبطها عند أي نداء تالٍ لاختيار الدور.
+      final Object? storedPreset = existing.data()?['avatarPreset'];
+
       batch.set(doc, <String, Object?>{
         'displayName': displayName,
         'email': email,
         'role': role.name,
+        if (storedPreset == null) 'avatarPreset': AvatarPresets.forId(uid),
         'createdAt': existing.exists
             ? (existing.data()?['createdAt'] ?? FieldValue.serverTimestamp())
             : FieldValue.serverTimestamp(),
@@ -354,13 +364,22 @@ class FirebaseAuthService implements AuthService {
         displayName: displayName,
         role: role,
         email: email,
+        avatarPreset: storedPreset is int
+            ? storedPreset
+            : AvatarPresets.forId(uid),
       );
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);
     }
   }
 
-  /// ينشئ ملف المدرس إن لم يكن موجودًا، بحالة `pendingReview` فقط.
+
+  /// ينشئ ملف المدرس إن لم يكن موجودًا، بحالة `draft` فقط.
+  ///
+  /// (P22) `draft` لا `pendingReview`: اختيار الدور «مدرس» لا يعني أن الملف
+  /// جاهز — الصورة والنبذة والمادة لم تُكتب بعد، والقواعد ترفض إرسال ملف
+  /// للمراجعة بلا صورة. الإرسال الفعلي يحدث عند أول حفظ للنموذج
+  /// (`saveMyProfile`) حيث توجد الصورة.
   ///
   /// - لا نلمس ملفًا موجودًا: لو كان معتمدًا سابقًا (أو مرفوضًا) فالحالة قرار
   ///   إداري لا يُعاد ضبطه من التطبيق.
@@ -383,7 +402,7 @@ class FirebaseAuthService implements AuthService {
     batch.set(profile, <String, Object?>{
       'ownerId': uid,
       'displayName': displayName,
-      'status': 'pendingReview',
+      'status': TeacherProfileStatus.draft.wireValue,
       // (P17) الحقل موجود منذ الإنشاء: استعلامات الاكتشاف تفلتر عليه، ومستند
       // بلا الحقل لا يظهر في `where(accountHidden == false)`.
       accountHiddenField: false,
@@ -434,6 +453,11 @@ class FirebaseAuthService implements AuthService {
       // الحقلين يعمل كما هو، فلا حاجة إلى ترحيل بيانات.
       phone: _clean(doc.data()?['phone'] as String?),
       stage: _clean(doc.data()?['stage'] as String?),
+      // (P22) الصورة الافتراضية: قيمة قديمة/غير رقمية تُتجاهل وتُشتق من
+      // المعرّف، فلا ينكسر الحساب بسبب حقل عرض واحد.
+      avatarPreset: doc.data()?['avatarPreset'] is int
+          ? doc.data()?['avatarPreset'] as int
+          : null,
     );
 
     // حساب مجدول للحذف لا يدخل التطبيق: يُوجَّه إلى شاشة الاستعادة.

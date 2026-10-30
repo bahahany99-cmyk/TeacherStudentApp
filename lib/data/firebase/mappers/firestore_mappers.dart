@@ -168,6 +168,7 @@ TeacherProfile? teacherProfileFromMap(String id, Map<String, Object?> data) {
     reviewsCount: readInt(data['reviewsCount']),
     priceHint: readString(data['priceHint']),
     reviewNote: readString(data['reviewNote']),
+    photoPath: readString(data['photoPath']),
   );
 }
 

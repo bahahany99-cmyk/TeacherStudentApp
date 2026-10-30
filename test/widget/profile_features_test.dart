@@ -14,6 +14,7 @@ import 'package:teacher_student_app/features/profile/presentation/support_screen
 import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/my_teacher_profile_screen.dart';
 
+import '../helpers/avatar_helpers.dart';
 import '../helpers/test_app.dart';
 
 /// (P18) الشاشات التي كانت «غير مفعّلة» — تختبر السلوك الجديد فعلًا.
@@ -47,18 +48,9 @@ Widget _host(
 /// النموذج أطول من شاشة 360dp، و`tester.tap` يصيب مركز الودجت حتى لو كان
 /// جزء منه خارج منطقة العرض، فتضيع النقرة بلا فشل صريح. استدعاء `onPressed`
 /// يقيس **السلوك** (تحقق + حفظ) لا هندسة التمرير.
-/// يضغط زرًا بمعالجه مباشرة (نفس سبب `_pressSave`: زر أسفل الطيّة).
 Future<void> _pressKey(WidgetTester tester, Key key) async {
   final FilledButton button = tester.widget<FilledButton>(find.byKey(key));
   button.onPressed!();
-  await tester.pumpAndSettle();
-}
-
-Future<void> _pressSave(WidgetTester tester) async {
-  final FilledButton save = tester.widget<FilledButton>(
-    find.byKey(const Key('profile-save')),
-  );
-  save.onPressed!();
   await tester.pumpAndSettle();
 }
 
@@ -146,6 +138,8 @@ void main() {
     ) async {
       usePhoneSurface(tester);
       final AppServices services = AppServices.demo();
+      // (P22) الصورة إلزامية قبل حفظ ملف المدرس.
+      await seedAvatar(services, 'demo-teacher-1');
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);
 
@@ -162,7 +156,7 @@ void main() {
         find.byKey(const Key('profile-name')),
         'أ. سارة الخطيب — محدَّث',
       );
-      await _pressSave(tester);
+      await pressProfileSave(tester);
 
       // الحفظ نجح: ظهرت رسالة نجاح (لا رسالة «لم يُحفظ شيء»).
       expect(find.textContaining('لم يُحفظ شيء'), findsNothing);
@@ -190,7 +184,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byKey(const Key('profile-bio')), 'قصيرة');
-      await _pressSave(tester);
+      await pressProfileSave(tester);
 
       // الرسالة العامة دليل على أن التحقق جرى (رسالة الحقل نفسه قد تكون
       // خارج منطقة العرض على هاتف 360dp).

@@ -171,8 +171,13 @@ def main() -> int:
     # 5) ثبات الدور والحالة
     if 'request.resource.data.role == resource.data.role' not in code:
         problems.append('users: لا يوجد شرط لثبات الدور عند التحديث')
-    if code.count("request.resource.data.status == resource.data.status") < 1:
-        problems.append('teacherProfiles: لا يوجد شرط لثبات الحالة (status)')
+    # (P22) الحالة لم تعد ثابتة مطلقًا: صاحب ملف **موثّق** يعيدها إلى
+    # pendingReview عند التعديل (إعادة تحقق). الشرط الصحيح الآن هو وجود دالة
+    # الانتقال المقيّدة واستخدامها في قاعدة التحديث.
+    if 'function ownerStatusTransitionAllowed()' not in code:
+        problems.append('teacherProfiles: لا دالة انتقال حالة لصاحب الملف')
+    if '&& ownerStatusTransitionAllowed()' not in code:
+        problems.append('teacherProfiles: دالة الانتقال غير مستخدمة في التحديث')
     if "request.resource.data.status == 'pendingReview'" not in code:
         problems.append('teacherProfiles: الإنشاء غير مقيّد بحالة pendingReview')
 
@@ -345,9 +350,14 @@ def main() -> int:
             problems.append('teacherProfiles: الحالة الإدارية غير مقيّدة بمجموعة')
         if 'request.resource.data.reviewNote.size() >= 5' not in teacher_block:
             problems.append('teacherProfiles: سبب الرفض غير مقيّد بطول أدنى')
-        # صاحب الملف: لا يغيّر الحالة ولا المالك.
-        if 'request.resource.data.status == resource.data.status' not in teacher_block:
-            problems.append('teacherProfiles: صاحب الملف يستطيع تغيير الحالة')
+        # صاحب الملف: لا يغيّر المالك، والحالة تنتقل عبر الدالة المقيّدة فقط،
+        # والملف المنتظر مراجعةً **مقفل** أمامه (P22).
+        if 'request.resource.data.ownerId == resource.data.ownerId' not in teacher_block:
+            problems.append('teacherProfiles: صاحب الملف يستطيع تغيير المالك')
+        if "resource.data.status != 'pendingReview'" not in teacher_block:
+            problems.append('teacherProfiles: الملف قيد المراجعة غير مقفل أمام صاحبه')
+        if 'photoSatisfiedFor(' not in teacher_block:
+            problems.append('teacherProfiles: الصورة غير مطلوبة عند الإرسال')
         # (P15) الاكتشاف: طريقة التقديم والمكان يكتبها المالك ضمن حقوله.
         profile_keys = block_starting_at(code, 'function profileKeys()')
         if not profile_keys:

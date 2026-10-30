@@ -79,6 +79,52 @@ abstract final class AcademicOptions {
     'الوادي الجديد',
   ];
 
+  /// خيار «أخرى» في القوائم المنسدلة (P22).
+  ///
+  /// **قيمة حارسة لا تُحفظ أبدًا**: تُستخدم في الواجهة وحدها لتفعيل حقل الكتابة
+  /// اليدوية. لو حُفظت لظهر في البحث اسم مادة لا معنى له.
+  static const String customOption = '__custom__';
+
+  /// نص الخيار كما يراه المدرس.
+  static const String customOptionLabel = 'أخرى (كتابة يدوية / تخصيص)';
+
+  /// أقصى طول للمادة أو المرحلة المخصّصة — نفس حدّ `firestore.rules`.
+  ///
+  /// الرقم مُوحَّد عمدًا في مكان واحد: الواجهة والقاعدة يقبلان/يرفضان نفس
+  /// القيمة، فلا يحدث «قبِلت الواجهة ثم رفضها الخادم» أو العكس.
+  static const int maxCustomLength = 40;
+
+  /// الحد الأدنى (حرفان) — يمنع قيمة من حرف واحد لا تصف شيئًا.
+  static const int minCustomLength = 2;
+
+  /// هل هذه مادة مخصّصة (ليست من القائمة المعتمدة)؟
+  ///
+  /// تُستخدم عند تحميل ملف قديم: القيمة غير المعروفة تعني «النموذج يفتح على
+  /// وضع الكتابة اليدوية مع تعبئة النص»، فيرى المدرس ما كتبه ويعدّله بلا فقدان.
+  static bool isCustomSubject(String? value) =>
+      value != null && value.trim().isNotEmpty && !isKnownSubject(value);
+
+  /// هل هذه مرحلة مخصّصة؟
+  static bool isCustomStage(String? value) =>
+      value != null && value.trim().isNotEmpty && !isKnownStage(value);
+
+  /// مشكلة في نص مخصّص (مادة أو مرحلة) — `null` يعني صالحًا.
+  ///
+  /// نفس الشروط حرفيًا في `firestore.rules` (`validProfilePayload`).
+  static String? customTextProblem(String? raw, String label) {
+    final String text = (raw ?? '').trim();
+    if (text.isEmpty) {
+      return '$label مطلوب';
+    }
+    if (text.length < minCustomLength) {
+      return '$label قصير جدًا (حرفان على الأقل)';
+    }
+    if (text.length > maxCustomLength) {
+      return '$label طويل جدًا ($maxCustomLength حرفًا كحد أقصى)';
+    }
+    return null;
+  }
+
   /// هل القيمة ضمن المادة المعتمدة؟
   static bool isKnownSubject(String? value) =>
       value != null && subjects.contains(value.trim());

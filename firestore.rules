@@ -174,15 +174,26 @@ service cloud.firestore {
                   && request.resource.data.stage.size() <= 40));
       }
 
+      // (P22) الصورة الافتراضية: رقم تصميم ثابت 0..5 يُكتب مرة واحدة عند
+      // إنشاء الحساب، فيرى الطالب صورة شخصية من أول لحظة بدل دائرة فارغة.
+      // الرقم للعرض فقط؛ التطبيق يرسم التصميم محليًا بلا أي تحميل.
+      function validAvatarPreset() {
+        return (!('avatarPreset' in request.resource.data.keys())
+              || (request.resource.data.avatarPreset is int
+                  && request.resource.data.avatarPreset >= 0
+                  && request.resource.data.avatarPreset < 6));
+      }
+
       allow create: if isSelf(uid)
         && request.resource.data.role in ['student', 'teacher']
         && request.resource.data.keys().hasOnly(
              ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt',
-              'phone', 'stage'])
+              'phone', 'stage', 'avatarPreset'])
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
         && request.resource.data.displayName.size() <= 80
-        && validContactFields();
+        && validContactFields()
+        && validAvatarPreset();
 
       // حالة الحساب (P17): تُقرأ كـ`active` عند غياب الحقل، فكل مستند قديم
       // (قبل هذه المرحلة) يبقى نشطًا بلا ترحيل بيانات.
@@ -224,11 +235,13 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role
         && request.resource.data.keys().hasOnly(
              ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt',
-              'status', 'scheduledDeletionAt', 'phone', 'stage'])
+              'status', 'scheduledDeletionAt', 'phone', 'stage',
+              'avatarPreset'])
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
         && request.resource.data.displayName.size() <= 80
         && validContactFields()
+        && validAvatarPreset()
         && validAccountStateChange();
 
       // لا حذف من التطبيق: حذف الحساب إجراء إداري (سياسة الاحتفاظ T-10).
@@ -265,7 +278,50 @@ service cloud.firestore {
         return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
                 'stage', 'area', 'bio', 'priceHint', 'isOnline',
                 'governorate', 'district', 'isFeatured', 'featuredOrder',
-                'reviewNote', 'reviewedAt', 'reviewedBy', 'accountHidden'];
+                'reviewNote', 'reviewedAt', 'reviewedBy', 'accountHidden',
+                'photoPath'];
+      }
+
+      // (P22) مسار الصورة المعتمد لمستخدم معيّن: `avatars/{uid}`.
+      // يمنع كتابة مسار ملف شخص آخر في ملفك (صورة شخص آخر على حسابك).
+      function canonicalPhotoPath(ownerUid) {
+        return 'avatars/' + string(ownerUid);
+      }
+
+      // (P22) الصورة إلزامية **عند الإرسال للمراجعة** لا عند إنشاء المسودة.
+      // - وجود مستند الصورة `avatars/{uid}` مطلوب فعلًا (لا مجرد نص في الملف).
+      // - المسار يجب أن يكون مسار صاحب الملف نفسه.
+      // سبب ربطها بالحالة: الحساب يُنشأ تلقائيًا كمسودة فارغة عند اختيار دور
+      // «مدرس» قبل أن يرفع أي صورة، فاشتراطها على كل كتابة كان سيُفشل تسجيل
+      // الدور نفسه. أما لحظة الإرسال للمراجعة فهي اللحظة التي تُعرض فيها
+      // الصورة للطلاب، ومنها تُفرض.
+      function hasProfilePhoto(ownerUid) {
+        return request.resource.data.get('photoPath', '') == canonicalPhotoPath(ownerUid)
+          && exists(/databases/$(database)/documents/avatars/$(ownerUid));
+      }
+
+      // (P22) سياسة التعديل والمراجعة — تُفرض على الخادم لا في الواجهة:
+      //  1. `pendingReview`: التعديل **مرفوض** (الملف بين يدي الإدارة؛ تعديله
+      //     أثناء المراجعة يعني أن ما وُثّق ليس ما يراه الطالب).
+      //  2. `verified`: التعديل مسموح **بشرط** إعادة الحالة إلى `pendingReview`
+      //     (إعادة تحقّق). لا مسار لتعديل ملف موثّق مع بقائه موثّقًا.
+      //  3. `draft`/`rejected`: تُبقى الحالة كما هي، أو تُرفع إلى `pendingReview`
+      //     عند إعادة الإرسال.
+      function ownerStatusTransitionAllowed() {
+        return resource.data.status != 'pendingReview'
+          && (
+               (resource.data.status == 'verified'
+                 && request.resource.data.status == 'pendingReview')
+            || (resource.data.status in ['draft', 'rejected']
+                 && request.resource.data.status in ['draft', 'rejected',
+                                                     'pendingReview'])
+          );
+      }
+
+      // الصورة مطلوبة كلما صار الملف في دورة المراجعة (منتظرًا أو موثّقًا).
+      function photoSatisfiedFor(status, ownerUid) {
+        return status == 'draft' || status == 'rejected'
+          || hasProfilePhoto(ownerUid);
       }
 
       // حدود الحقول الاختيارية: نص قصير أو غياب، ممنوع أي نوع آخر.
@@ -276,6 +332,17 @@ service cloud.firestore {
               && request.resource.data[field].size() <= maxLength);
       }
 
+      // (P22) المادة والمرحلة: من القائمة المعتمدة **أو** نص مخصّص كتبه المدرس
+      // («العلوم المتكاملة»، «رياض الأطفال»). القاعدة لا تعرف القائمة (ولا
+      // يجوز أن تعرفها: تحديث القائمة كان سيصير نشر قواعد)، فتشترط النوع
+      // والحدّين فقط: نص من حرفين إلى أربعين، بلا نوع آخر.
+      function validAcademicField(field) {
+        return field in request.resource.data.keys()
+          && request.resource.data[field] is string
+          && request.resource.data[field].size() >= 2
+          && request.resource.data[field].size() <= 40;
+      }
+
       function validProfilePayload() {
         return request.resource.data.displayName is string
           && request.resource.data.displayName.size() > 0
@@ -284,7 +351,9 @@ service cloud.firestore {
           && (!('isOnline' in request.resource.data.keys())
               || request.resource.data.isOnline is bool)
           && validOptionalText('governorate', 40)
-          && validOptionalText('district', 60);
+          && validOptionalText('district', 60)
+          && validAcademicField('subject')
+          && validAcademicField('stage');
       }
 
       // عند الإنشاء: لا حقل إداري إطلاقًا — الملف يبدأ بلا تمييز ولا قرار.
@@ -311,11 +380,14 @@ service cloud.firestore {
               || request.resource.data.reviewedBy == resource.data.reviewedBy);
       }
 
-      // الإنشاء: صاحبه فقط، وبداية دورة المراجعة إجبارية.
+      // الإنشاء: صاحبه فقط.
+      // - `draft`: المسودة التلقائية عند اختيار دور «مدرس» (بلا صورة بعد).
+      // - `pendingReview`: إرسال من النموذج ⇒ **الصورة إلزامية**.
       allow create: if isSelf(uid)
-        && request.resource.data.status == 'pendingReview'
         && request.resource.data.ownerId == uid
+        && request.resource.data.status in ['draft', 'pendingReview']
         && validProfilePayload()
+        && photoSatisfiedFor(request.resource.data.status, uid)
         && noAdminFields();
 
       // قائمة حقول المسؤول: الحقول الوصفية **زائد** حقول القرار الأربعة.
@@ -326,7 +398,7 @@ service cloud.firestore {
         return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
                 'stage', 'area', 'bio', 'priceHint', 'isOnline',
                 'governorate', 'district', 'reviewNote',
-                'reviewedAt', 'reviewedBy', 'accountHidden'];
+                'reviewedAt', 'reviewedBy', 'accountHidden', 'photoPath'];
       }
 
       // قرار إداري (P14): توثيق/رفض. لا يغيّر المالك، والحالة من المجموعة
@@ -366,15 +438,26 @@ service cloud.firestore {
       // والمسؤول يصدر قرارًا مقيّدًا أو يُميّز عبر المسار المخصّص.
       // - status و ownerId ثابتان لصاحب الملف (يُضبطان إداريًا أو عند الإنشاء).
       // - rating و reviewsCount غير مذكورة في أي قائمة ⇒ لا يكتبها أحد يدويًا.
+      // استثناء واحد لا يمسّ المحتوى: علم «أخفيت ملفي» الذي يكتبه المسار
+      // الناعم لحذف الحساب (P17). لا يغيّر حقلًا وصفيًا ولا حالة، فلا يعيد
+      // التحقق ولا يفتح بابًا لتعديل المحتوى.
+      function onlyHidingFlagChanged() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                 ['accountHidden'])
+          && request.resource.data.accountHidden is bool;
+      }
+
       allow update: if (isAdminWriter()
           && (validAdminDecision() || validAdminCuration()))
         || (
         isSelf(uid)
-        && request.resource.data.status == resource.data.status
         && request.resource.data.ownerId == resource.data.ownerId
         && validProfilePayload()
         && unchangedAdminFields()
-      );
+        && ownerStatusTransitionAllowed()
+        && photoSatisfiedFor(request.resource.data.status, uid)
+      )
+        || (isSelf(uid) && onlyHidingFlagChanged());
 
       // لا حذف من التطبيق.
       allow delete: if isAdminWriter();
@@ -1572,7 +1655,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── 15) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
+    // ── 15) avatars/{uid} — صور الحساب (P22) ─────────────────────────────────
+    // مستند **مستقل** عن `users/{uid}` و`teacherProfiles/{uid}` عن قصد: الأول
+    // يُقرأ في كل تسجيل دخول، والثاني في كل نتيجة بحث. وضع ~30KB من الصور في
+    // أي منهما يضخّم كل قراءة ويستهلك حصة النطاق بلا داعٍ، بينما الصورة
+    // تُقرأ فقط عند عرضها.
+    //
+    // القيود كلها على الخادم:
+    // - المالك وحده يكتب صورته (لا صورة على حساب شخص آخر).
+    // - النوع من قيمتين فقط (`image/jpeg`/`image/png`) — لا HTML/SVG في حقل
+    //   يُعرض كصورة.
+    // - سقف الحجم `200000` حرف base64 (نفس `AvatarLimits.maxBase64Length`)،
+    //   فمحاولة رفع صورة كاميرا 4MB تُرفض بدل أن تُخزَّن.
+    // - القراءة لكل مسجّل: ملف المدرس العام يعرض صورته لأي طالب مسجّل.
+    match /avatars/{uid} {
+      function validAvatarPayload() {
+        return request.resource.data.keys().hasOnly(
+                 ['ownerId', 'imageBase64', 'mimeType', 'updatedAt'])
+          && request.resource.data.ownerId == uid
+          && request.resource.data.imageBase64 is string
+          && request.resource.data.imageBase64.size() >= 64
+          && request.resource.data.imageBase64.size() <= 200000
+          && request.resource.data.mimeType in ['image/jpeg', 'image/png']
+          && request.resource.data.updatedAt is timestamp;
+      }
+
+      allow read: if signedIn();
+
+      allow create, update: if isSelf(uid) && validAvatarPayload();
+
+      // حذف الصورة = عودة إلى الصورة الافتراضية المرسومة.
+      allow delete: if isSelf(uid);
+    }
+
+    // ── 16) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

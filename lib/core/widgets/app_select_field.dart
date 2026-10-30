@@ -21,6 +21,8 @@ class AppSelectField extends StatelessWidget {
     this.helperText,
     this.enabled = true,
     this.isRequired = false,
+    this.extraOptions = const <String>[],
+    this.optionLabel,
   });
 
   final String label;
@@ -40,10 +42,24 @@ class AppSelectField extends StatelessWidget {
   final bool enabled;
   final bool isRequired;
 
+  /// خيارات إضافية غير معتمدة لكنها **قابلة للاختيار** (P22).
+  ///
+  /// تُستخدم لخيار «أخرى (كتابة يدوية / تخصيص)» الذي يفتح حقل نص. وهي مختلفة
+  /// عن [legacyValue]: تلك قيمة محفوظة سابقًا للعرض فقط، وهذه خيار يختاره
+  /// المستخدم الآن.
+  final List<String> extraOptions;
+
+  /// نص بديل لعرض خيار (مثل `__custom__` ← «أخرى…»).
+  ///
+  /// القيمة المحفوظة تبقى كما هي؛ التغيير في العرض وحده.
+  final String Function(String value)? optionLabel;
+
   /// القيمة الحالية إن كانت غير موجودة في [options] (بيانات قديمة).
   String? get legacyValue {
     final String? current = _clean(value);
-    if (current == null || options.contains(current)) {
+    if (current == null ||
+        options.contains(current) ||
+        extraOptions.contains(current)) {
       return null;
     }
     return current;
@@ -67,7 +83,15 @@ class AppSelectField extends StatelessWidget {
           child: Text('$legacy (قيمة محفوظة سابقًا)'),
         ),
       for (final String option in options)
-        DropdownMenuItem<String>(value: option, child: Text(option)),
+        DropdownMenuItem<String>(
+          value: option,
+          child: Text(optionLabel?.call(option) ?? option),
+        ),
+      for (final String option in extraOptions)
+        DropdownMenuItem<String>(
+          value: option,
+          child: Text(optionLabel?.call(option) ?? option),
+        ),
       if (!isRequired)
         const DropdownMenuItem<String>(
           value: '',

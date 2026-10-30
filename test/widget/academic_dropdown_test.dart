@@ -12,6 +12,7 @@ import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/teacher/presentation/edit_teacher_profile_screen.dart';
 
+import '../helpers/avatar_helpers.dart';
 import '../helpers/test_app.dart';
 
 /// (P19) القوائم المنسدلة: المادة والمرحلة والمحافظة.
@@ -31,18 +32,6 @@ Widget _host(Widget child, AppServices services, SessionController session) {
       ),
     ),
   );
-}
-
-/// يبني النموذج في هاتف حقيقي المقاس ويحفظ الزر بمعالجه.
-///
-/// سبب استدعاء `onPressed` مباشرة: زر الحفظ أسفل الطيّة، و`tester.tap` يصيب
-/// مركز الودجت حتى لو كان خارج الشاشة فيضيع بلا فشل (خطأ تكرّر في P19).
-Future<void> _pressSave(WidgetTester tester) async {
-  final FilledButton save = tester.widget<FilledButton>(
-    find.byKey(const Key('profile-save')),
-  );
-  save.onPressed!();
-  await tester.pumpAndSettle();
 }
 
 /// يختار قيمة من قائمة منسدلة عبر **معالجها** لا عبر نقرة على عنصر القائمة.
@@ -189,6 +178,8 @@ void main() {
     ) async {
       usePhoneSurface(tester);
       final AppServices services = AppServices.demo();
+      // (P22) الملف التجريبي موثّق ويحتاج صورة قبل الحفظ.
+      await seedAvatar(services, 'demo-teacher-1');
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);
 
@@ -217,7 +208,7 @@ void main() {
       await _pick(tester, const Key('profile-stage'), 'الجامعة');
       await _pick(tester, const Key('profile-governorate'), 'الفيوم');
 
-      await _pressSave(tester);
+      await pressProfileSave(tester);
 
       final TeacherProfile? saved = await services.teachers.findMine(
         'demo-teacher-1',
@@ -233,6 +224,7 @@ void main() {
     ) async {
       usePhoneSurface(tester);
       final AppServices services = AppServices.demo();
+      await seedAvatar(services, 'demo-teacher-1');
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);
 
@@ -242,7 +234,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _pick(tester, const Key('profile-subject'), 'الكيمياء');
-      await _pressSave(tester);
+      await pressProfileSave(tester);
 
       final TeacherProfile? saved = await services.teachers.findMine(
         'demo-teacher-1',

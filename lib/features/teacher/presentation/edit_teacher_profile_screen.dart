@@ -10,23 +10,26 @@ import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/constants/academic_options.dart';
+import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/features/profile/presentation/widgets/account_avatar_editor.dart';
 
-/// نموذج ملف المدرس — **إنشاء أو تعديل، ويحفظ فعلًا** (P18).
+/// نموذج ملف المدرس — إنشاء أو تعديل، **ويحفظ فعلًا** (P18، وسياسة P22).
 ///
-/// ## ما تغيّر
+/// ## سياسة التعديل (P22)
 ///
-/// كان النموذج عرضًا فقط: يتحقق من المدخلات ثم يقول «لم يُحفظ شيء». الآن:
-/// - يقرأ **ملف صاحب الجلسة** (`findMine(uid)`)، لا ملفًا تجريبيًا ثابتًا.
-/// - إن لم يوجد ملف ⇒ يُنشئه بحالة `pendingReview` (نفس ما تفرضه القاعدة).
-/// - إن وُجد ⇒ يُحدّث الحقول الوصفية فقط (merge)، والحالة والحقول الإدارية
-///   تبقى كما هي.
-/// - يعيد `true` عند النجاح حتى تُعيد الشاشة السابقة القراءة.
+/// | الحالة | ما يستطيع المدرس فعله |
+/// |---|---|
+/// | لا ملف | إنشاء ملف + صورة، فيُرسل للمراجعة |
+/// | `draft` / `rejected` | تعديل وإعادة إرسال للمراجعة |
+/// | `pendingReview` | **لا شيء** — الحقول مقفلة بانتظار قرار الإدارة |
+/// | `verified` | تعديل، لكن بعد تأكيد صريح: التعديل يعيد الملف للمراجعة |
 ///
-/// الحدود مطابقة لـ`firestore.rules`: الطول الأقصى للاسم 80، والنبذة 300،
-/// والمحافظة 40، والحي 60 — فالرفض يحدث هنا أولًا برسالة عربية مفهومة.
+/// القفل هنا **للوضوح** لا للأمان: القاعدة على الخادم ترفض أي تعديل على ملف
+/// منتظر المراجعة (`ownerStatusTransitionAllowed`)، فحتى لو فُتح المسار
+/// يدويًا لن تُقبل الكتابة.
 class EditTeacherProfileScreen extends StatefulWidget {
   const EditTeacherProfileScreen({super.key});
 
@@ -63,17 +66,14 @@ class _EditTeacherProfileScreenState extends State<EditTeacherProfileScreen> {
                     child: AsyncView<TeacherProfile?>(
                       // المفتاح يجعل إعادة الفتح تُعيد القراءة بعد أي حفظ.
                       key: ValueKey<String>(teacherId),
-                      load: () => AppServicesScope.of(
-                        context,
-                      ).teachers.findMine(teacherId),
+                      load: () =>
+                          AppServicesScope.of(context).teachers.findMine(teacherId),
                       builder:
                           (BuildContext context, TeacherProfile? profile) {
                             // لا ملف ⇒ نموذج إنشاء بقيم مبدئية من الحساب.
                             return _ProfileForm(
                               teacherId: teacherId,
-                              initial: profile == null
-                                  ? null
-                                  : TeacherProfileDraft.fromProfile(profile),
+                              profile: profile,
                               initialName:
                                   SessionScope.read(
                                     context,
@@ -93,14 +93,14 @@ class _EditTeacherProfileScreenState extends State<EditTeacherProfileScreen> {
 class _ProfileForm extends StatefulWidget {
   const _ProfileForm({
     required this.teacherId,
-    required this.initial,
+    required this.profile,
     required this.initialName,
   });
 
   final String teacherId;
 
   /// `null` = إنشاء ملف جديد.
-  final TeacherProfileDraft? initial;
+  final TeacherProfile? profile;
 
   final String initialName;
 
@@ -116,34 +116,69 @@ class _ProfileFormState extends State<_ProfileForm> {
   late final TextEditingController _price;
   late final TextEditingController _district;
 
-  /// (P19) المادة والمرحلة والمحافظة صارت **اختيارًا من قائمة معتمدة** لا
-  /// نصًا حرًا: قيمة واحدة لكل مفهوم، فلا تتفرّق نتائج البحث بين «رياضيات»
-  /// و«الرياضيات». تُحفظ كما تُختار، والقيمة القديمة غير المعتمدة تبقى
-  /// معروضةً وقابلةً للحفظ حتى يعيد المدرس اختيارها بنفسه.
+  /// (P19) المادة والمرحلة والمحافظة صارت **اختيارًا من قائمة معتمدة**؛
+  /// و(P22) أُضيف خيار «أخرى» الذي يفتح حقل نص حرّ للقيم غير المدرجة
+  /// (مثل «العلوم المتكاملة» أو «رياض الأطفال»).
   String? _subject;
   String? _stage;
   String? _governorate;
-  late bool _isOnline;
 
+  /// (P22) هل المادة/المرحلة مكتوبة يدويًا الآن؟
+  bool _subjectCustom = false;
+  bool _stageCustom = false;
+
+  late final TextEditingController _subjectText;
+  late final TextEditingController _stageText;
+
+  late bool _isOnline;
   bool _saving = false;
+
+  /// (P22) هل توجد صورة شخصية للملف؟ يأتي من الصورة المرفوعة/المحمّلة.
+  bool _hasPhoto = false;
+
+  /// هل الملف مقفل بانتظار قرار الإدارة؟
+  bool get _locked =>
+      widget.profile?.status == TeacherProfileStatus.pendingReview;
+
+  /// هل هذا تعديل على ملف **موثّق** (يحتاج تأكيدًا قبل الحفظ)؟
+  bool get _isVerified =>
+      widget.profile?.status == TeacherProfileStatus.verified;
 
   @override
   void initState() {
     super.initState();
-    final TeacherProfileDraft? initial = widget.initial;
+    final TeacherProfileDraft? initial = widget.profile == null
+        ? null
+        : TeacherProfileDraft.fromProfile(widget.profile!);
+
     _name = TextEditingController(
       text: initial?.displayName ?? widget.initialName,
     );
-    _area = TextEditingController(text: initial?.area ?? '');
+    _area = TextEditingController(text: _meaningful(initial?.area) ?? '');
     _bio = TextEditingController(text: initial?.bio ?? '');
     _price = TextEditingController(text: initial?.priceHint ?? '');
     _district = TextEditingController(text: initial?.district ?? '');
     _isOnline = initial?.isOnline ?? false;
+    _hasPhoto = widget.profile?.hasPhoto ?? false;
 
-    // القيم المحفوظة تُحمَّل كما هي حتى لو لم تعد في القائمة المعتمدة.
-    _subject = _blankToNull(initial?.subject);
-    _stage = _blankToNull(initial?.stage);
+    // القيم المحفوظة تُحمَّل كما هي؛ غير المعروفة تفتح وضع الكتابة اليدوية
+    // ومعها نصّها، فلا يرى المدرس قيمة لا يعرف مصدرها ولا يفقدها بالحفظ.
+    final String? savedSubject = _meaningful(initial?.subject);
+    final String? savedStage = _meaningful(initial?.stage);
     _governorate = _blankToNull(initial?.governorate);
+
+    _subjectCustom = AcademicOptions.isCustomSubject(savedSubject);
+    _stageCustom = AcademicOptions.isCustomStage(savedStage);
+
+    _subject = _subjectCustom ? null : savedSubject;
+    _stage = _stageCustom ? null : savedStage;
+
+    _subjectText = TextEditingController(
+      text: _subjectCustom ? savedSubject ?? '' : '',
+    );
+    _stageText = TextEditingController(
+      text: _stageCustom ? savedStage ?? '' : '',
+    );
   }
 
   @override
@@ -153,6 +188,8 @@ class _ProfileFormState extends State<_ProfileForm> {
     _bio.dispose();
     _price.dispose();
     _district.dispose();
+    _subjectText.dispose();
+    _stageText.dispose();
     super.dispose();
   }
 
@@ -161,11 +198,33 @@ class _ProfileFormState extends State<_ProfileForm> {
     return text.isEmpty ? null : text;
   }
 
+  /// قيمة يحملها المُحوِّل (`firestore_mappers`) عند **غياب** الحقل — مثل
+  /// مسودة أُنشئت تلقائيًا عند اختيار دور «مدرس» قبل تعبئة أي شيء.
+  ///
+  /// تُعامل كفراغ: كتابة «غير محدد» داخل حقل المادة كانت ستعني مادة اسمها
+  /// «غير محدد» تُحفظ للمراجعة.
+  static const String _unsetPlaceholder = 'غير محدد';
+
+  static String? _meaningful(String? raw) {
+    final String? value = _blankToNull(raw);
+    return value == _unsetPlaceholder ? null : value;
+  }
+
+  /// القيمة التي ستُحفظ فعلًا (نص حرّ في وضع الكتابة اليدوية).
+  String get _subjectValue =>
+      (_subjectCustom ? _subjectText.text : _subject ?? '').trim();
+
+  String get _stageValue =>
+      (_stageCustom ? _stageText.text : _stage ?? '').trim();
+
   Future<void> _save() async {
-    if (_saving) {
+    if (_saving || _locked) {
       return;
     }
-    if (!(_formKey.currentState?.validate() ?? false)) {
+
+    final bool valid = _formKey.currentState?.validate() ?? false;
+
+    if (!valid) {
       AppSnackBar.show(
         context,
         'راجع الحقول المطلوبة قبل الحفظ.',
@@ -174,16 +233,37 @@ class _ProfileFormState extends State<_ProfileForm> {
       return;
     }
 
+    // (P22) الصورة إلزامية: لا إرسال ملف بلا صورة. الفحص هنا **أيضًا** لأن
+    // خطأ الحقول لا يُظهر رسالة للصورة (ليست حقل نموذج)، والمستخدم يحتاج
+    // معرفة السبب.
+    if (!_hasPhoto) {
+      AppSnackBar.show(
+        context,
+        'أضف صورة شخصية واضحة قبل الحفظ — بدونها لا يُرسل ملفك للمراجعة.',
+        type: AppMessageType.warning,
+      );
+      return;
+    }
+
+    // (P22) تعديل ملف موثّق = إعادة تحقق: تنبيه صريح **قبل** الحفظ.
+    if (_isVerified) {
+      final bool confirmed = await _confirmReverification();
+      if (!confirmed || !mounted) {
+        return;
+      }
+    }
+
     final TeacherProfileDraft draft = TeacherProfileDraft(
       displayName: _name.text,
-      subject: _subject ?? '',
-      stage: _stage ?? '',
+      subject: _subjectValue,
+      stage: _stageValue,
       area: _area.text,
       bio: _bio.text,
       isOnline: _isOnline,
       priceHint: _price.text,
       governorate: _isOnline ? null : _governorate,
       district: _isOnline ? null : _district.text,
+      photoPath: TeacherProfile.photoPathFor(widget.teacherId),
     );
 
     setState(() => _saving = true);
@@ -196,13 +276,16 @@ class _ProfileFormState extends State<_ProfileForm> {
       }
 
       final bool isDemo = SessionScope.read(context).isDemoSession;
+      final bool isNew = widget.profile == null;
       AppSnackBar.show(
         context,
         isDemo
             ? 'حُفظ الملف لهذه الجولة فقط — أنشئ حسابًا ليظهر للطلاب.'
-            : widget.initial == null
+            : isNew
             ? 'أُنشئ ملفك وأُرسل للمراجعة. سيظهر للطلاب بعد التوثيق.'
-            : 'حُفظت التعديلات. تبقى حالة التوثيق كما هي.',
+            : _isVerified
+            ? 'حُفظت التعديلات، وأُعيد ملفك إلى المراجعة للتحقق من التغييرات.'
+            : 'حُفظت التعديلات وأُرسلت للمراجعة.',
         type: AppMessageType.success,
       );
       Navigator.of(context).pop(true);
@@ -229,6 +312,40 @@ class _ProfileFormState extends State<_ProfileForm> {
         setState(() => _saving = false);
       }
     }
+  }
+
+  /// تأكيد إعادة التحقق قبل تعديل ملف موثّق.
+  ///
+  /// الحوار يشرح **الأثر** لا مجرد السؤال: الملف يختفي من نتائج البحث حتى
+  /// تُراجعه الإدارة، لأن الظهور مشروط بحالة `verified`.
+  Future<bool> _confirmReverification() async {
+    final bool? result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          key: const Key('profile-reverify-dialog'),
+          title: const Text('تعديل ملف موثّق'),
+          content: const Text(
+            'ملفك موثّق ويظهر للطلاب الآن. أي تعديل يعيده إلى قائمة المراجعة، '
+            'ولن يظهر للطلاب حتى تعتمده الإدارة من جديد.\n\n'
+            'هل تريد المتابعة؟',
+          ),
+          actions: <Widget>[
+            TextButton(
+              key: const Key('profile-reverify-cancel'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              key: const Key('profile-reverify-confirm'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('متابعة التعديل'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
   }
 
   /// حقل مكان اختياري: الفراغ مسموح، وأي نص يجب أن يقع بين حرفين والحدّ.
@@ -262,25 +379,77 @@ class _ProfileFormState extends State<_ProfileForm> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isNew = widget.initial == null;
+    final bool isNew = widget.profile == null;
+    final AppUser? user = SessionScope.of(context).user;
 
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (isNew) ...<Widget>[
+          if (_locked) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            // (P22) إشعار صريح: لا «أزرار معطّلة بلا سبب».
+            InfoNote(
+              key: const Key('profile-locked-notice'),
+              icon: Icons.lock_clock_outlined,
+              text:
+                  'ملفك قيد المراجعة من الإدارة، والتعديل مُعطَّل حتى يصل '
+                  'القرار. لا تحتاج إلى أي خطوة الآن — سنُعلمك عند التوثيق. '
+                  'إن كان لديك تصحيح عاجل، راسل الدعم.',
+            ),
+          ] else if (isNew) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             const InfoNote(
               text:
-                  'لا يوجد ملف تعريفي بعد. املأ الحقول التالية ليُنشأ ملفك '
-                  'بحالة «قيد المراجعة»، ويظهر للطلاب بعد توثيق الإدارة.',
+                  'لا يوجد ملف تعريفي بعد. املأ الحقول التالية وأضف صورة '
+                  'شخصية ليُنشأ ملفك ويُرسل للمراجعة، ويظهر للطلاب بعد '
+                  'توثيق الإدارة.',
+            ),
+          ] else if (widget.profile?.status == TeacherProfileStatus.rejected) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            InfoNote(
+              icon: Icons.report_outlined,
+              text:
+                  'ملفك يحتاج تعديلًا'
+                  '${_reviewNoteSuffix()}. عدّل ما طُلب منك ثم احفظ ليُرسل '
+                  'للمراجعة من جديد.',
+            ),
+          ] else if (_isVerified) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            const InfoNote(
+              key: Key('profile-reverify-notice'),
+              icon: Icons.verified_outlined,
+              text:
+                  'ملفك موثّق ويظهر للطلاب. أي تعديل هنا يعيده إلى المراجعة، '
+                  'ولن يظهر للطلاب حتى تعتمده الإدارة مرة أخرى.',
             ),
           ],
           const SizedBox(height: AppSpacing.md),
+
+          // (P22) الصورة أولًا: أهم ما يبني الثقة، وشرط الإرسال.
+          AccountAvatarEditor(
+            key: const Key('profile-avatar'),
+            userId: widget.teacherId,
+            initialPreset: user?.resolvedAvatarPreset ?? 0,
+            initials: user?.initials,
+            enabled: !_locked,
+            helperText: _locked
+                ? 'مقفلة أثناء المراجعة'
+                : 'صورة واضحة للوجه مطلوبة قبل حفظ الملف',
+            onChanged: (AvatarSelection selection) {
+              if (selection.hasCustomPhoto == _hasPhoto) {
+                return;
+              }
+              setState(() => _hasPhoto = selection.hasCustomPhoto);
+            },
+          ),
+          const SizedBox(height: AppSpacing.md),
+
           TextFormField(
             key: const Key('profile-name'),
             controller: _name,
+            enabled: !_locked,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'الاسم الظاهر',
@@ -302,31 +471,102 @@ class _ProfileFormState extends State<_ProfileForm> {
             },
           ),
           const SizedBox(height: AppSpacing.sm),
-          // (P19) قائمة منسدلة بدل نص حر: قيمة واحدة لكل مادة.
+
+          // (P19) قائمة منسدلة بدل نص حر + (P22) خيار «أخرى» للكتابة اليدوية.
           AppSelectField(
             key: const Key('profile-subject'),
             label: 'المادة',
-            value: _subject,
+            value: _subjectCustom
+                ? AcademicOptions.customOption
+                : _subject,
+            enabled: !_locked,
             options: AcademicOptions.subjects,
+            extraOptions: const <String>[AcademicOptions.customOption],
+            optionLabel: _optionLabel,
             isRequired: true,
-            helperText: 'من قائمة معتمدة حتى تتوافق نتائج البحث',
-            onChanged: (String? next) => setState(() => _subject = next),
-            validator: (String? value) => _required(value, 'المادة'),
+            helperText: 'اختر من القائمة، أو «أخرى» لكتابة مادتك بنفسك',
+            onChanged: (String? next) {
+              setState(() {
+                if (next == AcademicOptions.customOption) {
+                  _subjectCustom = true;
+                  _subject = null;
+                } else {
+                  _subjectCustom = false;
+                  _subject = next;
+                }
+              });
+            },
+            validator: (String? value) =>
+                _subjectCustom ? null : _required(value, 'المادة'),
           ),
+          if (_subjectCustom) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            TextFormField(
+              key: const Key('profile-subject-custom'),
+              controller: _subjectText,
+              enabled: !_locked,
+              textInputAction: TextInputAction.next,
+              maxLength: AcademicOptions.maxCustomLength,
+              decoration: const InputDecoration(
+                labelText: 'اسم المادة',
+                helperText: 'مثال: العلوم المتكاملة',
+                counterText: '',
+              ),
+              validator: (String? value) =>
+                  AcademicOptions.customTextProblem(value, 'اسم المادة'),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
+
           AppSelectField(
             key: const Key('profile-stage'),
             label: 'المرحلة الدراسية',
-            value: _stage,
+            value: _stageCustom
+                ? AcademicOptions.customOption
+                : _stage,
+            enabled: !_locked,
             options: AcademicOptions.stages,
+            extraOptions: const <String>[AcademicOptions.customOption],
+            optionLabel: _optionLabel,
             isRequired: true,
-            onChanged: (String? next) => setState(() => _stage = next),
-            validator: (String? value) => _required(value, 'المرحلة'),
+            helperText: 'اختر من القائمة، أو «أخرى» لتكتب المرحلة بنفسك',
+            onChanged: (String? next) {
+              setState(() {
+                if (next == AcademicOptions.customOption) {
+                  _stageCustom = true;
+                  _stage = null;
+                } else {
+                  _stageCustom = false;
+                  _stage = next;
+                }
+              });
+            },
+            validator: (String? value) =>
+                _stageCustom ? null : _required(value, 'المرحلة'),
           ),
+          if (_stageCustom) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            TextFormField(
+              key: const Key('profile-stage-custom'),
+              controller: _stageText,
+              enabled: !_locked,
+              textInputAction: TextInputAction.next,
+              maxLength: AcademicOptions.maxCustomLength,
+              decoration: const InputDecoration(
+                labelText: 'اسم المرحلة',
+                helperText: 'مثال: رياض الأطفال',
+                counterText: '',
+              ),
+              validator: (String? value) =>
+                  AcademicOptions.customTextProblem(value, 'اسم المرحلة'),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm),
+
           TextFormField(
             key: const Key('profile-area'),
             controller: _area,
+            enabled: !_locked,
             textInputAction: TextInputAction.next,
             decoration: const InputDecoration(
               labelText: 'المنطقة',
@@ -335,11 +575,15 @@ class _ProfileFormState extends State<_ProfileForm> {
             validator: (String? value) => _required(value, 'المنطقة'),
           ),
           const SizedBox(height: AppSpacing.md),
+
           // (P15) طريقة التقديم: علم واحد مستقلّ عن المحافظة — من يعلّم «عن
           // بُعد» يظهر لكل المحافظات في فلتر «عن بُعد»، ويُستبعد من «حضوري».
           SwitchListTile(
+            key: const Key('profile-online'),
             value: _isOnline,
-            onChanged: (bool value) => setState(() => _isOnline = value),
+            onChanged: _locked
+                ? null
+                : (bool value) => setState(() => _isOnline = value),
             contentPadding: EdgeInsets.zero,
             title: const Text('أدرّس عن بُعد'),
             subtitle: Text(
@@ -362,6 +606,7 @@ class _ProfileFormState extends State<_ProfileForm> {
               key: const Key('profile-governorate'),
               label: 'المحافظة (اختياري)',
               value: _governorate,
+              enabled: !_locked,
               options: AcademicOptions.governorates,
               helperText: 'فلتر البحث الأساسي للطلاب',
               onChanged: (String? next) =>
@@ -373,6 +618,7 @@ class _ProfileFormState extends State<_ProfileForm> {
             TextFormField(
               key: const Key('profile-district'),
               controller: _district,
+              enabled: !_locked,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
                 labelText: 'الحي / المركز (اختياري)',
@@ -382,9 +628,11 @@ class _ProfileFormState extends State<_ProfileForm> {
             ),
           ],
           const SizedBox(height: AppSpacing.sm),
+
           TextFormField(
             key: const Key('profile-bio'),
             controller: _bio,
+            enabled: !_locked,
             maxLines: 4,
             decoration: const InputDecoration(
               labelText: 'نبذة',
@@ -403,9 +651,11 @@ class _ProfileFormState extends State<_ProfileForm> {
             },
           ),
           const SizedBox(height: AppSpacing.sm),
+
           TextFormField(
             key: const Key('profile-price'),
             controller: _price,
+            enabled: !_locked,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
               labelText: 'سعر استرشادي (اختياري)',
@@ -413,27 +663,47 @@ class _ProfileFormState extends State<_ProfileForm> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          FilledButton(
-            key: const Key('profile-save'),
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(isNew ? 'إنشاء الملف' : 'حفظ'),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          const InfoNote(
-            text:
-                'يُحفظ الملف في `teacherProfiles` ويبقى «قيد المراجعة» حتى '
-                'توثّقه الإدارة. التمييز في الصفحة الرئيسية قرار إداري لا '
-                'يُضبط من هنا.',
-          ),
+
+          if (!_locked) ...<Widget>[
+            FilledButton(
+              key: const Key('profile-save'),
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      isNew
+                          ? 'إنشاء الملف وإرساله للمراجعة'
+                          : _isVerified
+                          ? 'حفظ (يعيد الملف للمراجعة)'
+                          : 'حفظ وإرسال للمراجعة',
+                    ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            const InfoNote(
+              text:
+                  'يُرسل ملفك للمراجعة بعد الحفظ، ويبقى غير ظاهر للطلاب حتى '
+                  'توثّقه الإدارة. التمييز في الصفحة الرئيسية قرار إداري لا '
+                  'يُضبط من هنا.',
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
         ],
       ),
     );
   }
+
+  /// « — ملاحظة المراجع: …» عند وجود سبب رفض، وإلا نصرة.
+  String _reviewNoteSuffix() {
+    final String? note = _blankToNull(widget.profile?.reviewNote);
+    return note == null ? '' : ' — ملاحظة المراجع: $note';
+  }
+
+  static String _optionLabel(String value) =>
+      value == AcademicOptions.customOption
+      ? AcademicOptions.customOptionLabel
+      : value;
 }

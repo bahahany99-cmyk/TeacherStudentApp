@@ -80,4 +80,5 @@ abstract interface class AuthService {
     required UserRole role,
     String? email,
   });
+
 }

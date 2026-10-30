@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
@@ -18,6 +20,8 @@ import 'package:teacher_student_app/data/models/group_session.dart';
 import 'package:teacher_student_app/data/models/group_waitlist_entry.dart';
 import 'package:teacher_student_app/data/models/member_move.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/models/user_avatar.dart';
+import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
@@ -117,6 +121,67 @@ class DemoAuthService implements AuthService {
     required UserRole role,
     String? email,
   }) => throw _notConnected;
+
+}
+
+/// صور الحساب في الوضع التجريبي (P22): ذاكرة فقط.
+///
+/// الهدف أن تكون **نفس** تجربة الرفع متاحة في الجولة بلا خادم (اختيار صورة،
+/// معاينتها، العودة إلى الافتراضية)، مع تصريح واضح في الواجهة بأنها لا تبقى
+/// بعد إغلاق التطبيق.
+class DemoAvatarRepository implements AvatarRepository {
+  final Map<String, UserAvatar> _images = <String, UserAvatar>{};
+
+  @override
+  Future<UserAvatar?> getFor(String uid) async => _images[uid];
+
+  @override
+  Future<UserAvatar> upload({
+    required String uid,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    if (!AvatarLimits.mimeTypes.contains(mimeType)) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideTitle: 'صيغة غير مدعومة',
+        overrideMessage: 'اختر صورة بصيغة JPG أو PNG.',
+        debugMessage: 'unsupported avatar mime type (demo)',
+      );
+    }
+    final String encoded = base64Encode(bytes);
+    if (encoded.length > AvatarLimits.maxBase64Length) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        overrideTitle: 'الصورة كبيرة',
+        overrideMessage:
+            'حجم الصورة أكبر من المسموح. جرّب صورة أصغر أو أعد التقاطها.',
+        debugMessage: 'avatar payload too large (demo)',
+      );
+    }
+    final UserAvatar avatar = UserAvatar(
+      ownerId: uid,
+      imageBase64: encoded,
+      mimeType: mimeType,
+      updatedAt: DateTime.now(),
+    );
+    _images[uid] = avatar;
+    return avatar;
+  }
+
+  @override
+  Future<void> remove(String uid) async {
+    _images.remove(uid);
+  }
+
+  /// لا شيء ليُثبَّت: الصورة الافتراضية في الوضع التجريبي تُشتق من المعرّف.
+  @override
+  Future<void> ensureDefault(String uid) async {}
+
+  /// الاختيار يُحفظ في الجلسة المحلية (`SessionController`)، فالمستودع هنا
+  /// لا يملك مستندًا يُحدّثه.
+  @override
+  Future<void> setPreset({required String uid, required int preset}) async {}
 }
 
 class DemoTeacherRepository implements TeacherRepository {
@@ -175,6 +240,18 @@ class DemoTeacherRepository implements TeacherRepository {
     required String uid,
     required TeacherProfileDraft draft,
   }) async {
+    // (P22) نفس شرط الخادم: لا ملف مدرس بلا صورة.
+    if (!draft.hasPhoto) {
+      throw const AppException(
+        AppErrorKind.invalidInput,
+        debugMessage: 'teacher profile saved without a photo (demo)',
+        overrideTitle: 'الصورة مطلوبة',
+        overrideMessage:
+            'أضف صورة شخصية واضحة قبل حفظ ملفك — بدونها لا يُرسل الملف '
+            'للمراجعة.',
+      );
+    }
+
     final int index = _source.indexWhere((TeacherProfile t) => t.id == uid);
 
     if (index < 0) {
@@ -192,6 +269,7 @@ class DemoTeacherRepository implements TeacherRepository {
         priceHint: draft.priceHint,
         governorate: draft.governorate,
         district: draft.district,
+        photoPath: draft.photoPath,
       );
       _source.add(created);
       return created;
@@ -208,8 +286,9 @@ class DemoTeacherRepository implements TeacherRepository {
       stage: draft.stage.trim(),
       area: draft.area.trim(),
       bio: draft.bio.trim(),
-      // كل ما يملكه الخادم/الإدارة يبقى كما هو حرفيًا.
-      status: current.status,
+      // كل ما يملكه الخادم/الإدارة يبقى كما هو حرفيًا، **إلا** إعادة التحقق:
+      // تعديل ملف موثّق يعيده إلى المراجعة، كما في `saveMyProfile` الحقيقي.
+      status: TeacherProfileStatus.pendingReview,
       isFeatured: current.isFeatured,
       featuredOrder: current.featuredOrder,
       isOnline: draft.isOnline,
@@ -219,6 +298,7 @@ class DemoTeacherRepository implements TeacherRepository {
       rating: current.rating,
       reviewsCount: current.reviewsCount,
       priceHint: draft.priceHint,
+      photoPath: draft.photoPath,
       reviewNote: current.reviewNote,
     );
     _source[index] = updated;

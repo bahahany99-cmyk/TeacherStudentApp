@@ -7,6 +7,7 @@ import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 
 /// حالة الجلسة.
@@ -38,9 +39,16 @@ enum SessionStatus {
 ///   ومعلَّمة بـ `isDemoAccount`، وتُعطَّل تلقائيًا حين تعمل المصادقة الحقيقية
 ///   (انظر `AppConfig.isDemoMode`).
 class SessionController extends ChangeNotifier {
-  SessionController(this._auth);
+  SessionController(this._auth, {AvatarRepository? avatars})
+    : _avatars = avatars ?? const EmptyAvatarRepository();
 
   final AuthService _auth;
+
+  /// صور الحساب (P22) — لاختيار الصورة الافتراضية.
+  ///
+  /// الفارغ الافتراضي يجعل الاختبارات القديمة (التي لا تعرف الصور) تعمل كما
+  /// هي: لا صورة مخصّصة، والصورة الحتمية من المعرّف.
+  final AvatarRepository _avatars;
 
   SessionStatus _status = SessionStatus.unknown;
   AppUser? _user;
@@ -171,6 +179,21 @@ class SessionController extends ChangeNotifier {
       stage: (stage ?? '').trim().isEmpty ? null : stage!.trim(),
     );
     notifyListeners();
+  }
+
+  /// اختيار الصورة الافتراضية (P22) وحفظها في `users/{uid}`.
+  ///
+  /// التحديث **محلي أولًا** حتى تتغيّر الصورة في الواجهة فورًا، ثم يُكتب على
+  /// الخادم. الوضع التجريبي لا يملك مستندًا فتبقى الكتابة محلية بلا خطأ
+  /// (`DemoAvatarRepository` لا تفعل شيئًا).
+  Future<void> updateAvatarPreset(int preset) async {
+    final AppUser? current = _user;
+    if (current == null) {
+      throw StateError('لا توجد جلسة نشطة.');
+    }
+    _user = current.withAvatarPreset(preset);
+    notifyListeners();
+    await _avatars.setPreset(uid: current.id, preset: preset);
   }
 
   /// بدء جلسة معاينة محلية بدور محدد (طالب/مدرس/إدارة).

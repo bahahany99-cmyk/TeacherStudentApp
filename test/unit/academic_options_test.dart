@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/data/constants/academic_options.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/teacher_profile_draft.dart';
 
 /// (P19) القوائم الأكاديمية المعتمدة.
 ///
@@ -111,6 +112,65 @@ void main() {
 
     test('«بياناتي» تقرأ المراحل من نفس المصدر لا من نسخة ثانية', () {
       expect(AcademicOptions.stageSuggestions, same(AcademicOptions.stages));
+    });
+  });
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // (P22) القيم المخصّصة: «أخرى» + كتابة يدوية
+  group('(P22) المادة والمرحلة المخصّصتان', () {
+    test('خيار «أخرى» قيمة حارسة لا تُحفظ كقيمة معتمدة', () {
+      expect(AcademicOptions.customOption, '__custom__');
+      expect(AcademicOptions.customOptionLabel, contains('أخرى'));
+      // ليست مادة ولا مرحلة: لو حُفظت لظهرت في البحث بلا معنى.
+      expect(AcademicOptions.isKnownSubject(AcademicOptions.customOption), isFalse);
+      expect(AcademicOptions.isKnownStage(AcademicOptions.customOption), isFalse);
+    });
+
+    test('نص مخصّص صالح يُقبل: «العلوم المتكاملة» و«رياض الأطفال»', () {
+      expect(AcademicOptions.customTextProblem('العلوم المتكاملة', 'المادة'), isNull);
+      expect(AcademicOptions.customTextProblem('رياض الأطفال', 'المرحلة'), isNull);
+      // وحدود الطول مطابقة لـ`validAcademicField` في القواعد: 2..40.
+      expect(AcademicOptions.customTextProblem('رك', 'المادة'), isNull);
+      expect(AcademicOptions.customTextProblem('ر'.padRight(39, 'ك'), 'المادة'), isNull);
+    });
+
+    test('الفراغ والحرف الواحد والزائد عن 40 مرفوضة برسالة عربية', () {
+      expect(AcademicOptions.customTextProblem('   ', 'المادة'), 'المادة مطلوب');
+      expect(AcademicOptions.customTextProblem('ر', 'المادة'), contains('قصير'));
+      expect(
+        AcademicOptions.customTextProblem('ر'.padRight(41, 'س'), 'المرحلة'),
+        contains('طويل'),
+      );
+      expect(AcademicOptions.customTextProblem(null, 'المرحلة'), isNotNull);
+    });
+
+    test('isCustomSubject/isCustomStage يميّزان المحفوظ غير المعتمد', () {
+      expect(AcademicOptions.isCustomSubject('الرياضيات'), isFalse);
+      expect(AcademicOptions.isCustomSubject('العلوم المتكاملة'), isTrue);
+      expect(AcademicOptions.isCustomSubject(null), isFalse);
+      expect(AcademicOptions.isCustomSubject('  '), isFalse);
+      expect(AcademicOptions.isCustomStage('الجامعة'), isFalse);
+      expect(AcademicOptions.isCustomStage('رياض الأطفال'), isTrue);
+    });
+
+    test('القيمة المخصّصة تُحفظ في الخريطة كما هي بلا تحويل', () {
+      const TeacherProfileDraft draft = TeacherProfileDraft(
+        displayName: 'أ. منى',
+        subject: 'العلوم المتكاملة',
+        stage: 'رياض الأطفال',
+        area: 'الفيوم',
+        bio: 'نبذة كافية للاختبار هنا بلا مشاكل.',
+        photoPath: 'avatars/uid-1',
+      );
+
+      final Map<String, Object?> map = draft.toWriteMap();
+      expect(map['subject'], 'العلوم المتكاملة');
+      expect(map['stage'], 'رياض الأطفال');
+      expect(map['photoPath'], 'avatars/uid-1');
+      expect(map.containsKey('status'), isFalse);
+      // ولا تُكتب القيمة الحارسة مكان النص أبدًا.
+      expect(map.values, isNot(contains(AcademicOptions.customOption)));
     });
   });
 }

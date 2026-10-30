@@ -10,6 +10,7 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
@@ -191,6 +192,14 @@ class _MyProfileBody extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
+                  // (P22) صورته التي رفعها — يرى نفس ما يراه الطالب.
+                  UserAvatarLoader(
+                    userId: profile.id,
+                    initials: profile.initials,
+                    size: AppSpacing.avatarMd,
+                    semanticLabel: 'صورتك في الملف',
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       profile.displayName,

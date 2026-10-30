@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
@@ -125,9 +126,13 @@ class _QueueCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              CircleAvatar(
-                radius: AppSpacing.avatarMd / 2.6,
-                child: Text(profile.initials),
+              // (P22) المسؤول يرى **الصورة نفسها** التي سيوقّع عليها، لا
+              // حرفًا من الاسم: التوثيق قرار بشري على وجه، لا على نص.
+              UserAvatarLoader(
+                userId: profile.id,
+                initials: profile.initials,
+                size: AppSpacing.avatarMd,
+                semanticLabel: 'صورة ${profile.displayName}',
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(

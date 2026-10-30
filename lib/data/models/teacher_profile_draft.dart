@@ -20,6 +20,7 @@ class TeacherProfileDraft {
     this.priceHint,
     this.governorate,
     this.district,
+    this.photoPath,
   });
 
   final String displayName;
@@ -31,6 +32,15 @@ class TeacherProfileDraft {
   final String? priceHint;
   final String? governorate;
   final String? district;
+
+  /// مسار صورة الملف (P22) — إلزامي، والشكل `avatars/{uid}`.
+  ///
+  /// يُملأ من الصورة المرفوعة، ويُتحقق منه في النموذج **قبل** أي كتابة:
+  /// الطلب بلا صورة يُرفض محليًا برسالة عربية، ثم ترفضه القواعد أيضًا.
+  final String? photoPath;
+
+  /// هل الصورة موجودة؟ (شرط الحفظ)
+  bool get hasPhoto => (photoPath ?? '').trim().isNotEmpty;
 
   /// الحقول الوصفية بصيغة الخريطة التي تُكتب في Firestore.
   ///
@@ -47,6 +57,7 @@ class TeacherProfileDraft {
       if (_clean(priceHint) != null) 'priceHint': _clean(priceHint),
       if (_clean(governorate) != null) 'governorate': _clean(governorate),
       if (_clean(district) != null) 'district': _clean(district),
+      if (_clean(photoPath) != null) 'photoPath': _clean(photoPath),
     };
   }
 
@@ -67,6 +78,7 @@ class TeacherProfileDraft {
       priceHint: profile.priceHint,
       governorate: profile.governorate,
       district: profile.district,
+      photoPath: profile.photoPath,
     );
   }
 }

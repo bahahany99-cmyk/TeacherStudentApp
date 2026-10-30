@@ -68,6 +68,28 @@ const teacherDoc = (uid, overrides = {}) => ({
   ...overrides,
 });
 
+/** (P22) مستند صورة الحساب — تحقّق منه `hasProfilePhoto` بـ`exists()`. */
+const avatarDoc = (uid, overrides = {}) => ({
+  ownerId: uid,
+  // 128 حرفًا تكفي شرط الحد الأدنى في القواعد (64).
+  imageBase64: 'A'.repeat(128),
+  mimeType: 'image/jpeg',
+  updatedAt: now(),
+  ...overrides,
+});
+
+const avatarPath = (uid) => `avatars/${uid}`;
+
+/**
+ * (P22) تعديل صاحب الملف على ملف **موثّق**: الحالة تعود إلى `pendingReview`
+ * (إعادة تحقق) والصورة مطلوبة. تُدمج مع الحقول المُراد تعديلها.
+ */
+const ownerEdit = (fields = {}, uid = 'teacher-1') => ({
+  status: 'pendingReview',
+  photoPath: avatarPath(uid),
+  ...fields,
+});
+
 const groupDoc = (teacherId, overrides = {}) => ({
   teacherId,
   teacherName: 'أ. سارة الخطيب',
@@ -194,8 +216,13 @@ beforeEach(async () => {
   await seed([
     {
       path: 'teacherProfiles/teacher-1',
-      data: teacherDoc('teacher-1', { status: 'verified' }),
+      data: teacherDoc('teacher-1', {
+        status: 'verified',
+        photoPath: avatarPath('teacher-1'),
+      }),
     },
+    // (P22) الصورة موجودة فعلًا: التعديل يعيد الملف للمراجعة ويشترط صورة.
+    { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
   ]);
 });
 
@@ -380,19 +407,40 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     await assertSucceeds(getDoc(doc(asTeacher(), 'teacherProfiles/teacher-1')));
   });
 
-  it('الإنشاء يبدأ دائمًا بـpendingReview', async () => {
+  it('الإنشاء يبدأ مسودة أو بانتظار المراجعة، ولا يبدأ موثّقًا', async () => {
     // نمسح أساس المحاكي: هذا الاختبار يخص **الإنشاء**، ووجود مستند سابق
     // يحوّل الكتابة إلى تحديث.
     await testEnv.clearFirestore();
 
+    // (P22) مسودة: ينشئها التطبيق تلقائيًا عند اختيار دور «مدرس» قبل الصورة.
     await assertSucceeds(
-      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), teacherDoc('teacher-1')),
+      setDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        teacherDoc('teacher-1', { status: 'draft' }),
+      ),
+    );
+
+    // (P22) إرسال للمراجعة **بلا صورة** مرفوض.
+    await assertFails(
+      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
+        ...teacherDoc('teacher-2', { status: 'pendingReview' }),
+        photoPath: avatarPath('teacher-2'),
+      }),
+    );
+
+    // ومع وجود الصورة فعليًا يُقبل.
+    await seed([{ path: avatarPath('teacher-2'), data: avatarDoc('teacher-2') }]);
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), 'teacherProfiles/teacher-2'), {
+        ...teacherDoc('teacher-2', { status: 'pendingReview' }),
+        photoPath: avatarPath('teacher-2'),
+      }),
     );
 
     await assertFails(
       setDoc(
-        doc(asTeacher(), 'teacherProfiles/teacher-1'),
-        teacherDoc('teacher-1', { status: 'verified' }),
+        doc(asTeacher(), 'teacherProfiles/teacher-3'),
+        teacherDoc('teacher-3', { status: 'verified' }),
       ),
     );
   });
@@ -401,30 +449,48 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     await assertFails(
       setDoc(
         doc(asOther(), 'teacherProfiles/teacher-1'),
-        teacherDoc('teacher-1', { ownerId: 'teacher-1' }),
+        teacherDoc('teacher-1', { status: 'draft', ownerId: 'teacher-1' }),
       ),
     );
 
     await assertFails(
       setDoc(
         doc(asTeacher(), 'teacherProfiles/teacher-1'),
-        teacherDoc('teacher-1', { isFeatured: true }),
+        teacherDoc('teacher-1', { status: 'draft', isFeatured: true }),
       ),
     );
   });
 
-  it('المدرس يحدّث بياناته الوصفية ولا يغيّر الحالة', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
+  it('المدرس يعدّل ملفه الموثّق فيعود للمراجعة، ولا يرقّي نفسه', async () => {
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        bio: 'نبذة محدثة',
-        priceHint: '180 ج.م',
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'نبذة محدثة', priceHint: '180 ج.م' }),
+      ),
     );
 
+    const stored = await readAsAdmin('teacherProfiles/teacher-1');
+    assert.equal(stored.status, 'pendingReview');
+    assert.equal(stored.bio, 'نبذة محدثة');
+
+    // الحالة لم تعد موثّقة، فالتعديل التالي مرفوض (الملف بين يدي الإدارة).
+    await assertFails(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'محاولة ثانية' }),
+      ),
+    );
+  });
+
+  it('التعديل بلا إعادة الحالة إلى المراجعة مرفوض (لا تعديل صامت)', async () => {
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        bio: 'تعديل يريد أن يبقى موثّقًا',
+      }),
+    );
+  });
+
+  it('ترقية الحالة إلى verified من صاحب الملف مرفوضة', async () => {
     await assertFails(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
         status: 'verified',
@@ -3744,33 +3810,26 @@ describe('P15 — الاكتشاف: الموثّق وحده يُقرأ للطل�
 
 describe('P15 — طريقة التقديم والمكان يكتبها صاحب الملف', () => {
   it('يكتب isOnline والمحافظة والمدينة', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        isOnline: true,
-        governorate: 'القاهرة',
-        district: 'المعادي',
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ isOnline: true, governorate: 'القاهرة', district: 'المعادي' }),
+      ),
     );
   });
 
   it('قيمة غير منطقية أو محافظة أطول من الحد مرفوضة', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
     await assertFails(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        isOnline: 'yes',
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ isOnline: 'yes' }),
+      ),
     );
     await assertFails(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        governorate: 'ا'.repeat(41),
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ governorate: 'ا'.repeat(41) }),
+      ),
     );
   });
 
@@ -3804,37 +3863,48 @@ describe('P18 — حفظ ملف المدرس من التطبيق', () => {
     priceHint: '150 ج.م',
   };
 
-  it('تحديث الحقول الوصفية وحدها مسموح لصاحب الملف', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
+  it('تحديث الحقول الوصفية مع الصورة وإعادة الحالة مسموح', async () => {
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), draftFields),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit(draftFields),
+      ),
     );
   });
 
   it('حذف حقل اختياري (FieldValue.delete) مسموح', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        priceHint: deleteField(),
-        governorate: deleteField(),
-        district: deleteField(),
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({
+          priceHint: deleteField(),
+          governorate: deleteField(),
+          district: deleteField(),
+        }),
+      ),
     );
   });
 
-  it('الإنشاء بحالة pendingReview وبلا حقول إدارية مسموح', async () => {
+  it('الإنشاء بحالة pendingReview مع صورة مسموح', async () => {
     // ⚠️ `beforeEach` العالمي يزرع `teacherProfiles/teacher-1` موثّقًا، فأي
     // كتابة عليه تكون **تحديثًا** لا إنشاء. لذلك نستخدم سياقًا جديدًا
     // (`teacher-new`) لا مستند له، فيقع الفحص على `allow create` فعلًا.
     const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+    await seed([{ path: avatarPath('teacher-new'), data: avatarDoc('teacher-new') }]);
 
     await assertSucceeds(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
+        ...teacherDoc('teacher-new', { status: 'pendingReview' }),
+        accountHidden: false,
+        photoPath: avatarPath('teacher-new'),
+      }),
+    );
+  });
+
+  it('الإنشاء بحالة pendingReview بلا صورة مرفوض', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+
+    await assertFails(
       setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
         ...teacherDoc('teacher-new', { status: 'pendingReview' }),
         accountHidden: false,
@@ -3860,19 +3930,16 @@ describe('P18 — حفظ ملف المدرس من التطبيق', () => {
       setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
         ...teacherDoc('teacher-new', { status: 'pendingReview' }),
         accountHidden: false,
+        photoPath: avatarPath('teacher-new'),
         isFeatured: true,
       }),
     );
   });
 
   it('لا يستطيع منح نفسه تمييزًا أثناء الحفظ العادي', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
     await assertFails(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        ...draftFields,
+        ...ownerEdit(draftFields),
         isFeatured: true,
         featuredOrder: 1,
       }),
@@ -3880,10 +3947,6 @@ describe('P18 — حفظ ملف المدرس من التطبيق', () => {
   });
 
   it('لا يستطيع ترقية حالته إلى موثّق عبر الحفظ العادي', async () => {
-    await seed([
-      { path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1') },
-    ]);
-
     await assertFails(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
         ...draftFields,
@@ -3978,15 +4041,19 @@ describe('P15 — التمييز إداري وحده', () => {
       },
     ]);
 
+    // (P22) التعديل يعيد الحالة للمراجعة، والتمييز يبقى كما هو (لا يملكه).
     await assertSucceeds(
-      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
-        bio: 'نبذة محدثة بعد التمييز',
-      }),
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'نبذة محدثة بعد التمييز' }, 'teacher-1'),
+      ),
     );
 
     await assertFails(
       updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
         bio: 'محاولة ثانية',
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-1'),
         isFeatured: false,
       }),
     );
@@ -4656,5 +4723,289 @@ describe('P19 — الإدارة: دور الخادم وحده وقرار الت
       ),
     );
     assert.ok(found.docs.some((item) => item.id === 'teacher-2'));
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P22 — الصور، والقيم الأكاديمية المخصّصة، وسياسة التعديل والمراجعة
+
+describe('P22 — avatars/{uid}: صاحب الصورة وحده، وبحدود معلنة', () => {
+  it('صاحبها يرفع صورته ويحدّثها، وغيره لا يكتب عليه', async () => {
+    await assertSucceeds(
+      setDoc(doc(asStudent(), avatarPath('student-1')), avatarDoc('student-1')),
+    );
+
+    // تحديث الصورة نفسها (صورة أحدث لنفس المستخدم).
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), avatarPath('student-1')), {
+        imageBase64: 'B'.repeat(200),
+      }),
+    );
+
+    // مدرس آخر لا يكتب صورة على حساب غيره.
+    await assertFails(
+      setDoc(doc(asTeacher(), avatarPath('student-1')), avatarDoc('student-1')),
+    );
+  });
+
+  it('القراءة مسموحة لأي مسجّل (صورة المدرس تظهر في ملفه)', async () => {
+    await seed([
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), avatarPath('teacher-1'))));
+    await assertSucceeds(getDoc(doc(asTeacher(), avatarPath('teacher-1'))));
+  });
+
+  it('غير المسجّل لا يقرأ الصور', async () => {
+    await seed([
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    await assertFails(getDoc(doc(asGuest(), avatarPath('teacher-1'))));
+  });
+
+  it('صيغة غير مدعومة أو حمولة صغيرة أو كبيرة مرفوضة', async () => {
+    const write = (overrides) =>
+      setDoc(
+        doc(asStudent(), avatarPath('student-1')),
+        avatarDoc('student-1', overrides),
+      );
+
+    // SVG/HTML في حقل يُعرض كصورة: مرفوض.
+    await assertFails(write({ mimeType: 'image/svg+xml' }));
+    // نص تالف أقصر من الحد الأدنى.
+    await assertFails(write({ imageBase64: 'abc' }));
+    // صورة ضخمة تتجاوز السقف (200000 حرف).
+    await assertFails(write({ imageBase64: 'A'.repeat(200001) }));
+    // مالك مختلف عن معرّف المستند.
+    await assertFails(write({ ownerId: 'student-2' }));
+  });
+
+  it('صاحبها يحذفها (عودة إلى الصورة الافتراضية) وغيره لا', async () => {
+    await seed([
+      { path: avatarPath('student-1'), data: avatarDoc('student-1') },
+    ]);
+
+    await assertFails(deleteDoc(doc(asOther(), avatarPath('student-1'))));
+    await assertSucceeds(deleteDoc(doc(asStudent(), avatarPath('student-1'))));
+  });
+});
+
+describe('P22 — المادة والمرحلة: قيم مخصّصة بحدود معلنة', () => {
+  it('قيمة مخصّصة ضمن الحدود تُقبل وتُقرأ كما هي', async () => {
+    await assertSucceeds(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({
+          subject: 'العلوم المتكاملة',
+          stage: 'رياض الأطفال',
+        }),
+      ),
+    );
+
+    const stored = await readAsAdmin('teacherProfiles/teacher-1');
+    assert.equal(stored.subject, 'العلوم المتكاملة');
+    assert.equal(stored.stage, 'رياض الأطفال');
+  });
+
+  it('حرف واحد أو أكثر من 40 حرفًا مرفوض (نفس حد التطبيق)', async () => {
+    await assertFails(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ subject: 'ر' }),
+      ),
+    );
+    await assertFails(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ stage: 'ا'.repeat(41) }),
+      ),
+    );
+  });
+
+  it('نوع غير نصي مرفوض', async () => {
+    await assertFails(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ subject: 12 }),
+      ),
+    );
+  });
+});
+
+describe('P22 — الصورة إلزامية عند الإرسال للمراجعة', () => {
+  it('مسار صورة غير موجود فعليًا مرفوض (لا يكفي النص)', async () => {
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-9'),
+      }),
+    );
+  });
+
+  it('مسار صورة شخص آخر مرفوض', async () => {
+    await seed([
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+      { path: avatarPath('teacher-9'), data: avatarDoc('teacher-9') },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-9'),
+      }),
+    );
+  });
+
+  it('مسودة بلا صورة مسموحة (الملف يُنشأ قبل رفع الصورة)', async () => {
+    await testEnv.clearFirestore();
+    const fresh = testEnv.authenticatedContext('teacher-new').firestore();
+
+    await assertSucceeds(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-new'), {
+        ...teacherDoc('teacher-new', { status: 'draft' }),
+        accountHidden: false,
+      }),
+    );
+  });
+});
+
+describe('P22 — سياسة التعديل: القفل وإعادة التحقق', () => {
+  it('ملف قيد المراجعة مقفل تمامًا أمام صاحبه', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'pendingReview' }),
+      },
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    // حتى لو أرسل نفس القيم: مرفوض. الملف بين يدي الإدارة.
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), ownerEdit({
+        bio: 'تعديل أثناء المراجعة',
+      })),
+    );
+  });
+
+  it('الموثّق يعود إلى pendingReview عند التعديل، وإلا رُفض', async () => {
+    // بلا إعادة الحالة: مرفوض.
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        bio: 'تعديل صامت',
+        photoPath: avatarPath('teacher-1'),
+      }),
+    );
+
+    // مع إعادة الحالة: مسموح، والنتيجة أن الملف خرج من الاكتشاف.
+    await assertSucceeds(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'تعديل معلن' }),
+      ),
+    );
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
+  });
+
+  it('المرفوض يعيد الإرسال للمراجعة', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', {
+          status: 'rejected',
+          reviewNote: 'الصورة غير واضحة',
+        }),
+      },
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'نبذة معدّلة بعد الرفض' }),
+      ),
+    );
+
+    const stored = await readAsAdmin('teacherProfiles/teacher-1');
+    assert.equal(stored.status, 'pendingReview');
+  });
+
+  it('المسودة تبقى مسودة أو تُرسل للمراجعة، ولا تقفز إلى verified', async () => {
+    await testEnv.clearFirestore();
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', { status: 'draft' }),
+      },
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ bio: 'إرسال من المسودة' }),
+      ),
+    );
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'verified',
+      }),
+    );
+  });
+
+  it('تعديل المحتوى لا يمكن أن يُخفي التغيير خلف علم الإخفاء', async () => {
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        accountHidden: true,
+        bio: 'تعديل محتوى بغطاء الإخفاء',
+      }),
+    );
+  });
+
+  it('الإدارة توثّق الملف المُرسل بعد إضافة الصورة', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/teacher-1',
+        data: teacherDoc('teacher-1', {
+          status: 'pendingReview',
+          photoPath: avatarPath('teacher-1'),
+        }),
+      },
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/teacher-1'), {
+        status: 'verified',
+      }),
+    );
+    await assertSucceeds(getDoc(doc(asStudent(), 'teacherProfiles/teacher-1')));
+  });
+});
+
+describe('P22 — users: الصورة الافتراضية', () => {
+  it('المستخدم يثبّت تصميمًا افتراضيًا في حدود 0..5', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 3 }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 6 }),
+    );
+    await assertFails(
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 'x' }),
+    );
+  });
+
+  it('لا يثبّت تصميمًا لحساب غيره', async () => {
+    await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asOther(), 'users/student-1'), { avatarPreset: 2 }),
+    );
   });
 });

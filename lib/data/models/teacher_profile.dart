@@ -51,6 +51,7 @@ class TeacherProfile {
     this.reviewsCount = 0,
     this.priceHint,
     this.reviewNote,
+    this.photoPath,
   });
 
   final String id;
@@ -104,6 +105,19 @@ class TeacherProfile {
 
   /// سعر استرشادي نصي (الدفع يتم خارج التطبيق).
   final String? priceHint;
+
+  /// مسار صورة الملف الشخصي (P22) — إلزامي عند الحفظ.
+  ///
+  /// الشكل المعتمد `avatars/{uid}`: مسار **مستند** يحمل بايتات الصورة.
+  /// تركه فارغًا يرفضه التطبيق أولًا ثم `firestore.rules` (شرط
+  /// `photoPath` + وجود مستند الصورة)، فلا يُنشأ ملف مدرس بلا صورة.
+  final String? photoPath;
+
+  /// هل للملف صورة صالحة للعرض؟
+  bool get hasPhoto => (photoPath ?? '').trim().isNotEmpty;
+
+  /// مسار الصورة المتوقّع لصاحب هذا الملف.
+  static String photoPathFor(String uid) => 'avatars/$uid';
 
   /// سبب القرار الإداري عند الرفض (يكتبه المسؤول وحده في القواعد).
   ///
@@ -159,6 +173,7 @@ class TeacherProfile {
     int? reviewsCount,
     String? priceHint,
     String? reviewNote,
+    String? photoPath,
     bool clearReviewNote = false,
   }) {
     return TeacherProfile(
@@ -179,6 +194,7 @@ class TeacherProfile {
       reviewsCount: reviewsCount ?? this.reviewsCount,
       priceHint: priceHint ?? this.priceHint,
       reviewNote: clearReviewNote ? null : (reviewNote ?? this.reviewNote),
+      photoPath: photoPath ?? this.photoPath,
     );
   }
 

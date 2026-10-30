@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +10,8 @@ import 'package:teacher_student_app/core/errors/request_timeout.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
+import 'package:teacher_student_app/data/models/user_avatar.dart';
+import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
@@ -221,6 +225,20 @@ class FirestoreTeacherRepository implements TeacherRepository {
     required TeacherProfileDraft draft,
   }) {
     return _guard(() async {
+      // (P22) الصورة إلزامية: نموذج بلا صورة لا يُرسل أصلًا، ولو وصل هنا
+      // (شاشة أخرى، استدعاء مباشر) نرفضه محليًا قبل الكتابة. القواعد ترفضه
+      // أيضًا (`photoSatisfiedFor`)، فالطريقان مغلقان.
+      if (!draft.hasPhoto) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          debugMessage: 'teacher profile saved without a photo',
+          overrideTitle: 'الصورة مطلوبة',
+          overrideMessage:
+              'أضف صورة شخصية واضحة قبل حفظ ملفك — بدونها لا يُرسل الملف '
+              'للمراجعة.',
+        );
+      }
+
       final DocumentReference<Map<String, dynamic>> ref = _profiles.doc(uid);
       final DocumentSnapshot<Map<String, dynamic>> existing = await ref.get();
 
@@ -238,6 +256,19 @@ class FirestoreTeacherRepository implements TeacherRepository {
           if (!changes.containsKey(field)) {
             changes[field] = FieldValue.delete();
           }
+        }
+
+        // (P22) سياسة إعادة التحقق: أي تعديل يعيد الملف إلى قائمة المراجعة.
+        // - الموثّق: تعديل بياناته يُلغي أثر التوثيق القديم، فيعود
+        //   `pendingReview` حتى يراجعته الإدارة على القيم الجديدة.
+        // - المسودة/المرفوض: أول حفظ كامل = طلب مراجعة فعلي.
+        // - المنتظر مراجعةً: مقفل تمامًا (القاعدة ترفض، والنموذج لا يُفتح).
+        final TeacherProfileStatus current =
+            teacherProfileFromMap(uid, existing.data() ?? <String, Object?>{})
+                ?.status ??
+            TeacherProfileStatus.draft;
+        if (current != TeacherProfileStatus.pendingReview) {
+          changes['status'] = TeacherProfileStatus.pendingReview.wireValue;
         }
         await ref.update(changes);
       } else {
@@ -3564,5 +3595,143 @@ class FirestoreAdminRepository implements AdminRepository {
         );
       });
     });
+  }
+}
+
+/// صور الحساب في Firestore (P22).
+///
+/// **لماذا مستند مستقل `avatars/{uid}`؟** انظر `UserAvatar` والقواعد: الصور
+/// تُقرأ فقط عند عرضها، لا في كل تسجيل دخول ولا في كل نتيجة بحث.
+///
+/// ⚠️ الصورة تُصغَّر وتُضغط على الجهاز **قبل** الوصول إلى هنا (انظر
+/// `ImagePickerGateway`)، والسقف هنا خط دفاع ثانٍ برسالة عربية واضحة — لا
+/// رسالة Firestore إنجليزية.
+class FirestoreAvatarRepository implements AvatarRepository {
+  FirestoreAvatarRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  static const String collection = 'avatars';
+
+  CollectionReference<Map<String, dynamic>> get _avatars =>
+      _firestore.collection(collection);
+
+  @override
+  Future<UserAvatar?> getFor(String uid) {
+    return _guardAvatar(() async {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await _avatars
+          .doc(uid)
+          .get();
+      if (!doc.exists) {
+        return null;
+      }
+      final Map<String, dynamic> data = doc.data() ?? <String, dynamic>{};
+      // ملاحظة: التصميم الافتراضي (`avatarPreset`) في `users/{uid}` لا هنا —
+      // مستند الصورة يخصّ البايتات وحدها، وقواعده ترفض أي حقل آخر.
+      return UserAvatar(
+        ownerId: uid,
+        imageBase64: data['imageBase64'] as String?,
+        mimeType: data['mimeType'] as String?,
+        updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      );
+    });
+  }
+
+  @override
+  Future<UserAvatar> upload({
+    required String uid,
+    required Uint8List bytes,
+    required String mimeType,
+  }) {
+    return _guardAvatar(() async {
+      if (!AvatarLimits.mimeTypes.contains(mimeType)) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideTitle: 'صيغة غير مدعومة',
+          overrideMessage: 'اختر صورة بصيغة JPG أو PNG.',
+          debugMessage: 'unsupported avatar mime type',
+        );
+      }
+
+      final String encoded = base64Encode(bytes);
+      if (encoded.length > AvatarLimits.maxBase64Length) {
+        throw const AppException(
+          AppErrorKind.invalidInput,
+          overrideTitle: 'الصورة كبيرة',
+          overrideMessage:
+              'حجم الصورة أكبر من المسموح. جرّب صورة أصغر أو أعد التقاطها.',
+          debugMessage: 'avatar payload too large',
+        );
+      }
+
+      await _avatars.doc(uid).set(<String, Object?>{
+        'ownerId': uid,
+        'imageBase64': encoded,
+        'mimeType': mimeType,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // سطر تشخيصي بلا بيانات حسّاسة: الطول والحجم فقط، لا الصورة ولا مقطعًا
+      // منها ولا معرّف المستخدم.
+      log(
+        'avatar upload ok: bytes=${bytes.length} base64=${encoded.length}',
+        name: 'avatars',
+      );
+
+      return UserAvatar(
+        ownerId: uid,
+        imageBase64: encoded,
+        mimeType: mimeType,
+        updatedAt: DateTime.now(),
+      );
+    });
+  }
+
+  @override
+  Future<void> remove(String uid) {
+    return _guardAvatar(() => _avatars.doc(uid).delete());
+  }
+
+  @override
+  Future<void> ensureDefault(String uid) {
+    return _guardAvatar(() async {
+      // الرقم يُثبَّت في مستند المستخدم لا هنا: `users/{uid}` هو ما يُقرأ عند
+      // الدخول. لو لم يوجد المستند بعد (قبل اختيار الدور) نتركه للحظة
+      // الإنشاء، والواجهة تعرض الصورة الحتمية من المعرّف على أي حال.
+      final DocumentReference<Map<String, dynamic>> user = _firestore
+          .collection('users')
+          .doc(uid);
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await user.get();
+      if (!snapshot.exists || snapshot.data()?['avatarPreset'] != null) {
+        return;
+      }
+      await user.update(<String, Object?>{
+        'avatarPreset': AvatarPresets.forId(uid),
+      });
+    });
+  }
+
+  @override
+  Future<void> setPreset({required String uid, required int preset}) {
+    return _guardAvatar(() async {
+      await _firestore.collection('users').doc(uid).update(
+        <String, Object?>{'avatarPreset': AvatarPresets.normalize(preset, uid)},
+      );
+    });
+  }
+
+  /// ترجمة أخطاء Firestore إلى رسائل عربية، مع مهلة زمنية.
+  Future<T> _guardAvatar<T>(Future<T> Function() body) async {
+    try {
+      return await withRequestTimeout(body);
+    } on AppException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw firebaseCodeToException(
+        error.code,
+        debugMessage: error.message,
+      );
+    }
   }
 }

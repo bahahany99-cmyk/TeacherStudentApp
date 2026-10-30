@@ -4,6 +4,8 @@ import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/admin_repository.dart';
+import 'package:teacher_student_app/data/services/avatar_repository.dart';
+import 'package:teacher_student_app/data/services/image_picker_gateway.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/models/teacher_review.dart';
@@ -34,7 +36,10 @@ class AppServices {
     required this.reviews,
     required this.favorites,
     required this.admin,
-  });
+    AvatarRepository? avatars,
+    ImagePickerGateway? imagePicker,
+  }) : avatars = avatars ?? const EmptyAvatarRepository(),
+       imagePicker = imagePicker ?? const UnavailableImagePickerGateway();
 
   final AuthService auth;
   final TeacherRepository teachers;
@@ -64,6 +69,19 @@ class AppServices {
   /// وجوده في الحاوية لا يمنح صلاحية: كل دالة فيه مشروطة في القواعد بـ
   /// `request.auth.token.admin == true`، والواجهة تُخفي الشاشات عن غير المسؤول.
   final AdminRepository admin;
+
+  /// صور الحساب (P22): الافتراضية والمخصّصة.
+  ///
+  /// الافتراضي [EmptyAvatarRepository] ليس تنفيذًا حقيقيًا: الحزمتان في
+  /// `firebase()`/`demo()` تحقنان التنفيذ الفعلي. الفارغ يخدم الحاويات
+  /// المصغّرة في الاختبارات، فلا شاشة تنهار على «لا صورة».
+  final AvatarRepository avatars;
+
+  /// اختيار صورة من جهاز المستخدم (P22).
+  ///
+  /// عقد لا حزمة: الشاشات لا تستورد `image_picker`، والاختبارات تحقن منتقيًا
+  /// وهميًا يعيد بايتات جاهزة.
+  final ImagePickerGateway imagePicker;
 
   /// الحزمة المناسبة للبيئة الحالية.
   ///
@@ -97,11 +115,18 @@ class AppServices {
       reviews: FirestoreReviewRepository(),
       favorites: FirestoreFavoriteRepository(),
       admin: FirestoreAdminRepository(),
+      avatars: FirestoreAvatarRepository(),
+      imagePicker: PlatformImagePickerGateway(),
     );
   }
 
   /// حزمة تجريبية كاملة للعمل بلا خادم (الوضع الافتراضي في المرحلة 2).
-  factory AppServices.demo() {
+  /// (P22) يُمرَّر المنتقي والصور في الاختبارات؛ الافتراضي هو التنفيذ
+  /// التجريبي الحقيقي (ذاكرة) ومنتقي المنصّة.
+  factory AppServices.demo({
+    AvatarRepository? avatars,
+    ImagePickerGateway? imagePicker,
+  }) {
     // المستودعات مترابطة عمدًا: المحادثة تتحقق من «الأصل الموثّق» (حجز قائم أو
     // عضوية مجموعة) من نفس مصادر البيانات، فلا يمرّ خيط بلا علاقة حقيقية.
     final DemoNotificationRepository notifications =
@@ -136,6 +161,9 @@ class AppServices {
       ),
       favorites: DemoFavoriteRepository(),
       admin: DemoAdminRepository(profiles: profiles, reviews: reviews),
+      // نفس مسار الصور في الجولة: اختيار ومعاينة، لكن في الذاكرة فقط.
+      avatars: avatars ?? DemoAvatarRepository(),
+      imagePicker: imagePicker ?? PlatformImagePickerGateway(),
     );
   }
 }

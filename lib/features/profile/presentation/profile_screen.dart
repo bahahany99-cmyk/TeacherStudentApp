@@ -12,10 +12,12 @@ import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
+import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 import 'package:teacher_student_app/features/account/presentation/account_deletion_dialog.dart';
+import 'package:teacher_student_app/features/profile/presentation/widgets/account_avatar_editor.dart';
 
 /// صفحة الحساب والملف الشخصي — **مشتركة** بين الطالب والمدرس (تبويب «حسابي»).
 ///
@@ -154,15 +156,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
               AppCard(
                 child: Row(
                   children: <Widget>[
-                    CircleAvatar(
-                      radius: AppSpacing.avatarLg / 2.6,
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Text(
-                        user?.initials ?? '؟',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
-                      ),
+                    // (P22) الصورة الفعلية للحساب: صورة مخصّصة إن وُجدت،
+                    // وإلا التصميم الافتراضي — لا دائرة بحرف فقط.
+                    UserAvatarLoader(
+                      key: const Key('profile-avatar-image'),
+                      userId: user?.id ?? '',
+                      presetId: user?.resolvedAvatarPreset,
+                      initials: user?.initials,
+                      size: AppSpacing.avatarLg,
+                      semanticLabel: 'صورة الحساب',
                     ),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
@@ -206,6 +208,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
+              // (P22) تغيير الصورة من الإعدادات: صورة من الجهاز أو تصميم
+              // افتراضي. متاح للطالب والمدرس معًا — الحساب ليس بلا صورة أبدًا.
+              if (user != null) ...<Widget>[
+                const SectionHeader(
+                  title: 'صورة الحساب',
+                  subtitle: 'صورة من جهازك أو تصميم افتراضي',
+                ),
+                AppCard(
+                  child: AccountAvatarEditor(
+                    key: const Key('profile-avatar-editor'),
+                    userId: user.id,
+                    initialPreset: user.resolvedAvatarPreset,
+                    initials: user.initials,
+                    helperText: 'تظهر بجانب اسمك في المحادثات وملفك.',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
               const SectionHeader(title: 'إعدادات الحساب'),
               AppCard(
                 padding: EdgeInsets.zero,
