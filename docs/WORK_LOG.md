@@ -3355,3 +3355,15 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
 
 **الدرس:** عند تكرار نص/عنصر في أكثر من قسم، يُقيَّد الباحث بخاصية تميّزه
 (هنا: `size`) لا بالاسم وحده.
+
+### 8) بناء APK الإصدار — `41111272704` (`[build-release]`) ✅
+
+| البند | القيمة |
+|---|---|
+| المهام | `analyze · test` ✅ · `firestore rules (emulator)` ✅ 291/291 · `build apk` ✅ |
+| المخرَج | `apk-release` — **22,591,812 بايت** (المعرّف `13004012219`، حتى 2026-11-01T18:57Z) |
+| المقاسات | arm64-v8a ≈ 21.4 MiB · armeabi-v7a ≈ 19.2 MiB |
+| التوقيع | نفس مفتاح الإصدار (`SHA-1 47:48:68:…:E8:6F`) |
+| الصلاحيات | `INTERNET` في البيان المدموج وفي 2/2 ملف APK |
+
+التنزيل من تبويب **Artifacts** في `41111272704` (اسم الحزمة `apk-release`).
