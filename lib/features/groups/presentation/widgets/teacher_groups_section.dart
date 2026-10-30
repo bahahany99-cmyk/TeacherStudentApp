@@ -70,7 +70,7 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
         if (widget.showHeader)
           SectionHeader(
             title: 'مجموعاتي',
-            subtitle: 'السعة والمواعيد يحددها المدرس · الأعضاء على الخادم',
+            subtitle: 'السعة والمواعيد تحددها أنت · الأعضاء يُحدَّثون فورًا',
             icon: Icons.groups_outlined,
             actionLabel: widget.headerActionLabel,
             onActionTap: widget.headerActionLabel == null ? null : _create,

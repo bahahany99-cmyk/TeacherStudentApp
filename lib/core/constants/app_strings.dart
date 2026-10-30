@@ -9,14 +9,6 @@ abstract final class AppStrings {
   static const String appName = AppIdentity.displayName;
   static const String appTagline = AppIdentity.tagline;
 
-  /// نص «وضع الزائر»: يوضّح أن التطبيق يعمل ببيانات محلية بلا حساب ولا خادم.
-  static const String demoBanner =
-      'وضع الزائر: بيانات تجريبية محلية بلا حساب ولا اتصال بخادم.';
-
-  /// النسخة القصيرة التي تظهر في الشريحة الدقيقة أعلى الصفحة.
-  /// النص الكامل أعلاه يبقى لقارئ الشاشة (صدق المعلومة بلا إزعاج بصري).
-  static const String demoBannerShort = 'وضع الزائر · بيانات تجريبية';
-
   static const String retry = 'إعادة المحاولة';
   static const String loading = 'جارٍ التحميل…';
   static const String unknownRoute = 'الصفحة غير موجودة';

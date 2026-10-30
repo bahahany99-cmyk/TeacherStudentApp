@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/error_state.dart';
 import 'package:teacher_student_app/core/widgets/loading_state.dart';
@@ -47,11 +46,10 @@ class GroupsScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const DemoBanner(),
               if (_isDiscover) ...<Widget>[
                 const SectionHeader(
                   title: 'مجموعات متاحة',
-                  subtitle: 'الفلاتر تعمل على المجموعات المنشورة فقط (C-09)',
+                  subtitle: 'اختر المادة أو المرحلة لتضيق نتائجك',
                 ),
                 const _DiscoverBody(),
               ],
@@ -60,9 +58,9 @@ class GroupsScreen extends StatelessWidget {
                 const TeacherGroupsSection(headerActionLabel: 'إنشاء'),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'السعة المتاحة محسوبة للعرض فقط. منع تجاوز السعة يتم بعملية '
-                'ذرية على الخادم عند قبول طلب الانضمام أو منتظر من قائمة '
-                'الانتظار.',
+                'السعة المتاحة محسوبة للعرض فقط. عند امتلاء المجموعة ينتقل '
+                'الطلب إلى قائمة الانتظار تلقائيًا، ويُحجز المقعد عند القبول '
+                'فقط.',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

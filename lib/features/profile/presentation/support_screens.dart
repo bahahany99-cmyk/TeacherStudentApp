@@ -96,7 +96,7 @@ class SupportScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          '${AppIdentity.displayName} — نسخة المعاينة',
+                          '${AppIdentity.displayName} · ${AppIdentity.tagline}',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
@@ -7,7 +8,6 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -113,8 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       AppSnackBar.show(
         context,
         demo
-            ? 'طلبك مسجّل محليًا فقط (وضع تجريبي). في الحساب الحقيقي تبدأ '
-                  'مهلة ${AccountDeletionRules.gracePeriod.inDays} أيام.'
+            ? 'طلبك مسجّل في هذه الجولة فقط. أنشئ حسابًا لحذفه فعليًا، وتبدأ '
+                  'حينها مهلة ${AccountDeletionRules.gracePeriod.inDays} أيام.'
             : 'سُجّل طلب الحذف وسُجّل خروجك. لديك '
                   '${AccountDeletionRules.gracePeriod.inDays} أيام لاستعادة '
                   'الحساب بتسجيل الدخول من جديد.',
@@ -151,8 +151,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // (P18) لا شرط هنا: `DemoBanner` يتحقق من الجلسة ذاتيًا.
-              const DemoBanner(),
               AppCard(
                 child: Row(
                   children: <Widget>[
@@ -184,11 +182,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 label: user?.role.label ?? '—',
                                 color: theme.colorScheme.primary,
                               ),
-                              if (session.isDemoSession)
-                                const StatusChip(
-                                  label: 'حساب تجريبي',
-                                  color: Color(0xFFB26A00),
-                                ),
                             ],
                           ),
                           const SizedBox(height: AppSpacing.xxs),
@@ -206,11 +199,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                session.isDemoSession
-                    ? 'هذه جلسة معاينة محلية: البيانات لا تُحفظ على خادم، '
-                          'والدور تختاره أنت للتصفح فقط.'
-                    : 'الاسم والبريد من حسابك، ونوع الحساب مقروء من مستند '
-                          'المستخدم في Firestore — لا يختاره التطبيق.',
+                'الاسم والبريد من حسابك، ونوع الحساب مرتبط بحسابك ولا '
+                'يمكن تغييره من هنا. لتعديل بياناتك اضغط «بياناتي».',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -340,39 +330,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.shield_outlined,
               ),
               if (session.isDemoSession) ...<Widget>[
-                const SizedBox(height: AppSpacing.md),
-                const SectionHeader(
-                  title: 'معاينة الواجهات',
-                  subtitle: 'للاختبار المحلي فقط — لا يمنح أي صلاحية',
-                ),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      OutlinedButton(
-                        onPressed: () => _switchRole(UserRole.student),
-                        child: const Text('واجهة الطالب'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      OutlinedButton(
-                        onPressed: () => _switchRole(UserRole.teacher),
-                        child: const Text('واجهة المدرس'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      OutlinedButton(
-                        onPressed: () => _switchRole(UserRole.admin),
-                        child: const Text('واجهة الإدارة (تجريبي)'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      OutlinedButton(
-                        onPressed: () => Navigator.of(
-                          context,
-                        ).pushNamed(RoutePaths.designGallery),
-                        child: const Text('معرض المكونات (تطوير)'),
-                      ),
-                    ],
+                // (P21) أدوات تطوير: لا تُبنى في نسخة الإصدار أصلًا.
+                //
+                // آخر ما يجب أن يراه مستخدم على جهاز حقيقي: أزرار تبديل
+                // «واجهة الطالب/المدرس/الإدارة» ومعرض مكوّنات. `kDebugMode`
+                // ثابت وقت الترجمة، فالفرع كله يُحذف من APK الإصدار ولا
+                // يبقى مجرد مخفي.
+                if (kDebugMode) ...<Widget>[
+                  const SizedBox(height: AppSpacing.md),
+                  const SectionHeader(
+                    title: 'معاينة الواجهات',
+                    subtitle: 'للاختبار المحلي فقط — لا يمنح أي صلاحية',
                   ),
-                ),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        OutlinedButton(
+                          onPressed: () => _switchRole(UserRole.student),
+                          child: const Text('واجهة الطالب'),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        OutlinedButton(
+                          onPressed: () => _switchRole(UserRole.teacher),
+                          child: const Text('واجهة المدرس'),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        OutlinedButton(
+                          onPressed: () => _switchRole(UserRole.admin),
+                          child: const Text('واجهة الإدارة (تجريبي)'),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        OutlinedButton(
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamed(RoutePaths.designGallery),
+                          child: const Text('معرض المكونات (تطوير)'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: AppSpacing.lg),
             ],

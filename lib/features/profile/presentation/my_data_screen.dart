@@ -5,7 +5,6 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
@@ -87,7 +86,7 @@ class _MyDataScreenState extends State<MyDataScreen> {
       AppSnackBar.show(
         context,
         session.isDemoSession
-            ? 'حُفظت البيانات في هذه الجلسة التجريبية فقط (لا خادم).'
+            ? 'حُفظت البيانات لهذه الجولة فقط — أنشئ حسابًا لحفظها دائمًا.'
             : 'حُفظت بياناتك.',
         type: AppMessageType.success,
       );
@@ -136,7 +135,6 @@ class _MyDataScreenState extends State<MyDataScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    const DemoBanner(),
                     const SizedBox(height: AppSpacing.md),
                     TextFormField(
                       key: const Key('my-data-name'),
@@ -206,8 +204,8 @@ class _MyDataScreenState extends State<MyDataScreen> {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      'لا يمكن تغيير نوع الحساب (طالب/مدرس) من هنا: هو قرار '
-                      'يُحفظ مرة واحدة عند أول دخول وتفرضه قواعد الخادم.',
+                      'لا يمكن تغيير نوع الحساب (طالب/مدرس) من هنا: يُحدَّد مرة '
+                      'واحدة عند أول دخول، ويمكن تعديله عبر فريق الدعم.', 
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                         height: 1.6,

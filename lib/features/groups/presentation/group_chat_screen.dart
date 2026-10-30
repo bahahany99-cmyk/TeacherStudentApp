@@ -12,7 +12,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
@@ -159,7 +158,6 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 return ListView(
                   padding: EdgeInsets.zero,
                   children: <Widget>[
-                    const DemoBanner(),
                     const SizedBox(height: AppSpacing.md),
                     AppCard(
                       child: Column(
@@ -205,7 +203,6 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  const DemoBanner(),
                   Expanded(
                     child: data.messages.isEmpty
                         ? const EmptyState(

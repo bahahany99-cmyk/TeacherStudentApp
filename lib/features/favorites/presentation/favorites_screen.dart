@@ -5,7 +5,6 @@ import 'package:teacher_student_app/app/session/current_student.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/error_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
@@ -121,7 +120,6 @@ class _FavoritesListState extends State<_FavoritesList> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        const DemoBanner(),
                         EmptyState(
                           icon: Icons.favorite_border,
                           title: widget.kind == FavoriteKind.teacher
@@ -145,7 +143,6 @@ class _FavoritesListState extends State<_FavoritesList> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      const DemoBanner(),
                       for (final Favorite favorite in mine)
                         Padding(
                           padding: AppSpacing.listGap,

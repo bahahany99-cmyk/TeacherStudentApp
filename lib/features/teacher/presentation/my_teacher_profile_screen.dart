@@ -5,9 +5,7 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
-import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -114,7 +112,10 @@ class _MyTeacherProfileScreenState extends State<MyTeacherProfileScreen> {
   }
 }
 
-/// لا ملف بعد: حالة فراغ **قابلة للتنفيذ** بدل رسالة صامتة.
+/// لا ملف بعد: دعوة إنشاء واضحة (onboarding) لا رسالة صامتة ولا نص تقني.
+///
+/// (P21) بعد إزالة شريط التطوير، صار هذا **أول ما يراه المدرس الجديد**، فصيغته
+/// صارت جملة فائدة + زر واحد بدل «لا يوجد ملف» المجرّدة.
 class _NoProfileYet extends StatelessWidget {
   const _NoProfileYet({required this.onCreate});
 
@@ -122,19 +123,51 @@ class _NoProfileYet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        const DemoBanner(),
-        EmptyState(
-          icon: Icons.person_add_alt_1_outlined,
-          title: 'لا يوجد ملف تعريفي بعد',
-          message:
-              'أنشئ ملفك الآن: المادة والمرحلة والمنطقة ونبذة قصيرة. يظهر '
-              'ملفك للطلاب بعد توثيق الإدارة.',
-          actionLabel: 'إنشاء ملف تعريفي',
-          onActionTap: onCreate,
-        ),
-      ],
+    final ThemeData theme = Theme.of(context);
+
+    return AppCard(
+      key: const Key('my-profile-empty-card'),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: theme.colorScheme.primary.withAlpha(24),
+            child: Icon(
+              Icons.badge_outlined,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'لم تنشئ ملفك التعريفي بعد',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'الملف هو ما يراه الطالب: مادتك ومرحلتك ومنطقتك ونبذة عن طريقة '
+            'شرحك. أنشئه الآن ويظهر للطلاب بعد اعتماد الإدارة.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.75,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FilledButton(
+            key: const Key('my-profile-create'),
+            onPressed: onCreate,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+            ),
+            child: const Text('إنشاء ملف تعريفي'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -152,7 +185,6 @@ class _MyProfileBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const DemoBanner(),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

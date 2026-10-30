@@ -10,7 +10,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
@@ -168,7 +167,6 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  const DemoBanner(),
                   AsyncView<List<GroupJoinRequest>>(
                     key: ValueKey<int>(_revision),
                     load: () {
@@ -190,7 +188,7 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                           : 'لم تُرسل طلبات انضمام',
                       message: isTeacher
                           ? 'ستظهر هنا طلبات الطلاب، ومعها زر القبول الذي يحجز '
-                                'المقعد على الخادم.'
+                                'المقعد فورًا.'
                           : 'افتح أي مجموعة من تبويب «المجموعات» وأرسل طلب '
                                 'انضمام لتتابعه هنا.',
                     ),
@@ -259,10 +257,10 @@ class _JoinRequestsScreenState extends State<JoinRequestsScreen> {
                               const SizedBox(height: AppSpacing.sm),
                               InfoNote(
                                 text: isTeacher
-                                    ? 'القبول يزيد المقعد المشغول ويُنشئ عضوية '
-                                          'الطالب في معاملة واحدة على الخادم، فلا '
-                                          'يمكن تجاوز السعة حتى لو قُبل طلبان في '
-                                          'اللحظة نفسها.'
+                                    ? 'القبول يحجز المقعد ويضيف الطالب إلى '
+                                          'المجموعة في خطوة واحدة، ولا يمكن أن '
+                                          'يتجاوز العدد السعة حتى لو قُبل طلبان '
+                                          'في اللحظة نفسها.'
                                     : 'طلب الانضمام يحتاج موافقة المدرس. '
                                           'المقعد يُحجز لحظة القبول فقط، لا لحظة '
                                           'إرسال الطلب.',

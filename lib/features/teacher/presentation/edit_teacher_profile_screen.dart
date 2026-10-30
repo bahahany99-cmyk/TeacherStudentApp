@@ -7,7 +7,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_select_field.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/constants/academic_options.dart';
@@ -200,7 +199,7 @@ class _ProfileFormState extends State<_ProfileForm> {
       AppSnackBar.show(
         context,
         isDemo
-            ? 'حُفظ الملف في هذه الجلسة التجريبية فقط (لا خادم).'
+            ? 'حُفظ الملف لهذه الجولة فقط — أنشئ حسابًا ليظهر للطلاب.'
             : widget.initial == null
             ? 'أُنشئ ملفك وأُرسل للمراجعة. سيظهر للطلاب بعد التوثيق.'
             : 'حُفظت التعديلات. تبقى حالة التوثيق كما هي.',
@@ -270,7 +269,6 @@ class _ProfileFormState extends State<_ProfileForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const DemoBanner(),
           if (isNew) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             const InfoNote(

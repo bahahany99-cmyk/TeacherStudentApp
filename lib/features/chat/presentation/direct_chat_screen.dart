@@ -226,8 +226,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                       icon: Icons.forum_outlined,
                       title: 'المحادثة غير متاحة',
                       message:
-                          'هذه المحادثة تخص طالبًا ومدرسًا فقط، والقواعد تمنع '
-                          'قراءتها من غيرهما.',
+                          'هذه المحادثة خاصة بالطرفين المعنيين فقط، ولا تظهر '
+                          'لأي حساب آخر.',
                     );
                   }
 

@@ -5,7 +5,6 @@ import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/app/shell/teacher_search_request.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -186,7 +185,6 @@ class _TeachersScreenState extends State<TeachersScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                const DemoBanner(),
                 const SectionHeader(
                   title: 'مدرسون مميزون',
                   subtitle: 'يُدار التمييز من الإدارة فقط',

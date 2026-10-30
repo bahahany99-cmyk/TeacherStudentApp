@@ -11,7 +11,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
@@ -152,7 +151,6 @@ class _GroupDetailsBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const DemoBanner(),
 
         // ── بطاقة الرأس: العنوان والحالة والتصنيفات ─────────────────────────
         AppCard(
@@ -349,7 +347,7 @@ class _GroupDetailsBody extends StatelessWidget {
           const InfoNote(
             text:
                 'قبول طلب يزيد المقعد المشغول وينشئ عضوية الطالب في معاملة '
-                'واحدة على الخادم، فلا يمكن تجاوز السعة بطلبين متزامنين.',
+                'واحدة، فلا يمكن تجاوز السعة بطلبين في اللحظة نفسها.',
           ),
         ] else ...<Widget>[
           const SizedBox(height: AppSpacing.sectionGap),
@@ -658,8 +656,8 @@ class _JoinPanelState extends State<_JoinPanel> {
                   const SizedBox(height: AppSpacing.sm),
                   const InfoNote(
                     text:
-                        'المقعد يُحجز لحظة موافقة المدرس فقط، والسعة تُفرض في '
-                        'معاملة على الخادم حتى لا يتجاوز العدد الحدّ المعلن.',
+                        'المقعد يُحجز لحظة موافقة المدرس فقط، ولا يمكن أن '
+                        'يتجاوز عدد المنضمين السعة المعلنة مهما تكرّرت الطلبات.',
                   ),
                 ],
               ),

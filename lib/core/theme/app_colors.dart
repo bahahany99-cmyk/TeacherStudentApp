@@ -71,10 +71,11 @@ abstract final class AppColors {
   // ظلال
   static const Color shadow = Color(0x14000000);
 
-  // شريحة وضع الزائر: بيج دافئ محايد (لا أصفر صارخ، ولا أخضر).
-  static const Color demoBackground = Color(0xFFFFF8F3);
-  static const Color demoBorder = Color(0xFFEFDCCB);
-  static const Color demoForeground = Color(0xFF8A6A52);
+  // بيج دافئ محايد (لا أصفر صارخ، ولا أخضر): يُستخدم لوسم الجولة
+  // التعريفية وشارات «بانتظار إجراء» الإدارية — لون انتباه هادئ.
+  static const Color attentionBackground = Color(0xFFFFF8F3);
+  static const Color attentionBorder = Color(0xFFEFDCCB);
+  static const Color attentionForeground = Color(0xFF8A6A52);
 
   // حالات الطلبات — دلالية، خالية من الأخضر بقرار صاحب المشروع.
   static const Color statusPending = Color(0xFFA9762F);

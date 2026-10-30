@@ -5,7 +5,6 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -75,12 +74,11 @@ class _BookingsScreenState extends State<BookingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const DemoBanner(),
               SectionHeader(
                 title: isTeacher ? 'طلبات واردة' : 'طلباتي',
                 subtitle: isTeacher
                     ? 'افتح الطلب للقبول أو الرفض أو اقتراح وقت بديل'
-                    : 'كل طلب يظل بانتظار موافقة المدرس (C-08)',
+                    : 'كل طلب يظل بانتظار موافقة المدرس حتى يردّ عليه',
               ),
               AsyncView<List<BookingRequest>>(
                 key: ValueKey<int>(_revision),
@@ -175,7 +173,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
               const SizedBox(height: AppSpacing.md),
               Text(
                 'المحادثة المرتبطة بالحجز تُنفَّذ في المرحلة التالية (P11)، '
-                'مقيدة بعضوية الطلب على الخادم.',
+                'مربوطة بهذا الطلب وحده.',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),

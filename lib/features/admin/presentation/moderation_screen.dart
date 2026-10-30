@@ -119,9 +119,8 @@ class _ModerationScreenState extends State<ModerationScreen> {
                           const SizedBox(height: AppSpacing.sm),
                           const InfoNote(
                             text:
-                                'حذف تقييم إجراء نهائي: القواعد تمنع تعديله أو '
-                                'حذفه من التطبيق، وتنقص مجموع تقييمات المدرس في '
-                                'نفس الكتابة الذرّية.',
+                                'حذف التقييم إجراء نهائي: يختفي فورًا من ملف '
+                                'المدرس ويُخصم من متوسط تقييماته في الوقت نفسه.',
                           ),
                           const SectionHeader(
                             title: 'البلاغات المفتوحة',
@@ -214,7 +213,7 @@ class _ReportCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               StatusChip(
                 label: report.targetType.label,
-                color: AppColors.demoForeground,
+                color: AppColors.attentionForeground,
               ),
             ],
           ),

@@ -108,17 +108,23 @@ Future<SessionController> _pumpApp(
 
 void main() {
   group('شاشة الدخول (P4)', () {
-    testWidgets('تعرض الدخول بـGoogle والبريد، وتوضّح أن الخادم غير مُهيَّأ', (
+    testWidgets('تعرض الدخول بـGoogle والبريد بلا نصوص تطوير', (
       WidgetTester tester,
     ) async {
       await _pumpApp(tester, const DemoAuthService());
 
       expect(find.text('المتابعة باستخدام Google'), findsOneWidget);
       expect(find.text('الدخول بالبريد الإلكتروني'), findsOneWidget);
+
+      // (P21) تنظيف واجهة الإنتاج: لا تنبيه «الخادم غير مُهيَّأ» ولا إشارة
+      // إلى ملفات الإعداد. المستخدم العادي لا يُخاطَب بلغة التطوير.
       expect(
-        find.textContaining('المصادقة الحقيقية غير مُهيَّأة'),
-        findsOneWidget,
+        find.textContaining('غير مُهيَّأة'),
+        findsNothing,
+        reason: 'تنبيه إعداد Firebase نص تطوير ولا يظهر في واجهة المستخدم',
       );
+      expect(find.textContaining('FIREBASE_SETUP'), findsNothing);
+      expect(find.textContaining('Firestore'), findsNothing);
     });
 
     testWidgets('زر البريد يفتح شاشة الدخول بالبريد', (

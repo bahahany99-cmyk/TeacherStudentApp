@@ -365,7 +365,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                     // ── الموعد ────────────────────────────────────────────
                     const SectionHeader(
                       title: 'الموعد',
-                      subtitle: 'وصف نصي الآن — الجدولة الأسبوعية في مرحلة قادمة',
+                      subtitle: 'وصف مختصر يظهر للطلاب، والتفاصيل في الجدول',
                       icon: Icons.schedule_outlined,
                     ),
                     AppCard(
@@ -445,11 +445,9 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                     const SizedBox(height: AppSpacing.md),
                     InfoNote(
                       icon: Icons.cloud_off_outlined,
-                      text: SessionScope.of(context).isDemoSession
-                          ? 'وضع الزائر: يُحفظ التغيير في الذاكرة المحلية فقط '
-                                'ويُفقد عند إغلاق التطبيق.'
-                          : 'يُحفظ التغيير في الخادم؛ وقواعد الأمان ترفض أي '
-                                'تعديل من غير صاحب المجموعة.',
+                      text:
+                          'يُحفظ التغيير على حسابك مباشرة، ولا يستطيع أي حساب '
+                          'آخر تعديل مجموعتك.',
                     ),
                     const SizedBox(height: AppSpacing.lg),
                   ],

@@ -149,15 +149,18 @@ class _AppShellState extends State<AppShell> {
                       onPressed: () => _shell.goTo(firstTab),
                       icon: const Icon(Icons.home_outlined),
                     ),
+                  // (P21) جلسة استعراض: وسم قصير بلغة المنتج لا لغة التطوير.
+                  // يبقى ظاهرًا لأن ما يراه المستخدم أمثلة توضيحية، وإخفاؤه
+                  // التام سيجعل أمثلةً وهمية تبدو بيانات حقيقية.
                   if (session.isDemoSession)
                     const Padding(
                       padding: EdgeInsetsDirectional.only(end: AppSpacing.md),
                       child: Tooltip(
-                        message:
-                            'وضع الزائر — بيانات تجريبية بلا حساب ولا خادم',
+                        message: 'جولة تعريفية بأمثلة توضيحية — أنشئ حسابًا '
+                            'لحفظ بياناتك',
                         child: StatusChip(
-                          label: 'زائر',
-                          color: AppColors.demoForeground,
+                          label: 'جولة',
+                          color: AppColors.attentionForeground,
                         ),
                       ),
                     ),

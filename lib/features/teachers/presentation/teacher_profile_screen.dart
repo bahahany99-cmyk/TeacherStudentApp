@@ -5,7 +5,6 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/detail_row.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
@@ -85,7 +84,6 @@ class _TeacherProfileBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const DemoBanner(),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,9 +249,8 @@ class _TeacherProfileBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         const InfoNote(
           text:
-              'المحادثة مرتبطة بسبب موثّق: حجز قائم أو عضوية مجموعة، وإلا فهي '
-              'استفسار لا يُسمح به إلا إن فعّله المدرس. الدفع والاتفاق على '
-              'السعر يتمان خارج التطبيق (C-15).',
+              'تفتح المحادثة بعد حجز مؤكَّد أو انضمام إلى مجموعة. الدفع '
+              'والاتفاق على السعر يتمان بينك وبين المدرس خارج التطبيق.',
         ),
         const SizedBox(height: AppSpacing.lg),
       ],

@@ -5,7 +5,6 @@ import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
@@ -80,9 +79,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  // (P18) التحقق من الجلسة داخل `DemoBanner` نفسه.
-                  const DemoBanner(),
-                  const SizedBox(height: AppSpacing.sm),
+                      const SizedBox(height: AppSpacing.sm),
                   AsyncView<_AdminOverview>(
                     // (P19) مفتاح المراجعة: بعد أي قرار يُعاد القراءة، فيظهر
                     // الملف التالي في القائمة العددية فورًا بدل رقم قديم.
@@ -142,7 +139,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 caption: overview.reports.isEmpty
                                     ? 'لا بلاغات تحتاج مراجعة'
                                     : 'بلاغ بانتظار حسم',
-                                accent: AppColors.demoForeground,
+                                accent: AppColors.attentionForeground,
                                 onTap: () => Navigator.of(
                                   context,
                                 ).pushNamed(RoutePaths.adminModeration),
@@ -189,24 +186,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         },
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  const SectionHeader(title: 'كيف تُفرض الصلاحية؟'),
+                  const SectionHeader(title: 'سياسة القرار'),
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         const InfoNote(
                           text:
-                              'كل قرار في هذه اللوحة (توثيق، رفض، حسم بلاغ، '
-                              'حذف تقييم) يُفحص في قواعد Firestore بشرط '
-                              'الادعاء الإداري على الخادم. إخفاء الشاشة هنا '
-                              'لتجربة أنظف فقط، وليس حماية.',
+                              'كل قرار هنا يُسجَّل باسمك ويُعتمد فور حفظه. '
+                              'ليست هناك خطوة ثانية ولا يمكن التراجع من '
+                              'التطبيق بعد الحفظ.',
                           icon: Icons.shield_outlined,
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         Text(
-                          'الملف غير الموثّق لا يظهر في البحث ولا يستطيع قبول '
-                          'حجز أو طلب انضمام — القواعد تقرأ حالته من مستنده '
-                          'لحظة الكتابة، فلا تنفع إعادة تسمية الحالة في الواجهة.',
+                          'الملف غير الموثّق لا يظهر للطلاب ولا يستطيع قبول '
+                          'حجز أو طلب انضمام، ويتغيّر ذلك فور اعتماده.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                             height: 1.7,
@@ -351,7 +346,7 @@ class _PendingTeachersSection extends StatelessWidget {
                     ),
                     StatusChip(
                       label: profile.status.label,
-                      color: AppColors.demoForeground,
+                      color: AppColors.attentionForeground,
                     ),
                   ],
                 ),

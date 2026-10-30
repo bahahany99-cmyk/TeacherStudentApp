@@ -11,14 +11,15 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/core/widgets/app_background.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
 
-import '../helpers/session_helpers.dart';
 import '../helpers/test_app.dart';
 
-/// اختبارات «النسخة 3» من النظام البصري (2026-10-27): Edge-to-Edge، الشريحة
-/// الدقيقة لوضع الزائر، البطاقات البيضاء العائمة، واختفاء الكتل المشبعة.
+/// اختبارات «النسخة 3» من النظام البصري: Edge-to-Edge، البطاقات البيضاء
+/// العائمة، واختفاء الكتل المشبعة.
+///
+/// (P21) مجموعة «شريحة وضع الزائر» حُذفت مع الويدجت نفسه: لا شريحة تطوير في
+/// واجهة الإنتاج، فلا شيء يُقاس.
 void main() {
   group('Edge-to-Edge', () {
     test('خلفية الـScaffold شفافة لتمرّ خلفية النافذة المتدرّجة', () {
@@ -36,78 +37,6 @@ void main() {
       expect(style!.statusBarColor, Colors.transparent);
       expect(style.statusBarIconBrightness, Brightness.dark);
       expect(style.systemNavigationBarColor, Colors.transparent);
-    });
-  });
-
-  group('شريحة وضع الزائر الدقيقة', () {
-    testWidgets('سطر واحد وارتفاع صغير (ليست صندوقًا تحذيريًا)', (
-      WidgetTester tester,
-    ) async {
-      usePhoneSurface(tester);
-
-      // (P18) `DemoBanner` صار يتحقق من الجلسة ذاتيًا؛ لقياس شكله نحتاج
-      // جلسة تجريبية حقيقية وإلا عاد `SizedBox.shrink()`.
-      await tester.pumpWidget(
-        withSession(
-          demoSession(),
-          child: MaterialApp(
-            theme: AppTheme.light,
-            home: const Scaffold(
-              body: Padding(
-                padding: AppSpacing.pagePadding,
-                child: DemoBanner(),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      // نقيس الشريحة نفسها (لا الهامش السفلي حولها).
-      final Size size = tester.getSize(
-        find
-            .descendant(
-              of: find.byType(DemoBanner),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      // الارتفاع السابق كان نحو 60+ مع أيقونة وسطرين؛ الآن سطر واحد دقيق.
-      expect(size.height, lessThan(34));
-
-      final Text text = tester.widget<Text>(
-        find.text('وضع الزائر · بيانات تجريبية'),
-      );
-      expect(text.maxLines, 1);
-      expect(text.overflow, TextOverflow.ellipsis);
-    });
-
-    testWidgets('قارئ الشاشة يسمع النص الكامل لا المختصر', (
-      WidgetTester tester,
-    ) async {
-      final SemanticsHandle handle = tester.ensureSemantics();
-      // (P18) نفس السبب: الجلسة التجريبية شرط لعرض الشريحة.
-      await tester.pumpWidget(
-        withSession(
-          demoSession(),
-          child: MaterialApp(
-            theme: AppTheme.light,
-            home: const Scaffold(
-              body: Padding(
-                padding: AppSpacing.pagePadding,
-                child: DemoBanner(),
-              ),
-            ),
-          ),
-        ),
-      );
-
-      expect(
-        find.bySemanticsLabel(
-          'وضع الزائر: بيانات تجريبية محلية بلا حساب ولا اتصال بخادم.',
-        ),
-        findsOneWidget,
-      );
-      handle.dispose();
     });
   });
 
@@ -234,7 +163,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('أزرار البطاقة التمهيدية للمدرس في سطر واحد بلا فيض', (
+    testWidgets('أزرار بطاقة حالة الملف في سطر واحد بلا فيض', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
@@ -244,11 +173,13 @@ void main() {
       await tapVisible(tester, find.text('واجهة المدرس'));
       expect(find.byType(AppShell), findsOneWidget);
 
-      // النصان ظاهران كاملين (بلا التفاف إلى سطرين) — سبب العطل المرصود.
+      // (P21) البطاقة صارت «حالة الملف» بقراءة حقيقية: زرّا «ملفي التعريفي»
+      // و«تعديل» في صف واحد، وسطر واحد لكل نص (سبب العطل الأصلي: التفاف النص
+      // على سطرين داخل صف ضيّق).
       final Finder profile = find.text('ملفي التعريفي');
-      final Finder addGroup = find.text('إضافة مجموعة');
+      final Finder edit = find.text('تعديل');
       expect(profile, findsWidgets);
-      expect(addGroup, findsWidgets);
+      expect(edit, findsWidgets);
 
       final Text profileText = tester.widget<Text>(profile.first);
       expect(profileText.maxLines, 1);

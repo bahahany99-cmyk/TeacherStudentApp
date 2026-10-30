@@ -7,7 +7,7 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_typography.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
+import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
@@ -37,8 +37,8 @@ class DesignGalleryScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                const DemoBanner(
-                  message: 'شاشة تطوير للمراجعة البصرية فقط، وليست جزءًا من تجربة المستخدم.',
+                const InfoNote(
+                  text: 'شاشة تطوير للمراجعة البصرية فقط — لا تظهر في الإصدار.',
                 ),
 
                 // ---------- الهوية والخط ----------

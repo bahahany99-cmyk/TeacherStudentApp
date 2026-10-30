@@ -4,7 +4,6 @@ import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/config/app_config.dart';
-import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
@@ -12,7 +11,6 @@ import 'package:teacher_student_app/core/theme/app_effects.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
-import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/auth/presentation/auth_flow.dart';
@@ -136,18 +134,6 @@ class LoginScreen extends StatelessWidget {
                           icon: const Icon(Icons.alternate_email, size: 20),
                           label: const Text('الدخول بالبريد الإلكتروني'),
                         ),
-                        if (FirebaseBootstrap.status !=
-                            FirebaseStatus.ready) ...<Widget>[
-                          const SizedBox(height: AppSpacing.sm),
-                          const InfoNote(
-                            icon: Icons.cloud_off_outlined,
-                            text:
-                                'المصادقة الحقيقية غير مُهيَّأة في هذه النسخة '
-                                '(لا يوجد مشروع Firebase متصل)، لذلك سترى رسالة '
-                                '«غير متاحة» عند المحاولة. راجع '
-                                'docs/FIREBASE_SETUP.md.',
-                          ),
-                        ],
                         const SizedBox(height: AppSpacing.sm),
                         Text(
                           'بالدخول أنت توافق على شروط الاستخدام وسياسة '
@@ -180,7 +166,7 @@ class LoginScreen extends StatelessWidget {
   }
 }
 
-/// مدخل مؤقت لمعاينة الواجهات بلا Firebase.
+/// مدخل «جولة تعريفية»: استعراض التطبيق بأمثلة توضيحية بلا حساب.
 class _DemoAccessCard extends StatelessWidget {
   const _DemoAccessCard({
     required this.onStudentTap,
@@ -205,12 +191,12 @@ class _DemoAccessCard extends StatelessWidget {
               const Icon(
                 Icons.science_outlined,
                 size: 18,
-                color: AppColors.demoForeground,
+                color: AppColors.attentionForeground,
               ),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
-                  'وضع الزائر (بدون حساب)',
+                  'جرّب التطبيق بلا حساب',
                   style: theme.textTheme.titleMedium,
                 ),
               ),
@@ -218,9 +204,9 @@ class _DemoAccessCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'تصفّح كل الشاشات ببيانات تجريبية محلية دون تسجيل دخول ودون '
-            'اتصال بخادم. اختيار الدور هنا للعرض فقط: لا يُنشئ حسابًا ولا يمنح '
-            'أي صلاحية، وفي الإنتاج يُقرأ الدور من الخادم.',
+            'استعرض الشاشات بأمثلة توضيحية لتتعرف على التطبيق قبل التسجيل. '
+            'الجولة لا تُنشئ حسابًا ولا تحفظ أي بيانات؛ وحسابك الحقيقي يبدأ '
+            'من تسجيل الدخول.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               height: 1.75,
@@ -267,8 +253,8 @@ class _DemoAccessCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          // (P14) معاينة لوحة الإدارة: جلسة تجريبية فقط، ولا تمنح ادعاءً على
-          // الخادم — القواعد تقرأ رمز الهوية لا حالة الواجهة.
+          // زر «لوحة الإدارة» داخل بطاقة الجولة: يفتح شاشات الإدارة في
+          // الاستعراض فقط، ولا يمنح أي صلاحية على بيانات حقيقية.
           OutlinedButton.icon(
             onPressed: onAdminTap,
             style: OutlinedButton.styleFrom(
@@ -276,7 +262,7 @@ class _DemoAccessCard extends StatelessWidget {
               textStyle: theme.textTheme.labelMedium,
             ),
             icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
-            label: const Text('لوحة الإدارة (معاينة)'),
+            label: const Text('شاشات الإدارة'),
           ),
         ],
       ),

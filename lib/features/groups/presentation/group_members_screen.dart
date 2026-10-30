@@ -9,7 +9,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/async_view.dart';
-import 'package:teacher_student_app/core/widgets/demo_banner.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/pill_chip.dart';
@@ -359,7 +358,6 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const DemoBanner(),
 
         // ── بطاقة السعة ─────────────────────────────────────────────────────
         AppCard(
@@ -549,7 +547,7 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
         const SizedBox(height: AppSpacing.sm),
         const InfoNote(
           text:
-              'الإزالة وقبول المنتظر يحدثان في معاملة واحدة على الخادم: '
+              'الإزالة وقبول المنتظر يحدثان في خطوة واحدة: '
               'أنقص/أزد مقعدًا واحدًا وغيّر العضوية معًا، فلا يبقى مقعد '
               'محسوبًا بلا عضو ولا عضو بلا مقعد. لا إشعار تلقائي للمنتظر في '
               'هذه المرحلة — القبول يدوي.',
