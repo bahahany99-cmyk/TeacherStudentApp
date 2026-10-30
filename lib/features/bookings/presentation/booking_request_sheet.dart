@@ -83,6 +83,17 @@ class _BookingRequestSheetState extends State<_BookingRequestSheet> {
       return;
     }
 
+    // (P26) تحقّق محلي قبل النداء: خطأ حقل فارغ يظهر فورًا بدل رحلة إلى
+    // الخادم ثم رسالة خطأ عامة. الرسالة عبر SnackBar لا حوارًا يحجب الشاشة.
+    if (_subject.text.trim().isEmpty) {
+      AppSnackBar.show(
+        context,
+        'اكتب مادة الحصة أولًا.',
+        type: AppMessageType.warning,
+      );
+      return;
+    }
+
     final SessionController session = SessionScope.read(context);
     final String? blockReason = BookingRules.slotBlockReason(
       startsAt: slot,

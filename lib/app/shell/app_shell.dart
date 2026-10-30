@@ -141,7 +141,13 @@ class _AppShellState extends State<AppShell> {
                 actions: <Widget>[
                   // جرس الإشعارات (P12): عدّاد حيّ من الخادم، والقيمة 0 تُخفي
                   // الوسم بدل عرض «0».
-                  NotificationBell(viewerId: viewerId),
+                  //
+                  // (P26) **لا جرس مكرّر:** رئيسية الطالب ترسم جرسًا في رأسها
+                  // (بجانب الصورة والتحيّة) كما يطلب التصميم، فيختفي جرس الشريط
+                  // هناك ويبقى في بقية الأقسام. جرسان على الشاشة نفسها يبدوان
+                  // كخطأ واجهة، ويُربكان قارئ الشاشة (إجراءان بالاسم نفسه).
+                  if (!_hasInlineBell(role, effectiveTab))
+                    NotificationBell(viewerId: viewerId),
                   if (effectiveTab != firstTab)
                     IconButton(
                       tooltip: 'الرئيسية',
@@ -213,6 +219,12 @@ class _AppShellState extends State<AppShell> {
       ),
     );
   }
+
+  /// هل القسم الحالي يرسم جرس إشعارات بنفسه؟ (رئيسية الطالب فقط.)
+  ///
+  /// الشريط يعرض الجرس افتراضيًا؛ وحين يرسمه القسم لا نكرّره في الأعلى.
+  static bool _hasInlineBell(UserRole role, AppTab tab) =>
+      role == UserRole.student && tab == AppTab.home;
 
   /// يربط كل قسم بشاشته. المفتاح ثابت حتى لا يُعاد بناء القسم عند كل تبديل.
   Widget _pageFor(AppTab tab, UserRole role) {

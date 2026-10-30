@@ -119,9 +119,11 @@ void main() {
       );
       final BoxDecoration decoration = container.decoration! as BoxDecoration;
 
+      // (P26) نصف قطر البطاقة صار 20 بدل 24: نفس المحتوى في سطح أقل
+      // انتفاخًا. الاختبار يتبع الرمز (`radiusCard`) لا الرقم القديم.
       expect(
         decoration.borderRadius,
-        BorderRadius.circular(AppSpacing.radiusXl),
+        BorderRadius.circular(AppSpacing.radiusCard),
       );
       expect(decoration.boxShadow, AppShadows.card);
       expect(decoration.gradient, isNull);

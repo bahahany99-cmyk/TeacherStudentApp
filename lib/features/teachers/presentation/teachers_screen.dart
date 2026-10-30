@@ -198,6 +198,8 @@ class _TeachersScreenState extends State<TeachersScreen> {
                           return const EmptyState(
                             icon: Icons.workspace_premium_outlined,
                             title: 'لا يوجد مدرسون مميزون حاليًا',
+                            message: 'يُختار المميزون أسبوعيًا؛ تصفّح كل '
+                                'المدرسين في القائمة أدناه.',
                           );
                         }
                         return FeaturedTeachersCarousel(
@@ -244,10 +246,19 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   load: () =>
                       AppServicesScope.of(context).teachers.search(_filter),
                   isEmpty: (TeacherSearchResult result) => result.isEmpty,
+                  // (P26) «لا نتائج» بلا مخرج تُقرأ كعطل. إن كان هناك فلتر
+                  // مفعّل فالإجراء الأساسي هو تفريغه (أقرب طريق لنتائج)، وإلا
+                  // فلا زر أصلًا — لا نعرض إجراءً لا يغيّر شيئًا.
                   emptyBuilder: (BuildContext context) => EmptyState(
                     icon: Icons.person_search_outlined,
                     title: 'لا نتائج',
                     message: TeacherDiscoveryRules.emptyMessage(_filter),
+                    primaryActionLabel: _filter.isActive
+                        ? 'إعادة ضبط البحث'
+                        : null,
+                    onPrimaryAction: _filter.isActive
+                        ? () => setState(() => _filter = TeacherFilter.empty)
+                        : null,
                   ),
                   builder:
                       (BuildContext context, TeacherSearchResult result) {

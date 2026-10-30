@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_controller.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_card.dart';
@@ -105,11 +108,30 @@ class _BookingsScreenState extends State<BookingsScreen> {
                   }
                   final List<BookingRequest> bookings = snapshot.data!;
                   if (bookings.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.event_note_outlined,
+                    // (P26) حالة الفراغ تحمل مخرجًا لا نصًّا: الطالب يُوجَّه
+                    // إلى استعراض المدرسين، والمدرس إلى مجموعاته. زر لا يعمل
+                    // أسوأ من لا زر، لذلك يُخفى خارج الهيكل (اختبار منفرد).
+                    final ShellController? shell = ShellScope.readOrNull(
+                      context,
+                    );
+                    return EmptyState(
+                      icon: isTeacher
+                          ? Icons.inbox_outlined
+                          : Icons.event_available_outlined,
                       title: 'لا توجد طلبات بعد',
-                      message:
-                          'اطلب حصة من صفحة المدرس، وسيظهر الطلب هنا بحالته.',
+                      message: isTeacher
+                          ? 'حين يطلب طالب حصة ستظهر طلباته هنا مباشرة.'
+                          : 'اطلب حصة من صفحة المدرس، وسيظهر الطلب هنا بحالته.',
+                      primaryActionLabel: shell == null
+                          ? null
+                          : (isTeacher
+                                ? 'إدارة مجموعاتي'
+                                : 'استكشف المدرسين الآن'),
+                      onPrimaryAction: shell == null
+                          ? null
+                          : () => shell.goTo(
+                              isTeacher ? AppTab.groups : AppTab.teachers,
+                            ),
                     );
                   }
                   return Column(

@@ -40,7 +40,9 @@ abstract final class AppTypography {
       headlineMedium: t(base.headlineMedium, 25, FontWeight.w700, 1.4),
       headlineSmall: t(base.headlineSmall, 22, FontWeight.w700, 1.45),
       titleLarge: t(base.titleLarge, 19, FontWeight.w700, 1.45),
-      titleMedium: t(base.titleMedium, 16, FontWeight.w600, 1.5),
+      // (P26) عنوان البطاقة/القسم أثقل من النص المحيط به: التمييز بالوزن لا
+      // بالحجم وحده، فلا تتضخّم الأسطر على الشاشات الضيقة.
+      titleMedium: t(base.titleMedium, 16, FontWeight.w700, 1.5),
       titleSmall: t(base.titleSmall, 14, FontWeight.w600, 1.5),
       bodyLarge: t(base.bodyLarge, 16, FontWeight.w400, 1.75),
       bodyMedium: t(base.bodyMedium, 14, FontWeight.w400, 1.75),

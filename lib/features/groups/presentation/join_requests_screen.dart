@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/shell/app_tab.dart';
+import 'package:teacher_student_app/app/shell/shell_controller.dart';
+import 'package:teacher_student_app/app/shell/shell_scope.dart';
 import 'package:teacher_student_app/app/session/current_student.dart';
 import 'package:teacher_student_app/app/session/current_teacher.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
@@ -489,12 +492,27 @@ class _StudentRequestsList extends StatelessWidget {
                   context,
                 ).groups.listMyRequests(studentId),
                 isEmpty: (List<GroupJoinRequest> items) => items.isEmpty,
-                emptyBuilder: (BuildContext context) => const EmptyState(
-                  icon: Icons.mark_email_unread_outlined,
-                  title: 'لم تُرسل طلبات انضمام',
-                  message: 'افتح أي مجموعة من تبويب «المجموعات» وأرسل طلب '
-                      'انضمام لتتابعه هنا.',
-                ),
+                // (P26) الفراغ هنا لا يعني «لا شيء» بل «لم تبدأ بعد»: الزر
+                // الأساسي ينقل إلى تبويب المجموعات ويغلق الشاشة، فلا يبقى
+                // المستخدم أمام نص إرشادي فقط.
+                emptyBuilder: (BuildContext context) {
+                  final ShellController? shell = ShellScope.readOrNull(context);
+                  return EmptyState(
+                    icon: Icons.mark_email_unread_outlined,
+                    title: 'لم تُرسل طلبات انضمام',
+                    message: 'افتح أي مجموعة من تبويب «المجموعات» وأرسل طلب '
+                        'انضمام لتتابعه هنا.',
+                    primaryActionLabel: shell == null
+                        ? null
+                        : 'استكشف المجموعات',
+                    onPrimaryAction: shell == null
+                        ? null
+                        : () {
+                            shell.goTo(AppTab.groups);
+                            Navigator.of(context).maybePop();
+                          },
+                  );
+                },
                 builder:
                     (BuildContext context, List<GroupJoinRequest> requests) {
                       final List<GroupJoinRequest> pending = requests

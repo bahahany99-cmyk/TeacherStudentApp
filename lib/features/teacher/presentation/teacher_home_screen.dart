@@ -60,9 +60,13 @@ class TeacherHomeScreen extends StatelessWidget {
                       .where((BookingRequest b) => b.waitingForTeacher)
                       .toList(growable: false);
                   if (pending.isEmpty) {
+                    // (P26) زر «كل الطلبات» موجود في رأس القسم أعلاه؛ هنا
+                    // نُبقي الفراغ مختصرًا بلا ازدواج إجراءات، لكن برسالة
+                    // تطمئن بدل سطر جاف.
                     return const EmptyState(
                       icon: Icons.inbox_outlined,
                       title: 'لا توجد طلبات جديدة',
+                      message: 'سيظهر هنا كل طلب حجز جديد لحظة إرساله.',
                     );
                   }
                   return Column(

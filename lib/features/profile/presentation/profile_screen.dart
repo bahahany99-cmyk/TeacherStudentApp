@@ -10,7 +10,7 @@ import 'package:teacher_student_app/core/widgets/app_card.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
-import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/core/widgets/settings_group.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
@@ -21,8 +21,23 @@ import 'package:teacher_student_app/features/profile/presentation/widgets/accoun
 
 /// صفحة الحساب والملف الشخصي — **مشتركة** بين الطالب والمدرس (تبويب «حسابي»).
 ///
-/// تعرض بيانات الجلسة، وأدوات الحساب: تسجيل الخروج، وطلب حذف الحساب بمهلة
-/// سماح 7 أيام (P17)، وتبديل واجهة المعاينة في الوضع التجريبي فقط.
+/// ## بنية الصفحة (نسخة 5 — 2026-10-30)
+///
+/// كانت الصفحة قائمة واحدة طويلة من تسعة صفوف متساوية (بياناتي، المحادثات،
+/// الإشعارات، المساعدة، الشروط، الخروج…) ثم فقرة شرح ثم محرّر صورة ثم
+/// «منطقة خطر». الأثر: المستخدم يرى «قائمة إعدادات» مسطّحة بلا تسلسل،
+/// والبيانات الشخصية (أهم ما في الصفحة) مدفونة في المنتصف.
+///
+/// الترتيب الجديد يتبع ما يفعله المستخدم فعلًا:
+/// 1. **بطاقة الهوية** — الصورة والاسم ونوع الحساب والبريد، والضغط عليها يفتح
+///    «بياناتي». لا شرح نظري تحتها (الشرح داخل الحقول نفسها).
+/// 2. **الصورة الشخصية** — محرّر واحد واضح، لا صفوف متعددة لنفس الفعل.
+/// 3. **الحساب / التواصل / الدعم / الجلسة / منطقة الخطر** — مجموعات مفصولة
+///    بعنوان، وخطوط بادئة بعد الأيقونة، وأيقونة في مربع ملوّن هادئ.
+///
+/// **لا تكرار:** كل وجهة تظهر مرة واحدة. «المساعدة والدعم» و«الشروط وسياسة
+/// الخصوصية» في مجموعة واحدة تحت عنوان «الدعم والمعلومات»، و«تسجيل الخروج»
+/// منفصل عن «حذف الحساب» لأن أولهما عادي والثاني لا رجعة فيه.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, this.now});
 
@@ -41,6 +56,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _switchRole(UserRole role) {
     SessionScope.read(context).switchDemoRole(role);
   }
+
+  void _open(String route) => Navigator.of(context).pushNamed(route);
 
   /// تسجيل الخروج: تأكيد ← إنهاء الجلسة ← شاشة الدخول.
   ///
@@ -142,7 +159,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final SessionController session = SessionScope.of(context);
     final AppUser? user = session.user;
 
@@ -153,195 +169,135 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              AppCard(
-                child: Row(
+              // 1) الهوية: صورة + اسم + نوع الحساب + البريد، والضغط يفتح
+              //    «بياناتي» — أقصر طريق إلى أهم فعل في الصفحة.
+              _IdentityCard(user: user, onTap: () => _open(RoutePaths.myData)),
+              const SizedBox(height: AppSpacing.md),
+
+              // 2) الصورة الشخصية: محرّر واحد، متاح للطالب والمدرس معًا —
+              //    الحساب ليس بلا صورة أبدًا (P22).
+              if (user != null)
+                SettingsGroup(
+                  title: 'الصورة الشخصية',
                   children: <Widget>[
-                    // (P22) الصورة الفعلية للحساب: صورة مخصّصة إن وُجدت،
-                    // وإلا التصميم الافتراضي — لا دائرة بحرف فقط.
-                    UserAvatarLoader(
-                      key: const Key('profile-avatar-image'),
-                      userId: user?.id ?? '',
-                      presetId: user?.resolvedAvatarPreset,
-                      initials: user?.initials,
-                      size: AppSpacing.avatarLg,
-                      semanticLabel: 'صورة الحساب',
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            user?.displayName ?? 'مستخدم غير معروف',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Wrap(
-                            spacing: AppSpacing.xxs,
-                            runSpacing: AppSpacing.xxs,
-                            children: <Widget>[
-                              StatusChip(
-                                label: user?.role.label ?? '—',
-                                color: theme.colorScheme.primary,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(
-                            user?.email ?? 'لا يوجد بريد مرتبط بعد',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: AccountAvatarEditor(
+                        key: const Key('profile-avatar-editor'),
+                        userId: user.id,
+                        initialPreset: user.resolvedAvatarPreset,
+                        initials: user.initials,
+                        helperText: 'تظهر بجانب اسمك في المحادثات وملفك.',
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'الاسم والبريد من حسابك، ونوع الحساب مرتبط بحسابك ولا '
-                'يمكن تغييره من هنا. لتعديل بياناتك اضغط «بياناتي».',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              // (P22) تغيير الصورة من الإعدادات: صورة من الجهاز أو تصميم
-              // افتراضي. متاح للطالب والمدرس معًا — الحساب ليس بلا صورة أبدًا.
-              if (user != null) ...<Widget>[
-                const SectionHeader(
-                  title: 'صورة الحساب',
-                  subtitle: 'صورة من جهازك أو تصميم افتراضي',
-                ),
-                AppCard(
-                  child: AccountAvatarEditor(
-                    key: const Key('profile-avatar-editor'),
-                    userId: user.id,
-                    initialPreset: user.resolvedAvatarPreset,
-                    initials: user.initials,
-                    helperText: 'تظهر بجانب اسمك في المحادثات وملفك.',
+
+              // 3) الحساب: بياناتي + (المدرس) ملفه التعريفي + (الطالب) مفضلته.
+              SettingsGroup(
+                title: 'الحساب',
+                children: <Widget>[
+                  // (P14) الإدارة فقط: مدخل اللوحة. القرار الحقيقي في القواعد،
+                  // و`AdminGuard` يمنع الوصول لو فُتح المسار من حساب آخر.
+                  if (session.isAdmin)
+                    SettingsTile(
+                      icon: Icons.admin_panel_settings_outlined,
+                      label: 'لوحة الإدارة',
+                      onTap: () => _open(RoutePaths.adminDashboard),
+                    ),
+                  SettingsTile(
+                    key: const Key('profile-my-data'),
+                    icon: Icons.person_outline,
+                    label: 'بياناتي',
+                    subtitle: 'الاسم والصورة والبيانات الأكاديمية',
+                    onTap: () => _open(RoutePaths.myData),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
-              const SectionHeader(title: 'إعدادات الحساب'),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: <Widget>[
-                    // (P14) الإدارة فقط: مدخل اللوحة. القرار الحقيقي في القواعد،
-                    // و`AdminGuard` يمنع الوصول لو فُتح المسار من حساب آخر.
-                    if (session.isAdmin) ...<Widget>[
-                      _ProfileTile(
-                        icon: Icons.admin_panel_settings_outlined,
-                        label: 'لوحة الإدارة',
-                        onTap: () => Navigator.of(
-                          context,
-                        ).pushNamed(RoutePaths.adminDashboard),
-                      ),
-                      const Divider(height: 1),
-                    ],
-                    if (user?.role == UserRole.teacher) ...<Widget>[
-                      _ProfileTile(
-                        icon: Icons.badge_outlined,
-                        label: 'ملفي التعريفي',
-                        onTap: () => Navigator.of(context).pushNamed(
-                          RoutePaths.myTeacherProfile,
-                        ),
-                      ),
-                      const Divider(height: 1),
-                    ],
-                    _ProfileTile(
-                      icon: Icons.forum_outlined,
-                      label: 'المحادثات',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.directChats),
+                  if (user?.role == UserRole.teacher)
+                    SettingsTile(
+                      icon: Icons.badge_outlined,
+                      label: 'ملفي التعريفي',
+                      subtitle: 'ما يراه الطلاب في صفحتك',
+                      onTap: () => _open(RoutePaths.myTeacherProfile),
                     ),
-                    const Divider(height: 1),
-                    _ProfileTile(
-                      key: const Key('profile-my-data'),
-                      icon: Icons.person_outline,
-                      label: 'بياناتي',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.myData),
+                  // المفضلة للطالب (P13): المدرس لا يحفظ مدرسين ولا مجموعات.
+                  if (user?.role == UserRole.student)
+                    SettingsTile(
+                      icon: Icons.favorite_border,
+                      label: 'المفضلة',
+                      subtitle: 'المدرسون والمجموعات المحفوظة',
+                      onTap: () => _open(RoutePaths.favorites),
                     ),
-                    const Divider(height: 1),
-                    // المفضلة للطالب (P13): المدرس لا يحفظ مدرسين ولا مجموعات.
-                    if (user?.role == UserRole.student) ...<Widget>[
-                      _ProfileTile(
-                        icon: Icons.favorite_border,
-                        label: 'المفضلة',
-                        onTap: () => Navigator.of(
-                          context,
-                        ).pushNamed(RoutePaths.favorites),
-                      ),
-                      const Divider(height: 1),
-                    ],
-                    _ProfileTile(
-                      icon: Icons.notifications_none,
-                      label: 'الإشعارات',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.notifications),
-                    ),
-                    const Divider(height: 1),
-                    _ProfileTile(
-                      icon: Icons.help_outline,
-                      label: 'المساعدة والدعم',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.support),
-                    ),
-                    const Divider(height: 1),
-                    _ProfileTile(
-                      icon: Icons.privacy_tip_outlined,
-                      label: 'الشروط وسياسة الخصوصية',
-                      onTap: () => Navigator.of(
-                        context,
-                      ).pushNamed(RoutePaths.legal),
-                    ),
-                    const Divider(height: 1),
-                    // (P17) زر الخروج داخل «إعدادات الحساب»: نفس المكان في
-                    // واجهة الطالب والمدرس لأن الشاشة مشتركة.
-                    _ProfileTile(
-                      key: const Key('profile-sign-out'),
-                      icon: Icons.logout,
-                      label: AccountDeletionRules.signOutAction,
-                      danger: true,
-                      busy: _busy,
-                      onTap: _busy ? null : _signOut,
-                    ),
-                  ],
-                ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              const SectionHeader(
+
+              // 4) التواصل: المحادثات والإشعارات — لا تظهر أي منهما في مكان آخر.
+              SettingsGroup(
+                title: 'التواصل',
+                children: <Widget>[
+                  SettingsTile(
+                    icon: Icons.forum_outlined,
+                    label: 'المحادثات',
+                    subtitle: 'حواراتك المباشرة مع المدرسين',
+                    onTap: () => _open(RoutePaths.directChats),
+                  ),
+                  SettingsTile(
+                    icon: Icons.notifications_none,
+                    label: 'الإشعارات',
+                    subtitle: 'طلبات الحجز والانضمام وقراراتها',
+                    onTap: () => _open(RoutePaths.notifications),
+                  ),
+                ],
+              ),
+
+              SettingsGroup(
+                title: 'الدعم والمعلومات',
+                children: <Widget>[
+                  SettingsTile(
+                    icon: Icons.help_outline,
+                    label: 'المساعدة والدعم',
+                    subtitle: 'أسئلة شائعة وقناة تواصل',
+                    onTap: () => _open(RoutePaths.support),
+                  ),
+                  SettingsTile(
+                    icon: Icons.privacy_tip_outlined,
+                    label: 'الشروط وسياسة الخصوصية',
+                    onTap: () => _open(RoutePaths.legal),
+                  ),
+                ],
+              ),
+
+              // 5) الجلسة: الخروج فعل عادي، وفي مجموعة مستقلة.
+              SettingsGroup(
+                title: 'الجلسة',
+                children: <Widget>[
+                  SettingsTile(
+                    key: const Key('profile-sign-out'),
+                    icon: Icons.logout,
+                    label: AccountDeletionRules.signOutAction,
+                    danger: true,
+                    busy: _busy,
+                    onTap: _busy ? null : _signOut,
+                  ),
+                ],
+              ),
+
+              // 6) منطقة الخطر: فعل لا رجعة فيه، منفصل بصريًا ونصيًا.
+              SettingsGroup(
                 title: 'منطقة الخطر',
-                subtitle: 'إجراءات لا تُنفَّذ فورًا ولا تُلغى تلقائيًا',
+                children: <Widget>[
+                  SettingsTile(
+                    key: const Key('profile-delete-account'),
+                    icon: Icons.delete_forever_outlined,
+                    label: AccountDeletionRules.deleteTitle,
+                    subtitle:
+                        'مهلة ${AccountDeletionRules.gracePeriod.inDays} '
+                        'أيام للتراجع قبل الحذف النهائي',
+                    danger: true,
+                    busy: _busy,
+                    onTap: _busy ? null : _deleteAccount,
+                  ),
+                ],
               ),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: <Widget>[
-                    _ProfileTile(
-                      key: const Key('profile-delete-account'),
-                      icon: Icons.delete_forever_outlined,
-                      label: AccountDeletionRules.deleteTitle,
-                      subtitle:
-                          'مهلة ${AccountDeletionRules.gracePeriod.inDays} '
-                          'أيام للتراجع قبل الحذف النهائي',
-                      danger: true,
-                      busy: _busy,
-                      onTap: _busy ? null : _deleteAccount,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
               const InfoNote(
                 text:
                     'حذف الحساب في هذه النسخة حذف ناعم: يخفي حسابك من البحث '
@@ -353,42 +309,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // (P21) أدوات تطوير: لا تُبنى في نسخة الإصدار أصلًا.
                 //
                 // آخر ما يجب أن يراه مستخدم على جهاز حقيقي: أزرار تبديل
-                // «واجهة الطالب/المدرس/الإدارة» ومعرض مكوّنات. `kDebugMode`
-                // ثابت وقت الترجمة، فالفرع كله يُحذف من APK الإصدار ولا
-                // يبقى مجرد مخفي.
+                // «واجهة الطالب/المدرس/الإدارة» ومعرض مكوّنات. `kDebugMode` ثابت
+                // وقت الترجمة، فالفرع كله يُحذف من APK الإصدار ولا يبقى مجرد
+                // مخفي.
                 if (kDebugMode) ...<Widget>[
                   const SizedBox(height: AppSpacing.md),
-                  const SectionHeader(
-                    title: 'معاينة الواجهات',
-                    subtitle: 'للاختبار المحلي فقط — لا يمنح أي صلاحية',
-                  ),
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        OutlinedButton(
-                          onPressed: () => _switchRole(UserRole.student),
-                          child: const Text('واجهة الطالب'),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        OutlinedButton(
-                          onPressed: () => _switchRole(UserRole.teacher),
-                          child: const Text('واجهة المدرس'),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        OutlinedButton(
-                          onPressed: () => _switchRole(UserRole.admin),
-                          child: const Text('واجهة الإدارة (تجريبي)'),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        OutlinedButton(
-                          onPressed: () => Navigator.of(
-                            context,
-                          ).pushNamed(RoutePaths.designGallery),
-                          child: const Text('معرض المكونات (تطوير)'),
-                        ),
-                      ],
-                    ),
+                  SettingsGroup(
+                    title: 'معاينة الواجهات (تطوير)',
+                    children: <Widget>[
+                      SettingsTile(
+                        icon: Icons.school_outlined,
+                        label: 'واجهة الطالب',
+                        onTap: () => _switchRole(UserRole.student),
+                      ),
+                      SettingsTile(
+                        icon: Icons.co_present_outlined,
+                        label: 'واجهة المدرس',
+                        onTap: () => _switchRole(UserRole.teacher),
+                      ),
+                      SettingsTile(
+                        icon: Icons.admin_panel_settings_outlined,
+                        label: 'واجهة الإدارة (تجريبي)',
+                        onTap: () => _switchRole(UserRole.admin),
+                      ),
+                      SettingsTile(
+                        icon: Icons.widgets_outlined,
+                        label: 'معرض المكونات',
+                        onTap: () => _open(RoutePaths.designGallery),
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -401,59 +350,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class _ProfileTile extends StatelessWidget {
-  const _ProfileTile({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.subtitle,
-    this.danger = false,
-    this.busy = false,
-  });
+/// بطاقة الهوية أعلى «حسابي»: صورة + اسم + نوع الحساب + البريد.
+///
+/// **لماذا بطاقة لا مجرد صف؟** لأن هذه هي المعلومات التي يحتاج المستخدم
+/// التأكد منها فورًا (بأي حساب أنا داخل؟ وما بريدي؟)، ثم ضغطة واحدة تنقله إلى
+/// تعديلها. الاسم والبريد هنا للقراءة فقط، والقرار في «بياناتي».
+class _IdentityCard extends StatelessWidget {
+  const _IdentityCard({required this.user, required this.onTap});
 
-  final IconData icon;
-  final String label;
-  final String? subtitle;
-  final VoidCallback? onTap;
-
-  /// لون تحذيري (خروج/حذف) بدل اللون الافتراضي.
-  final bool danger;
-
-  /// عملية جارية: تُعرض دائرة تقدّم بدل سهم الانتقال.
-  final bool busy;
+  final AppUser? user;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color foreground = danger
-        ? theme.colorScheme.error
-        : theme.colorScheme.onSurface;
+    final String name = user?.displayName ?? 'مستخدم غير معروف';
 
-    return ListTile(
-      enabled: onTap != null || busy,
-      leading: Icon(icon, color: foreground),
-      title: Text(label, style: TextStyle(color: foreground)),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle!,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-      trailing: busy
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              Icons.chevron_left,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+    return AppCard(
+      padding: AppSpacing.cardPaddingRoomy,
       onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          // (P22) الصورة الفعلية للحساب: صورة مخصّصة إن وُجدت، وإلا التصميم
+          // الافتراضي — لا دائرة بحرف فقط.
+          UserAvatarLoader(
+            key: const Key('profile-avatar-image'),
+            userId: user?.id ?? '',
+            presetId: user?.resolvedAvatarPreset,
+            initials: user?.initials,
+            size: AppSpacing.avatarMd,
+            semanticLabel: 'صورة الحساب',
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Row(
+                  children: <Widget>[
+                    StatusChip(
+                      label: user?.role.label ?? '—',
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        user?.email ?? 'لا يوجد بريد مرتبط بعد',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          Icon(
+            Icons.chevron_left,
+            size: 20,
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
+          ),
+        ],
+      ),
     );
   }
 }
