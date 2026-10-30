@@ -240,6 +240,17 @@ class DemoTeacherRepository implements TeacherRepository {
     required String uid,
     required TeacherProfileDraft draft,
   }) async {
+    // (P23) المادة والمرحلة إلزاميتان كما في القواعد (2..40 حرفًا).
+    final String? academicProblem = draft.academicProblem;
+    if (academicProblem != null) {
+      throw AppException(
+        AppErrorKind.invalidInput,
+        debugMessage: 'teacher profile saved without academic fields (demo)',
+        overrideTitle: 'بيانات ناقصة',
+        overrideMessage: '$academicProblem — لا يُرسل ملفك للمراجعة بدونها.',
+      );
+    }
+
     // (P22) نفس شرط الخادم: لا ملف مدرس بلا صورة.
     if (!draft.hasPhoto) {
       throw const AppException(

@@ -14,49 +14,75 @@ import 'package:teacher_student_app/features/groups/presentation/widgets/group_c
 
 /// قسم «مجموعاتي» في واجهة المدرس، مع إنشاء وتعديل (P7).
 ///
-/// لماذا مكوّن حالة مستقل؟
-/// - `AsyncView` يقرأ مرة واحدة عند البناء. بعد إنشاء مجموعة أو تعديلها نعود
-///   إلى هذه الشاشة، فنحتاج إعادة قراءة صريحة. الحل: عدّاد إصدار يُمرَّر
-///   كـ`key` لـ`AsyncView`، فيُعاد بناؤه وقراءة البيانات من جديد.
-/// - المكوّن يُستخدم في مكانين (الرئيسية + تبويب المجموعات) بسلوك واحد، بدل
-///   نسخ منطق التحديث مرتين.
+/// ## زر واحد لا ثلاثة (P23)
+///
+/// كان القسم يعرض **ثلاثة** مداخل للفعل نفسه: زر صغير في عنوان القسم، ورابط
+/// داخل حالة الفراغ، وزر عريض أسفل القائمة — نفس الفعل بثلاثة أشكال، فيبدو
+/// التطبيق غير مضبوط ويحتار المستخدم أيّها «الصحيح». الآن:
+///
+/// - **زر أساسي واحد** (`FilledButton.icon` بعنوان «إنشاء مجموعة جديدة»)
+///   ثابت أعلى القسم، ظاهر في الحالتين (قائمة فارغة أو ممتلئة).
+/// - حالة الفراغ **تشرح** ولا تُكرّر الزر: لا رابط فيها، بل إشارة إلى الزر
+///   نفسه، فلا يفعل المستخدم الفعل من مكانين مختلفين.
+/// - عنوان القسم بلا زر إجراء: لا شيء مكرّر.
+///
+/// ويُستخدم القسم في مكانين (الرئيسية + تبويب المجموعات) بسلوك واحد، بدل
+/// نسخ منطق الإنشاء والتحديث مرتين.
 class TeacherGroupsSection extends StatefulWidget {
   const TeacherGroupsSection({
     super.key,
     this.maxItems,
     this.showHeader = true,
-    this.headerActionLabel,
     this.showCreateButton = true,
+    this.createButtonKey = const Key('groups-create'),
   });
 
   /// حدّ العرض في الرئيسية (null = كل المجموعات في تبويب المجموعات).
   final int? maxItems;
 
   final bool showHeader;
-  final String? headerActionLabel;
 
-  /// زر «مجموعة جديدة» داخل القسم (يُخفى حين توفّره الشاشة الأم بنفسها).
+  /// إظهار الزر الأساسي الوحيد. تُخفيه الشاشة الأم فقط إن كانت تعرض فعلًا
+  /// أولى بنفسه (لا يوجد حاليًا مكان يفعل ذلك).
   final bool showCreateButton;
+
+  /// مفتاح الزر — يستخدمه الاختبار ويضمن أن الزر **واحد** لا أكثر.
+  final Key createButtonKey;
 
   @override
   State<TeacherGroupsSection> createState() => _TeacherGroupsSectionState();
 }
 
 class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
+  /// عدّاد إصدار يُمرَّر إلى `AsyncView.reloadKey`: إعادة قراءة **بلا** فقدان
+  /// الحالة (لا وميض تحميل).
   int _revision = 0;
+
+  bool _opening = false;
+
+  /// الإشارة المشتركة (P23): كل حفظ ناجح في أي مكان يزيدها فتُحدَّث كل
+  /// الأقسام الحيّة، لا القسم الذي أطلق الحفظ وحده.
+  ValueNotifier<int>? _signal;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ValueNotifier<int> signal = AppServicesScope.of(context).groupsRevision;
+    if (!identical(signal, _signal)) {
+      _signal?.removeListener(_refresh);
+      _signal = signal..addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    _signal?.removeListener(_refresh);
+    super.dispose();
+  }
 
   void _refresh() {
     if (mounted) {
       setState(() => _revision++);
-    }
-  }
-
-  Future<void> _openForm({String? groupId}) async {
-    final bool? saved = await Navigator.of(
-      context,
-    ).pushNamed<bool>(RoutePaths.groupForm, arguments: groupId);
-    if (saved == true) {
-      _refresh();
     }
   }
 
@@ -68,26 +94,38 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (widget.showHeader)
-          SectionHeader(
+          const SectionHeader(
             title: 'مجموعاتي',
             subtitle: 'السعة والمواعيد تحددها أنت · الأعضاء يُحدَّثون فورًا',
             icon: Icons.groups_outlined,
-            actionLabel: widget.headerActionLabel,
-            onActionTap: widget.headerActionLabel == null ? null : _create,
           ),
+        // ⚠️ **الزر الوحيد** في هذا القسم. أي زر آخر للإنشاء (في العنوان أو
+        // حالة الفراغ أو أسفل القائمة) تكرار مقصود رفضه.
+        if (widget.showCreateButton) ...<Widget>[
+          FilledButton.icon(
+            key: widget.createButtonKey,
+            onPressed: _opening ? null : _create,
+            icon: const Icon(Icons.add),
+            label: const Text('إنشاء مجموعة جديدة'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         AsyncView<List<StudyGroup>>(
-          key: ValueKey<int>(_revision),
+          // `reloadKey` لا `key`: إعادة القراءة بلا هدم الحالة (P23).
+          reloadKey: _revision,
+          keepPreviousData: true,
           load: () => AppServicesScope.of(
             context,
           ).groups.listForTeacher(teacherId),
           builder: (BuildContext context, List<StudyGroup> groups) {
             if (groups.isEmpty) {
+              // بلا زر: الفعل له مدخل واحد (الزر أعلاه).
               return EmptyState(
                 icon: Icons.groups_outlined,
                 title: 'لم تُنشئ مجموعات بعد',
-                message: 'أنشئ مجموعتك الأولى وحدّد السعة والموعد.',
-                actionLabel: 'إنشاء مجموعة',
-                onActionTap: _create,
+                message:
+                    'اضغط «إنشاء مجموعة جديدة» وحدّد المادة والمرحلة والسعة '
+                    'والموعد — تظهر المجموعة هنا فور الحفظ.',
               );
             }
 
@@ -98,20 +136,11 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (final StudyGroup group in visible)
-                  _editableCard(group),
+                for (final StudyGroup group in visible) _editableCard(group),
               ],
             );
           },
         ),
-        if (widget.showCreateButton) ...<Widget>[
-          const SizedBox(height: AppSpacing.xs),
-          OutlinedButton.icon(
-            onPressed: _create,
-            icon: const Icon(Icons.add, size: 20),
-            label: const Text('مجموعة جديدة'),
-          ),
-        ],
       ],
     );
   }
@@ -123,19 +152,38 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
         await Navigator.of(
           context,
         ).pushNamed(RoutePaths.groupDetails, arguments: group.id);
-        // التعديل قد يحدث داخل التفاصيل؛ نعيد القراءة عند العودة.
+        // التعديل داخل التفاصيل يمرّ عبر النموذج نفسه الذي يُبلّغ الإشارة؛
+        // نقرأ مرة أخرى احتياطًا لأي تغيير آخر (إيقاف/أرشفة).
         _refresh();
       },
       onEditTap: () => _openForm(groupId: group.id),
     );
   }
 
-  Future<void> _create() async {
-    if (!mounted) {
+  /// يفتح النموذج الحقيقي (إنشاء أو تعديل) ويعيد القراءة عند الحفظ.
+  ///
+  /// النموذج نفسه يكتب في `studyGroups` عبر `GroupRepository` (Firestore في
+  /// الإنتاج)، ولا يعرض رسالة وهمية.
+  Future<void> _openForm({String? groupId}) async {
+    if (_opening) {
       return;
     }
-    await _openForm();
+    setState(() => _opening = true);
+    try {
+      final bool? saved = await Navigator.of(
+        context,
+      ).pushNamed<bool>(RoutePaths.groupForm, arguments: groupId);
+      if (saved == true) {
+        _refresh();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _opening = false);
+      }
+    }
   }
+
+  Future<void> _create() => _openForm();
 
   /// يُستخدم خارجيًا لإظهار تلميح موحّد (غير مستخدم حاليًا).
   void showInfo(String message) {

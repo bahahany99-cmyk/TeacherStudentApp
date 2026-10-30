@@ -343,6 +343,21 @@ service cloud.firestore {
           && request.resource.data[field].size() <= 40;
       }
 
+      // (P23) الحقول الأكاديمية إلزامية **عند الإرسال للمراجعة** لا عند إنشاء
+      // المسودة: التطبيق ينشئ مسودة تلقائيًا عند اختيار دور «مدرس» قبل أن
+      // يكتب المدرس مادته أو يرفع صورته. اشتراطها على كل كتابة كان سيُفشل
+      // اختيار الدور نفسه، وتركها غير مشروطة عند الإرسال يفتح ملفًا للمراجعة
+      // بلا مادة ولا مرحلة.
+      function academicFieldsSatisfiedFor(status) {
+        if (status == 'draft' || status == 'rejected') {
+          return (!('subject' in request.resource.data.keys())
+                   || validAcademicField('subject'))
+            && (!('stage' in request.resource.data.keys())
+                   || validAcademicField('stage'));
+        }
+        return validAcademicField('subject') && validAcademicField('stage');
+      }
+
       function validProfilePayload() {
         return request.resource.data.displayName is string
           && request.resource.data.displayName.size() > 0
@@ -352,8 +367,7 @@ service cloud.firestore {
               || request.resource.data.isOnline is bool)
           && validOptionalText('governorate', 40)
           && validOptionalText('district', 60)
-          && validAcademicField('subject')
-          && validAcademicField('stage');
+          && academicFieldsSatisfiedFor(request.resource.data.status);
       }
 
       // عند الإنشاء: لا حقل إداري إطلاقًا — الملف يبدأ بلا تمييز ولا قرار.

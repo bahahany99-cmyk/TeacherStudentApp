@@ -26,6 +26,56 @@ void main() {
     );
   }
 
+  group('TeacherProfileDraft — الحقول الإلزامية (P23)', () {
+    test('الاسم/المادة/المرحلة الفارغة تُبلَّغ برسالة عربية محددة', () {
+      const TeacherProfileDraft empty = TeacherProfileDraft(
+        displayName: 'أ. سارة',
+        subject: '',
+        stage: '',
+        area: 'القاهرة',
+        bio: 'نبذة كافية للاختبار هنا.',
+      );
+
+      expect(empty.academicProblem, 'أدخل المادة');
+    });
+
+    test('مرحلة فارغة بعد مادة صالحة تُبلَّغ باسمها', () {
+      const TeacherProfileDraft noStage = TeacherProfileDraft(
+        displayName: 'أ. سارة',
+        subject: 'الفيزياء',
+        stage: ' ',
+        area: 'القاهرة',
+        bio: 'نبذة كافية للاختبار هنا.',
+      );
+
+      expect(noStage.academicProblem, contains('المرحلة'));
+    });
+
+    test('قيمة مخصّصة صالحة تمرّ (2..40)', () {
+      const TeacherProfileDraft custom = TeacherProfileDraft(
+        displayName: 'أ. سارة',
+        subject: 'العلوم المتكاملة',
+        stage: 'رياض الأطفال',
+        area: 'القاهرة',
+        bio: 'نبذة كافية للاختبار هنا.',
+      );
+
+      expect(custom.academicProblem, isNull);
+    });
+
+    test('أكثر من 40 حرفًا مرفوض بنفس حد القواعد', () {
+      final TeacherProfileDraft long = TeacherProfileDraft(
+        displayName: 'أ. سارة',
+        subject: 'ر'.padRight(41, 'ي'),
+        stage: 'الثانوية العامة',
+        area: 'القاهرة',
+        bio: 'نبذة كافية للاختبار هنا.',
+      );
+
+      expect(long.academicProblem, contains('طويل'));
+    });
+  });
+
   group('TeacherProfileDraft', () {
     test('الفراغ يُطبَّع إلى حذف المفتاح لا سلسلة فارغة', () {
       const TeacherProfileDraft empty = TeacherProfileDraft(
@@ -143,6 +193,52 @@ void main() {
 
       // لم يُنشأ ملف: الرفض قبل الكتابة لا بعدها.
       expect(await repo.findMine(uid), isNull);
+    });
+
+    test('ملف بلا مادة أو بلا مرحلة مرفوض قبل أي كتابة (P23)', () async {
+      final DemoTeacherRepository repo = DemoTeacherRepository();
+
+      // المادة فارغة.
+      await expectLater(
+        repo.saveMyProfile(
+          uid: 'uid-no-subject',
+          draft: TeacherProfileDraft(
+            displayName: 'أ. بلا مادة',
+            subject: '   ',
+            stage: 'الثانوية العامة',
+            area: 'المعادي',
+            bio: 'نبذة كافية للاختبار هنا بلا مادة.',
+            photoPath: TeacherProfile.photoPathFor('uid-no-subject'),
+          ),
+        ),
+        throwsA(
+          isA<AppException>().having(
+            (AppException error) => error.overrideMessage ?? '',
+            'رسالة',
+            contains('المادة'),
+          ),
+        ),
+      );
+
+      // المرحلة حرف واحد: أقل من الحد الأدنى (نفس حد القواعد).
+      await expectLater(
+        repo.saveMyProfile(
+          uid: 'uid-bad-stage',
+          draft: TeacherProfileDraft(
+            displayName: 'أ. بمرحلة قصيرة',
+            subject: 'الرياضيات',
+            stage: 'ث',
+            area: 'المعادي',
+            bio: 'نبذة كافية للاختبار هنا بمرحلة قصيرة.',
+            photoPath: TeacherProfile.photoPathFor('uid-bad-stage'),
+          ),
+        ),
+        throwsA(isA<AppException>()),
+      );
+
+      // لا مستندات أُنشئت: الرفض قبل الكتابة.
+      expect(await repo.findMine('uid-no-subject'), isNull);
+      expect(await repo.findMine('uid-bad-stage'), isNull);
     });
 
     test('الصورة تُحفظ في الملف وتُعاد معه', () async {

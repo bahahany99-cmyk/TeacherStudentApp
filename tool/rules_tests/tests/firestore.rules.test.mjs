@@ -4882,6 +4882,94 @@ describe('P22 — الصورة إلزامية عند الإرسال للمراج
   });
 });
 
+describe('P23 — المادة والمرحلة إلزاميتان عند الإرسال للمراجعة', () => {
+  it('مسودة بلا مادة ولا مرحلة مسموحة (المسودة التلقائية عند اختيار الدور)', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-draft2').firestore();
+
+    await assertSucceeds(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-draft2'), {
+        ownerId: 'teacher-draft2',
+        displayName: 'أ. مسودة',
+        status: 'draft',
+        accountHidden: false,
+        createdAt: now(),
+      }),
+    );
+  });
+
+  it('إرسال للمراجعة بلا مادة مرفوض', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-nosub').firestore();
+    await seed([
+      { path: avatarPath('teacher-nosub'), data: avatarDoc('teacher-nosub') },
+    ]);
+
+    await assertFails(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-nosub'), {
+        ownerId: 'teacher-nosub',
+        displayName: 'أ. بلا مادة',
+        status: 'pendingReview',
+        accountHidden: false,
+        createdAt: now(),
+        stage: 'الثانوية العامة',
+        photoPath: avatarPath('teacher-nosub'),
+      }),
+    );
+  });
+
+  it('إرسال للمراجعة بلا مرحلة مرفوض', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-nostage').firestore();
+    await seed([
+      { path: avatarPath('teacher-nostage'), data: avatarDoc('teacher-nostage') },
+    ]);
+
+    await assertFails(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-nostage'), {
+        ownerId: 'teacher-nostage',
+        displayName: 'أ. بلا مرحلة',
+        status: 'pendingReview',
+        accountHidden: false,
+        createdAt: now(),
+        subject: 'الرياضيات',
+        photoPath: avatarPath('teacher-nostage'),
+      }),
+    );
+  });
+
+  it('مادة قصيرة (حرف واحد) مرفوضة حتى في المسودة', async () => {
+    const fresh = testEnv.authenticatedContext('teacher-short').firestore();
+
+    await assertFails(
+      setDoc(doc(fresh, 'teacherProfiles/teacher-short'), {
+        ownerId: 'teacher-short',
+        displayName: 'أ. مادة قصيرة',
+        status: 'draft',
+        accountHidden: false,
+        createdAt: now(),
+        subject: 'ر',
+      }),
+    );
+  });
+
+  it('تعديل ملف موثّق بلا مادة مرفوض (لا إرسال ناقص)', async () => {
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-1'),
+        subject: deleteField(),
+      }),
+    );
+  });
+
+  it('قيمة مخصّصة طويلة (>40) مرفوضة', async () => {
+    await assertFails(
+      updateDoc(
+        doc(asTeacher(), 'teacherProfiles/teacher-1'),
+        ownerEdit({ subject: 'ر'.repeat(41) }),
+      ),
+    );
+  });
+});
+
 describe('P22 — سياسة التعديل: القفل وإعادة التحقق', () => {
   it('ملف قيد المراجعة مقفل تمامًا أمام صاحبه', async () => {
     await seed([

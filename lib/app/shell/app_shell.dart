@@ -14,7 +14,6 @@ import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
-import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
@@ -223,10 +222,7 @@ class _AppShellState extends State<AppShell> {
           : const StudentHomeScreen(key: ValueKey<String>('tab-home')),
       AppTab.teachers => const TeachersScreen(key: ValueKey<String>('tab-teachers')),
       AppTab.groups => role == UserRole.teacher
-          ? const GroupsScreen.forTeacher(
-              key: ValueKey<String>('tab-groups'),
-              teacherId: DemoData.demoTeacherId,
-            )
+          ? const GroupsScreen.forTeacher(key: ValueKey<String>('tab-groups'))
           : const GroupsScreen.discover(key: ValueKey<String>('tab-groups')),
       AppTab.bookings => BookingsScreen(
         key: const ValueKey<String>('tab-bookings'),

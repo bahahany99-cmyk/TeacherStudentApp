@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
+import 'package:teacher_student_app/core/widgets/info_note.dart';
 import 'package:teacher_student_app/data/constants/academic_options.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
@@ -321,6 +322,98 @@ void main() {
     });
   });
 
+  group('(P23) الحقول الإلزامية الثلاثة', () {
+    testWidgets('نموذج جديد بلا صورة/مادة/مرحلة: رسالة واحدة تسمّي الثلاثة', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+      // لا ملف للمدرس ⇒ نموذج إنشاء فارغ تمامًا.
+      final AppServices demo = AppServices.demo();
+      final AppServices services = AppServices(
+        auth: demo.auth,
+        teachers: DemoTeacherRepository(source: <TeacherProfile>[]),
+        groups: demo.groups,
+        bookings: demo.bookings,
+        schedules: demo.schedules,
+        messages: demo.messages,
+        chats: demo.chats,
+        notifications: demo.notifications,
+        reviews: demo.reviews,
+        favorites: demo.favorites,
+        admin: demo.admin,
+        avatars: demo.avatars,
+        imagePicker: demo.imagePicker,
+      );
+      final SessionController session = SessionController(services.auth)
+        ..startDemoSession(UserRole.teacher);
+
+      await tester.pumpWidget(
+        _host(const EditTeacherProfileScreen(), services, session),
+      );
+      await tester.pumpAndSettle();
+
+      await pressProfileSave(tester);
+
+      final Finder notice = find.byKey(const Key('profile-missing-notice'));
+      expect(notice, findsOneWidget);
+
+      final String text = tester
+          .widget<InfoNote>(notice)
+          .text;
+      expect(text, contains('الصورة الشخصية'));
+      expect(text, contains('المادة'));
+      expect(text, contains('المرحلة الدراسية'));
+    });
+
+    testWidgets('إكمال الصورة والمادة فقط: تبقى المرحلة ناقصة', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+      final AppServices demo = AppServices.demo();
+      final FakeImagePickerGateway picker = FakeImagePickerGateway(
+        result: PickedImage(bytes: tinyPngBytes(), mimeType: 'image/png'),
+      );
+      final AppServices services = AppServices(
+        auth: demo.auth,
+        teachers: DemoTeacherRepository(source: <TeacherProfile>[]),
+        groups: demo.groups,
+        bookings: demo.bookings,
+        schedules: demo.schedules,
+        messages: demo.messages,
+        chats: demo.chats,
+        notifications: demo.notifications,
+        reviews: demo.reviews,
+        favorites: demo.favorites,
+        admin: demo.admin,
+        avatars: demo.avatars,
+        imagePicker: picker,
+      );
+      final SessionController session = SessionController(services.auth)
+        ..startDemoSession(UserRole.teacher);
+
+      await tester.pumpWidget(
+        _host(const EditTeacherProfileScreen(), services, session),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('avatar-pick')));
+      await tester.pumpAndSettle();
+      await _pick(
+        tester,
+        const Key('profile-subject'),
+        AcademicOptions.subjects.first,
+      );
+
+      await pressProfileSave(tester);
+
+      final String text = tester
+          .widget<InfoNote>(find.byKey(const Key('profile-missing-notice')))
+          .text;
+      expect(text, contains('المرحلة الدراسية'));
+      expect(text, isNot(contains('الصورة الشخصية')));
+    });
+  });
+
   group('(P22) الصورة إلزامية', () {
     testWidgets('بلا صورة: لا يُرسل الملف ويظهر تنبيه', (
       WidgetTester tester,
@@ -343,11 +436,11 @@ void main() {
 
       await pressProfileSave(tester);
 
-      expect(
-        find.textContaining('أضف صورة شخصية واضحة'),
-        findsWidgets,
-        reason: 'التنبيه يجب أن يشرح سبب منع الحفظ',
-      );
+      // (P23) رسالة واحدة تسمّي الناقص بالاسم، وتظهر داخل النموذج لا كـToast
+      // عابر فقط.
+      expect(find.byKey(const Key('profile-missing-notice')), findsOneWidget);
+      expect(find.textContaining('الصورة الشخصية'), findsWidgets);
+      expect(find.textContaining('ينقصه'), findsWidgets);
       // لم يُحفظ الملف ولم يتحول إلى «قيد المراجعة».
       expect(bundle.source.single.status, TeacherProfileStatus.draft);
     });

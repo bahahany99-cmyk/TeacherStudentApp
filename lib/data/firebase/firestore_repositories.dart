@@ -239,6 +239,18 @@ class FirestoreTeacherRepository implements TeacherRepository {
         );
       }
 
+      // (P23) المادة والمرحلة إلزاميتان مثل الصورة: ملف بلا مادة أو مرحلة لا
+      // يُرسل للمراجعة. نفس الحدود في `academicFieldsSatisfiedFor` بالقواعد.
+      final String? academicProblem = draft.academicProblem;
+      if (academicProblem != null) {
+        throw AppException(
+          AppErrorKind.invalidInput,
+          debugMessage: 'teacher profile saved without academic fields',
+          overrideTitle: 'بيانات ناقصة',
+          overrideMessage: '$academicProblem — لا يُرسل ملفك للمراجعة بدونها.',
+        );
+      }
+
       final DocumentReference<Map<String, dynamic>> ref = _profiles.doc(uid);
       final DocumentSnapshot<Map<String, dynamic>> existing = await ref.get();
 

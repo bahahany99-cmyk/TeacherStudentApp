@@ -23,16 +23,15 @@ import 'package:teacher_student_app/features/groups/presentation/widgets/teacher
 ///
 /// وضعان:
 /// - `GroupsScreen.discover()`: استكشاف المجموعات بفلاتر (واجهة الطالب، P9).
-/// - `GroupsScreen.forTeacher(teacherId: …)`: مجموعات مدرس محدّد.
+/// - `GroupsScreen.forTeacher()`: إدارة مجموعات المدرس صاحب الجلسة.
+///
+/// (P23) أُزيل معامل `teacherId`: كان لا يُستخدم في أي شيء (القسم يقرأ معرّف
+/// صاحب الجلسة بنفسه)، فبقاؤه كان يوهم بأن الشاشة تعرض مجموعات مدرس آخر.
 class GroupsScreen extends StatelessWidget {
-  const GroupsScreen.discover({super.key})
-    : teacherId = null,
-      _isDiscover = true;
+  const GroupsScreen.discover({super.key}) : _isDiscover = true;
 
-  const GroupsScreen.forTeacher({super.key, required this.teacherId})
-    : _isDiscover = false;
+  const GroupsScreen.forTeacher({super.key}) : _isDiscover = false;
 
-  final String? teacherId;
   final bool _isDiscover;
 
   @override
@@ -54,8 +53,8 @@ class GroupsScreen extends StatelessWidget {
                 const _DiscoverBody(),
               ],
               // واجهة المدرس: قسم إدارة كامل (إنشاء + تعديل + إيقاف).
-              if (!_isDiscover)
-                const TeacherGroupsSection(headerActionLabel: 'إنشاء'),
+              // الزر الأساسي الوحيد للإنشاء يوفّره القسم نفسه.
+              if (!_isDiscover) const TeacherGroupsSection(),
               const SizedBox(height: AppSpacing.md),
               Text(
                 'السعة المتاحة محسوبة للعرض فقط. عند امتلاء المجموعة ينتقل '

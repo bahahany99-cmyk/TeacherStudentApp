@@ -224,26 +224,17 @@ class _ProfileFormState extends State<_ProfileForm> {
 
     final bool valid = _formKey.currentState?.validate() ?? false;
 
-    if (!valid) {
-      AppSnackBar.show(
-        context,
-        'راجع الحقول المطلوبة قبل الحفظ.',
-        type: AppMessageType.warning,
-      );
+    // (P23) الحقول الإلزامية الثلاثة تُفحص معًا وتُسمّى في رسالة واحدة.
+    final String? missing = _missingMandatorySummary();
+    if (!valid || missing != null) {
+      final String message =
+          missing ?? 'راجع الحقول المطلوبة قبل الحفظ.';
+      setState(() => _missingNotice = missing);
+      AppSnackBar.show(context, message, type: AppMessageType.warning);
       return;
     }
 
-    // (P22) الصورة إلزامية: لا إرسال ملف بلا صورة. الفحص هنا **أيضًا** لأن
-    // خطأ الحقول لا يُظهر رسالة للصورة (ليست حقل نموذج)، والمستخدم يحتاج
-    // معرفة السبب.
-    if (!_hasPhoto) {
-      AppSnackBar.show(
-        context,
-        'أضف صورة شخصية واضحة قبل الحفظ — بدونها لا يُرسل ملفك للمراجعة.',
-        type: AppMessageType.warning,
-      );
-      return;
-    }
+    setState(() => _missingNotice = null);
 
     // (P22) تعديل ملف موثّق = إعادة تحقق: تنبيه صريح **قبل** الحفظ.
     if (_isVerified) {
@@ -312,6 +303,36 @@ class _ProfileFormState extends State<_ProfileForm> {
         setState(() => _saving = false);
       }
     }
+  }
+
+  /// ملخّص الحقول الإلزامية الغائبة — `null` إن كان كل شيء مكتملًا.
+  ///
+  /// الحدود مطابقة للقواعد (`photoSatisfiedFor` و`academicFieldsSatisfiedFor`):
+  /// صورة موجودة + مادة ومرحلة بطول 2..40. الرسالة تسمّي ما ينقص بالضبط.
+  String? _missingMandatorySummary() {
+    final List<String> missing = <String>[];
+    if (!_hasPhoto) {
+      missing.add('الصورة الشخصية');
+    }
+    final String subject = _subjectValue;
+    if (subject.isEmpty) {
+      missing.add('المادة');
+    } else if (AcademicOptions.customTextProblem(subject, 'المادة') != null) {
+      // نص حرّ قصير/طويل: التحقق الحقيقي في حقل النموذج، لكن نذكّره هنا أيضًا.
+      missing.add('المادة (حرفان إلى 40)');
+    }
+    final String stage = _stageValue;
+    if (stage.isEmpty) {
+      missing.add('المرحلة الدراسية');
+    } else if (AcademicOptions.customTextProblem(stage, 'المرحلة') != null) {
+      missing.add('المرحلة الدراسية (حرفان إلى 40)');
+    }
+
+    if (missing.isEmpty) {
+      return null;
+    }
+    return 'ملفك غير مكتمل — ينقصه: ${missing.join('، ')}. '
+        'أكمل الحقول المطلوبة ليُرسل للمراجعة.';
   }
 
   /// تأكيد إعادة التحقق قبل تعديل ملف موثّق.
@@ -665,6 +686,14 @@ class _ProfileFormState extends State<_ProfileForm> {
           const SizedBox(height: AppSpacing.md),
 
           if (!_locked) ...<Widget>[
+            if (_missingNotice != null) ...<Widget>[
+              InfoNote(
+                key: const Key('profile-missing-notice'),
+                icon: Icons.error_outline,
+                text: _missingNotice!,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
             FilledButton(
               key: const Key('profile-save'),
               onPressed: _saving ? null : _save,

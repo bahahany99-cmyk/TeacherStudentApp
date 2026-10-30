@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
@@ -24,7 +26,7 @@ import 'package:teacher_student_app/data/services/teacher_repository.dart';
 /// الشاشات لا تستورد Firebase ولا أي حزمة شبكة؛ تطلب هذه العقود فقط.
 /// استبدال التنفيذ التجريبي بتنفيذ Firestore يتم في مكان واحد (هذه الحاوية).
 class AppServices {
-  const AppServices({
+  AppServices({
     required this.auth,
     required this.teachers,
     required this.groups,
@@ -38,8 +40,10 @@ class AppServices {
     required this.admin,
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
+    ValueNotifier<int>? groupsRevision,
   }) : avatars = avatars ?? const EmptyAvatarRepository(),
-       imagePicker = imagePicker ?? const UnavailableImagePickerGateway();
+       imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
+       groupsRevision = groupsRevision ?? ValueNotifier<int>(0);
 
   final AuthService auth;
   final TeacherRepository teachers;
@@ -76,6 +80,20 @@ class AppServices {
   /// `firebase()`/`demo()` تحقنان التنفيذ الفعلي. الفارغ يخدم الحاويات
   /// المصغّرة في الاختبارات، فلا شاشة تنهار على «لا صورة».
   final AvatarRepository avatars;
+
+  /// (P23) إشارة تغيير قائمة المجموعات.
+  ///
+  /// **لماذا؟** تبويب «مجموعاتي» موجود في مكانين (الرئيسية + تبويب المجموعات)
+  /// وكلاهما يبقى حيًّا داخل `IndexedStack`. إنشاء مجموعة من الرئيسية كان
+  /// يترك قائمة التبويب قديمة حتى إعادة تشغيل الشاشة. هنا يُبلّغ النموذج عن
+  /// كل حفظ ناجح، فتقرأ **كل** الأقسام من المصدر من جديد فورًا.
+  ///
+  /// إشارة لا دفق بيانات: المستودعات تبقى `Future`، والإشارة تطلب قراءة
+  /// جديدة فقط (لا تُخزّن نسخة ثانية من البيانات قد تتقادم).
+  final ValueNotifier<int> groupsRevision;
+
+  /// يُستدعى بعد كل حفظ ناجح للمجموعة (إنشاء أو تعديل).
+  void notifyGroupsChanged() => groupsRevision.value++;
 
   /// اختيار صورة من جهاز المستخدم (P22).
   ///

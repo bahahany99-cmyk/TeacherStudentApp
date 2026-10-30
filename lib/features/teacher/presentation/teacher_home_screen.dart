@@ -114,12 +114,9 @@ class TeacherHomeScreen extends StatelessWidget {
                 },
               ),
               const SizedBox(height: AppSpacing.sectionGap),
-              const TeacherGroupsSection(
-                maxItems: 3,
-                headerActionLabel: 'إدارة المجموعات',
-                // الزر داخل القسم؛ ولا نكرّره هنا.
-                showCreateButton: true,
-              ),
+              // (P23) زر واحد فقط للإنشاء. العنوان كان يحمل سابقًا «إدارة
+              // المجموعات» بينما يفتح نموذج **الإنشاء** — نصّ يخالف فعله.
+              const TeacherGroupsSection(maxItems: 3),
               const SizedBox(height: AppSpacing.md),
               AppCard(
                 child: Row(

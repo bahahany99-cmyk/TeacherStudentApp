@@ -136,7 +136,7 @@ void main() {
     });
 
     test('الفراغ والحرف الواحد والزائد عن 40 مرفوضة برسالة عربية', () {
-      expect(AcademicOptions.customTextProblem('   ', 'المادة'), 'المادة مطلوب');
+      expect(AcademicOptions.customTextProblem('   ', 'المادة'), 'أدخل المادة');
       expect(AcademicOptions.customTextProblem('ر', 'المادة'), contains('قصير'));
       expect(
         AcademicOptions.customTextProblem('ر'.padRight(41, 'س'), 'المرحلة'),

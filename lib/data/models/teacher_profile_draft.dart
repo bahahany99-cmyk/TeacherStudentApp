@@ -1,3 +1,4 @@
+import 'package:teacher_student_app/data/constants/academic_options.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 
 /// الحقول التي يحرّرها **صاحب الملف** فقط (P18).
@@ -41,6 +42,22 @@ class TeacherProfileDraft {
 
   /// هل الصورة موجودة؟ (شرط الحفظ)
   bool get hasPhoto => (photoPath ?? '').trim().isNotEmpty;
+
+  /// مشكلة في المادة أو المرحلة — `null` يعني أن الحقلين صالحان.
+  ///
+  /// (P23) نفس شرط `firestore.rules` حرفيًا (`academicFieldsSatisfiedFor`):
+  /// نص من حرفين إلى أربعين. الفحص هنا يعطي رسالة عربية قبل أي كتابة،
+  /// والقاعدة ترفض الحمولة الناقصة حتى لو جاءت من مسار آخر.
+  String? get academicProblem {
+    final String? subjectProblem = AcademicOptions.customTextProblem(
+      subject,
+      'المادة',
+    );
+    if (subjectProblem != null) {
+      return subjectProblem;
+    }
+    return AcademicOptions.customTextProblem(stage, 'المرحلة الدراسية');
+  }
 
   /// الحقول الوصفية بصيغة الخريطة التي تُكتب في Firestore.
   ///

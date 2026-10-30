@@ -14,6 +14,7 @@ import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
+import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/validation/group_rules.dart';
@@ -132,13 +133,14 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
     }
 
     setState(() => _saving = true);
+    final AppServices services = AppServicesScope.of(context);
     final String teacherId = CurrentTeacher.idOf(SessionScope.read(context));
     final String teacherName = CurrentTeacher.nameOf(
       SessionScope.read(context),
     );
 
     try {
-      final GroupRepository groups = AppServicesScope.of(context).groups;
+      final GroupRepository groups = services.groups;
       if (widget.isEditing) {
         await groups.updateGroup(
           groupId: widget.groupId!,
@@ -153,6 +155,10 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
           draft: _draft,
         );
       }
+      // (P23) إبلاغ كل أقسام «مجموعاتي» الحيّة بإعادة القراءة من المصدر،
+      // فلا تبقى قائمة في تبويب آخر تعرض حالة قديمة.
+      services.notifyGroupsChanged();
+
       if (!mounted) {
         return;
       }

@@ -358,6 +358,11 @@ def main() -> int:
             problems.append('teacherProfiles: الملف قيد المراجعة غير مقفل أمام صاحبه')
         if 'photoSatisfiedFor(' not in teacher_block:
             problems.append('teacherProfiles: الصورة غير مطلوبة عند الإرسال')
+        # (P23) المادة والمرحلة إلزاميتان عند الإرسال للمراجعة.
+        if 'academicFieldsSatisfiedFor(' not in teacher_block:
+            problems.append(
+                'teacherProfiles: المادة/المرحلة غير مشترطتين عند الإرسال'
+            )
         # (P15) الاكتشاف: طريقة التقديم والمكان يكتبها المالك ضمن حقوله.
         profile_keys = block_starting_at(code, 'function profileKeys()')
         if not profile_keys:

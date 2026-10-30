@@ -114,13 +114,15 @@ abstract final class AcademicOptions {
   static String? customTextProblem(String? raw, String label) {
     final String text = (raw ?? '').trim();
     if (text.isEmpty) {
-      return '$label مطلوب';
+      // «أدخل …» صياغة محايدة تصلح لكل التسميات (المادة، المرحلة، اسم المادة)
+      // بخلاف «… مطلوب/مطلوبة» التي تختلف بحسب جنس الكلمة.
+      return 'أدخل $label';
     }
     if (text.length < minCustomLength) {
-      return '$label قصير جدًا (حرفان على الأقل)';
+      return 'طول $label قصير جدًا (حرفان على الأقل)';
     }
     if (text.length > maxCustomLength) {
-      return '$label طويل جدًا ($maxCustomLength حرفًا كحد أقصى)';
+      return 'طول $label يتجاوز الحد ($maxCustomLength حرفًا كحد أقصى)';
     }
     return null;
   }
