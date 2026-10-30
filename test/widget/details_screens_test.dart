@@ -153,10 +153,8 @@ void main() {
       await _enterTeacherShell(tester);
       await _tapNav(tester, 'حسابي');
 
-      await tapVisible(
-        tester,
-        find.widgetWithText(ListTile, 'ملفي التعريفي'),
-      );
+      // (P26) «ملفي التعريفي» صار صف إعدادات (SettingsTile) لا ListTile.
+      await tapVisible(tester, find.text('ملفي التعريفي'));
 
       _expectTitle('ملفي التعريفي');
       expect(find.text('موثّق'), findsOneWidget);
