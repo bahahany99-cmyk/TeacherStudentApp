@@ -109,6 +109,17 @@ def main() -> int:
                 if not os.path.exists(target):
                     problems.append(f'{rel}: استيراد نسبي غير موجود -> {uri}')
 
+        # (P23) `pushNamed<bool>`/`<void>` على مسارات `AppRouter` (وهي
+        # `MaterialPageRoute<dynamic>`) يُرمي `_TypeError` وقت التشغيل فلا
+        # يُفتح الشاشة إطلاقًا. القاعدة: `pushNamed` بلا معامل نوع، والنتيجة
+        # تُقارن بـ`true` صريحًا.
+        for hit in re.finditer(r'pushNamed\s*<', code):
+            line = code[: hit.start()].count('\n') + 1
+            problems.append(
+                f'{rel}:{line}: pushNamed بمعامل نوع — '
+                'المسارات dynamic، والعودة تُقارن بـtrue'
+            )
+
         if rel not in LTR_ALLOWED and '/features/' in f'/{rel}' or rel.startswith('lib/core'):
             for pattern in LTR_PATTERNS:
                 for hit in re.finditer(pattern, code):

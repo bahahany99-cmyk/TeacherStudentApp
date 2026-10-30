@@ -170,9 +170,12 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
     }
     setState(() => _opening = true);
     try {
-      final bool? saved = await Navigator.of(
+      // ⚠️ بلا معامل نوع: مسارات `AppRouter` من النوع `MaterialPageRoute<
+      // dynamic>`، و`pushNamed<bool>` يُرمى عنده `_TypeError` («not a subtype
+      // of Route<bool?>?») فلا يُفتح النموذج إطلاقًا. النتيجة تُقارن بـ`true`.
+      final Object? saved = await Navigator.of(
         context,
-      ).pushNamed<bool>(RoutePaths.groupForm, arguments: groupId);
+      ).pushNamed(RoutePaths.groupForm, arguments: groupId);
       if (saved == true) {
         _refresh();
       }

@@ -51,19 +51,20 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   int _revision = 0;
 
   Future<void> _openEditForm() async {
-    final bool? saved = await Navigator.of(
+    // بلا معامل نوع: المسارات `MaterialPageRoute<dynamic>` (انظر
+    // `AppRouter._page`)، و`pushNamed<bool>` يُرمي `_TypeError` عند الفتح.
+    final Object? saved = await Navigator.of(
       context,
-    ).pushNamed<bool>(RoutePaths.groupForm, arguments: widget.groupId);
+    ).pushNamed(RoutePaths.groupForm, arguments: widget.groupId);
     if (saved == true && mounted) {
       setState(() => _revision++);
     }
   }
 
   Future<void> _openRequests(StudyGroup group) async {
-    await Navigator.of(context).pushNamed<void>(
-      RoutePaths.groupRequests,
-      arguments: group.id,
-    );
+    await Navigator.of(
+      context,
+    ).pushNamed(RoutePaths.groupRequests, arguments: group.id);
     if (mounted) {
       setState(() => _revision++);
     }
@@ -72,7 +73,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   Future<void> _openMembers() async {
     await Navigator.of(
       context,
-    ).pushNamed<void>(RoutePaths.groupMembers, arguments: widget.groupId);
+    ).pushNamed(RoutePaths.groupMembers, arguments: widget.groupId);
     if (mounted) {
       setState(() => _revision++);
     }
