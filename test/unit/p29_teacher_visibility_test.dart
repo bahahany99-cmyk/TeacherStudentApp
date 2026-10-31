@@ -128,9 +128,10 @@ void main() {
 
       await AccountHiddenBackfill.run(gateway: store, dryRun: false);
 
+      // الترتيب أبجدي حسب نقاط الشيفرة (كما ينفّذه `governorateOptions`).
       expect(
         TeacherDiscoveryRules.governorateOptions(_discover(store.docs)),
-        <String>['القاهرة', 'الجيزة'],
+        <String>['الجيزة', 'القاهرة'],
       );
     });
   });
@@ -205,11 +206,17 @@ void main() {
   });
 
   group('(P29) رسائل الفراغ لا تُخلط بالفشل', () {
-    test('الفلتر المفعّل: رسالة «لا نتائج» تطلب تفريغ الفلتر لا تنفي وجود مدرسين', () {
+    test('الفلتر المفعّل: رسالة «لا نتائج» تنسب الفراغ إلى الفلاتر لا إلى البيانات', () {
       final String message = TeacherDiscoveryRules.emptyMessage(
         const TeacherFilter(subject: 'الفيزياء'),
       );
-      expect(message, contains('الفيزياء'));
+      expect(message, contains('هذه الفلاتر'));
+      expect(message, isNot(contains('وثّقت الإدارة')));
+    });
+
+    test('فلتر محافظة: الرسالة تذكر المحافظة نفسها كي يعرف المستخدم ما يغيّره', () {
+      const TeacherFilter filter = TeacherFilter(governorate: 'الجيزة');
+      expect(TeacherDiscoveryRules.emptyMessage(filter), contains('الجيزة'));
     });
 
     test('بلا فلتر: النص يشرح الشرط (ملف موثّق) ولا يدّعي خلو التطبيق', () {
