@@ -209,4 +209,38 @@ abstract final class TeacherDiscoveryRules {
     }
     return 'يظهر هنا كل مدرس وثّقت الإدارة ملفه.';
   }
+
+  // ─── (P29) الفراغ الحقيقي مقابل فشل التحميل ────────────────────────────────
+  //
+  // «لا يوجد مدرسون» خبر عن البيانات، ولا يجوز عرضه حين يكون الفشل في
+  // التحميل: المستخدم يقرؤه على أنه «التطبيق لا يحتوي مدرسين وثّقتهم الإدارة»،
+  // وهو اتهام للبيانات لمجرد انقطاع شبكة. النصوص هنا — لا في الشاشة — حتى
+  // يمكن اختبار التمييز بلا رفع واجهة.
+
+  /// عنوان «لا نتائج»: صريح في حالة الفشل، ومحايد في حالة الفراغ الحقيقي.
+  static String emptyTitle({required bool dataFailed}) =>
+      dataFailed ? 'تعذّر إكمال تحميل القائمة' : 'لا نتائج';
+
+  /// نص «لا نتائج» — لا يدّعي خلو التطبيق من المدرسين عند فشل القراءة.
+  static String emptyBody({
+    required bool dataFailed,
+    required TeacherFilter filter,
+  }) {
+    if (!dataFailed) {
+      return emptyMessage(filter);
+    }
+    return 'لم تكتمل قراءة بيانات المدرسين من الخادم، فلا نعرف بعد هل توجد '
+        'نتائج مطابقة. أعد المحاولة بعد التأكد من الاتصال.';
+  }
+
+  /// إجراء «لا نتائج»: إعادة المحاولة عند الفشل، وتفريغ الفلتر عند الفراغ.
+  static String? emptyActionLabel({
+    required bool dataFailed,
+    required TeacherFilter filter,
+  }) {
+    if (dataFailed) {
+      return 'إعادة المحاولة';
+    }
+    return filter.isActive ? 'إعادة ضبط البحث' : null;
+  }
 }

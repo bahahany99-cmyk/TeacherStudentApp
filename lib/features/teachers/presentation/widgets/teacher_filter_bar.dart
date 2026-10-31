@@ -43,6 +43,8 @@ class TeacherFilterBar extends StatefulWidget {
     required this.governorates,
     required this.onChanged,
     this.governoratesLoading = false,
+    this.governoratesFailed = false,
+    this.onRetryGovernorates,
   });
 
   final TeacherFilter filter;
@@ -53,6 +55,14 @@ class TeacherFilterBar extends StatefulWidget {
   /// هل ما زالت قراءة المحافظات جارية؟ يُستخدم لعرض سطر انتظار **بنفس
   /// الارتفاع** بدل صف فارغ يقفز حين تصل البيانات.
   final bool governoratesLoading;
+
+  /// (P29) فشل تحميل بيانات المدرسين — أي أن الصف **لا يعرف** المحافظات، ولا
+  /// يجوز أن يقول «لا توجد محافظات مسجّلة بعد» (تلك معلومة عن البيانات، لا عن
+  /// الشبكة). الفشل هنا يُعرض كحبة قابلة للضغط تُعيد المحاولة.
+  final bool governoratesFailed;
+
+  /// إعادة محاولة تحميل الخيارات (تُمرَّر من الشاشة).
+  final VoidCallback? onRetryGovernorates;
 
   final ValueChanged<TeacherFilter> onChanged;
 
@@ -127,6 +137,21 @@ class _TeacherFilterBarState extends State<TeacherFilterBar> {
 
   Widget _governoratesRow(TeacherFilter filter) {
     final bool onlineOnly = filter.delivery == TeacherDeliveryFilter.online;
+
+    // الترتيب مقصود: الفشل أولًا (لا نعرف)، ثم الانتظار، ثم «لا توجد» —
+    // فالأخيرة **خبر عن البيانات** لا تُقال إلا بعد نجاح القراءة فعلًا.
+    if (widget.governoratesFailed) {
+      return PillRow(
+        children: <Widget>[
+          PillChip(
+            key: const Key('governorates-failed'),
+            label: 'تعذّر تحميل المحافظات — إعادة',
+            icon: Icons.refresh,
+            onTap: widget.onRetryGovernorates,
+          ),
+        ],
+      );
+    }
 
     if (widget.governorates.isEmpty) {
       return PillRow(

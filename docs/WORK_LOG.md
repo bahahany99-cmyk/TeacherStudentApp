@@ -3517,3 +3517,61 @@ lib/data/firebase/firestore_repositories.dart  FirestoreAvatarRepository
 و`FakeAsync`؛ **لا** تُثبت كتابة Firestore الحقيقية من جهاز، ولا تجربة FCM
 على جهاز فعلي. قواعد Firestore مُختبرة على المحاكي (291 اختبارًا) لكن مسار
 «جهاز ← Firestore ← جهاز» يحتاج تجربة يدوية على هاتف موصول بالمشروع.
+
+---
+
+## §33 — P29 (الطور الثاني): ترحيل `accountHidden`، ضمان الظهور في قرار الإدارة، وفصل الفراغ عن الفشل
+
+**الخلاصة:** العطل لم يكن في القواعد ولا في البحث، بل في **غياب حقل** من
+مستندات قديمة + مسار إداري لا يكتبه. أُضيف ترحيل آمن بمعاينة، وصار قرار
+التوثيق يضمن الحقل **دون** إظهار حساب مخفي، وفُصل «لا نتائج» عن «تعذّر
+التحميل».
+
+### 1) الترحيل (لم يُنفَّذ على Firestore)
+
+| الملف | الدور |
+|---|---|
+| `tool/migrations/backfill_account_hidden.js` | سكربت Admin SDK: قراءة صفحية لكل `teacherProfiles`، معاينة افتراضية تطبع العدد والمعرّفات، `--apply` للكتابة، حقل واحد فقط |
+| `lib/data/migration/account_hidden_backfill.dart` | منطق الترحيل نفسه داخل التطبيق (قابل للاختبار): `AccountHiddenBackfill.run(dryRun:)` + تقرير عربي |
+| `lib/data/firebase/firestore_account_hidden_backfill.dart` | تنفيذ `AccountHiddenBackfillGateway` على Firestore (للمسؤول) |
+| `docs/P29_MIGRATION.md` | خطوات التشغيل الآمن، التحقق، وحدود النموذج البديل |
+
+**قواعد الأمان المطبَّقة:** لا يُلمس مستند يحمل الحقل (بقيمته) · لا حذف ولا
+تعديل لحقل آخر · المعاينة لا تكتب · التكرار يعيد «0» · فشل مستند لا يوقف
+البقية. **الترحيل لم يُشغَّل ضد Firebase** — القرار لصاحب المشروع.
+
+### 2) منع التكرار في الكود
+
+| الملف | التغيير |
+|---|---|
+| `lib/data/firebase/teacher_profile_writes.dart` | دوال نقية: `adminDecision(...)` و`ownerSaveBackfill(...)` |
+| `lib/data/firebase/firestore_repositories.dart` | `_decide` يقرأ المستند ويضيف `accountHidden: false` **فقط عند غيابه**؛ `saveMyProfile` (مسار التحديث) يفعل الشيء نفسه |
+
+**قاعدة الإخفاء:** الحقل الموجود — `true` أو `false` — لا يُكتب إطلاقًا، فقرار
+التوثيق لا يعيد حسابًا أخفاه المسؤول أو صاحبه إلى الظهور.
+
+### 3) الواجهة: الفراغ مقابل الفشل
+
+| الملف | التغيير |
+|---|---|
+| `lib/data/validation/teacher_discovery_rules.dart` | `emptyTitle` / `emptyBody` / `emptyActionLabel` مع `dataFailed` |
+| `lib/features/teachers/presentation/teachers_screen.dart` | حالة الفراغ تفرّق بين الحالتين، و`_retryUniverse()` موحّدة |
+| `lib/features/teachers/presentation/widgets/teacher_filter_bar.dart` | `governoratesFailed` + `onRetryGovernorates`: عند الفشل تظهر حبة «تعذّر تحميل المحافظات — إعادة» بدل «لا توجد محافظات مسجّلة بعد»، واختُفي الزر المكرّر فوق الشريط |
+
+### 4) الاختبارات المضافة
+
+| الملف | ما يُثبته |
+|---|---|
+| `test/unit/p29_teacher_visibility_test.dart` | مدرس موثّق بلا الحقل **لا يظهر قبل الترحيل ويظهر بعده** · المحافظات تُشتق فارغةً قبله وممتلئة بعده · مدرس جديد يظهر بعد التوثيق · **الحساب المخفي يبقى مخفيًا** بعد الترحيل وبعد قرار توثيق جديد · غير الموثّق لا يظهر حتى لو حمل الحقل · نصوص الفراغ/الفشل |
+| `test/unit/account_hidden_backfill_test.dart` | المعاينة لا تكتب · الناقص فقط يُحدَّث · التكرار يعيد صفرًا · فشل مستند لا يُسقط البقية · ترتيب المعرّفات حتمي |
+| `test/unit/teacher_profile_writes_test.dart` | قرار الإدارة يضيف `false` عند الغياب ولا يكتب الحقل عند وجوده · الرفض يحفظ السبب · حفظ المالك يرقّع الغياب فقط |
+| `tool/rules_tests/tests/firestore.rules.test.mjs` | **3 اختبارات انحدار** على المحاكي: مستند بلا الحقل يُقرأ مباشرة ولا يعود من استعلام الظهور · بعد إضافة الحقل يعود · المسؤول يكتب الحقل والحساب المخفي لا يظهر |
+
+### 5) ما لم يُلمس
+
+`firestore.rules` (صفر تغيير) · لا حذف بيانات · لا تحسينات بحث · لا تغيير في
+`isOnline` · النظام المميّز و`featuredOrder` كما هما.
+
+**حدود التحقق:** بيئة العمل بلا Flutter/Java/محاكي؛ الأدلة تأتي من GitHub
+Actions (analyze + اختبارات Flutter + محاكي القواعد). والترحيل لم يُنفَّذ على
+أي مشروع حقيقي — أُثبت منطقه باختبارات، وطريقه موثّق في `docs/P29_MIGRATION.md`.

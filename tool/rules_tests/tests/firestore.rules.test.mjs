@@ -408,6 +408,101 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
   });
 
+  // ─── (P29) سبب اختفاء المدرسين الموثّقين — اختبار الانحدار ──────────────
+  //
+  // درس P29: القاعدة تقرأ الحقل الغائب كـ`false`، لكن **الاستعلام** بمساواة
+  // صريحة لا يطابق مستندًا بلا الحقل. لذلك ملف «قديم» (أُنشئ خارج التطبيق أو
+  // قبل P17) يُقرأ مباشرة ولا يظهر في القائمة — وهذا بالضبط ما رآه صاحب
+  // المشروع: مجموعته وشارة توثيقه ظاهرتان، وصفحة المدرسين فارغة.
+  it('(P29) مستند موثّق بلا accountHidden: يُقرأ مباشرة ولا يعود من استعلام الظهور', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/legacy-1',
+        data: teacherDoc('legacy-1', { status: 'verified' }),
+      },
+    ]);
+
+    // القراءة المباشرة تنجح: الغياب يُقرأ false في القواعد.
+    await assertSucceeds(getDoc(doc(asStudent(), 'teacherProfiles/legacy-1')));
+
+    // لكن استعلام الاكتشاف (مساواة صريحة) لا يطابقه — أصل العطل.
+    const invisible = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.equal(
+      invisible.docs.filter((d) => d.id === 'legacy-1').length,
+      0,
+      'المستند الناقص الحقل يجب ألا يظهر في الاستعلام (توثيق للعطل)',
+    );
+  });
+
+  it('(P29) بعد إضافة الحقل يصبح المستند ظاهرًا في استعلام الاكتشاف', async () => {
+    // هذا ما يفعله الترحيل بالضبط: `accountHidden: false` وحده.
+    await seed([
+      {
+        path: 'teacherProfiles/legacy-1',
+        data: {
+          ...teacherDoc('legacy-1', { status: 'verified' }),
+          accountHidden: false,
+        },
+      },
+    ]);
+
+    const visible = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.equal(
+      visible.docs.filter((d) => d.id === 'legacy-1').length,
+      1,
+    );
+  });
+
+  it('(P29) المسؤول يستطيع كتابة accountHidden للتوثيق، والحساب المخفي يبقى مخفيًا', async () => {
+    await seed([
+      {
+        path: 'teacherProfiles/legacy-2',
+        data: {
+          ...teacherDoc('legacy-2', { status: 'verified' }),
+          accountHidden: true,
+        },
+      },
+    ]);
+
+    // قرار الإدارة (توثيق) لا يعيد حسابًا مخفيًا إلى الظهور.
+    await assertSucceeds(
+      updateDoc(doc(asAdmin(), 'teacherProfiles/legacy-2'), {
+        status: 'verified',
+        accountHidden: true,
+        reviewedAt: now(),
+        reviewedBy: 'admin-1',
+      }),
+    );
+
+    const stored = await readAsAdmin('teacherProfiles/legacy-2');
+    assert.equal(stored.accountHidden, true);
+
+    // ولا يظهر للطالب في استعلام الظهور.
+    const visible = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.equal(
+      visible.docs.filter((d) => d.id === 'legacy-2').length,
+      0,
+    );
+  });
+
   it('المدرس يرى ملفه في أي حالة', async () => {
     await seed([
       {

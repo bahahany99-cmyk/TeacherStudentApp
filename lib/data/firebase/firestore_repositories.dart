@@ -10,6 +10,7 @@ import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/errors/request_timeout.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
+import 'package:teacher_student_app/data/firebase/teacher_profile_writes.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
@@ -346,6 +347,16 @@ class FirestoreTeacherRepository implements TeacherRepository {
         if (current != TeacherProfileStatus.pendingReview) {
           changes['status'] = TeacherProfileStatus.pendingReview.wireValue;
         }
+        // (P29) ملف بلا `accountHidden` لا يظهر في أي استعلام اكتشاف. حفظ
+        // صاحبه لملفه فرصة آمنة لإصلاح ذلك: نضيف الحقل عند غيابه فقط، ولا
+        // نمسّ قيمة موجودة (فلا يظهر حساب مخفي بسبب حفظ عادي).
+        changes.addAll(
+          TeacherProfileWrites.ownerSaveBackfill(
+            accountHiddenFlagPresent: (existing.data() ??
+                    const <String, Object?>{})
+                .containsKey('accountHidden'),
+          ),
+        );
         await ref.update(changes);
       } else {
         // إنشاء: الحقول التي تفرضها القاعدة `allow create` حرفيًا.
@@ -3784,6 +3795,17 @@ class FirestoreAdminRepository implements AdminRepository {
   ///
   /// `reviewNote` تُحذف عند الاعتماد (`FieldValue.delete`) حتى لا يبقى سبب
   /// رفض قديم معلّقًا على ملف صار موثّقًا.
+  ///
+  /// ## (P29) ضمان حقل الظهور
+  ///
+  /// قرار الإدارة كان يكتب الحالة وحدها. وملف أُنشئ خارج مسار التطبيق (وحدة
+  /// تحكّم، مستند قديم قبل P17) لا يحمل `accountHidden`، فتبقى قاعدته سليمة
+  /// بينما **الاستعلام** يستبعده إلى الأبد (غياب الحقل ≠ `false`)، ويرى
+  /// المسؤول «موثّقًا» بينما الطلاب لا يرونه.
+  ///
+  /// الحل هنا: نقرأ المستند أولًا، ونضيف `accountHidden: false` فقط عند غياب
+  /// الحقل. الحساب الذي يحمل القيمة (سواء `false` أو `true`) لا يُمَس — فلا
+  /// يُعيد قرارُ التوثيق حسابًا أخفاه المسؤول إلى الظهور.
   Future<void> _decide({
     required String teacherId,
     required TeacherProfileStatus status,
@@ -3796,13 +3818,27 @@ class FirestoreAdminRepository implements AdminRepository {
           overrideMessage: 'ملف غير معروف.',
         );
       }
-      await _profiles.doc(teacherId).update(<String, Object?>{
-        'status': status.wireValue,
-        // `??` هو الشكل الذي يطلبه المحلّل: قيمة أو حذف الحقل.
-        'reviewNote': note ?? FieldValue.delete(),
-        'reviewedAt': FieldValue.serverTimestamp(),
-        if (_adminUid != null) 'reviewedBy': _adminUid,
-      });
+
+      // قراءة واحدة إضافية: بلا معرفة الحالة الحالية لا يمكن التمييز بين
+      // «الحقل غائب» و«الحقل false/true».
+      final DocumentSnapshot<Map<String, dynamic>> current = await _profiles
+          .doc(teacherId)
+          .get();
+      final bool hasFlag =
+          (current.data() ?? const <String, Object?>{}).containsKey(
+            'accountHidden',
+          );
+
+      await _profiles.doc(teacherId).update(
+        TeacherProfileWrites.adminDecision(
+          status: status,
+          reviewNote: note,
+          deletedValue: FieldValue.delete(),
+          serverTimestamp: FieldValue.serverTimestamp(),
+          accountHiddenFlagPresent: hasFlag,
+          adminUid: _adminUid,
+        ),
+      );
     });
   }
 

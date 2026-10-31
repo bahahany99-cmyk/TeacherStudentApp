@@ -163,6 +163,22 @@ class _TeachersScreenState extends State<TeachersScreen> {
     await _loadUniverse();
   }
 
+  /// إعادة محاولة واحدة تُستخدم من صف المحافظات ومن حالة الفشل (P29).
+  ///
+  /// تُصفّر علم الفشل **قبل** القراءة (فيظهر «جارٍ التحميل» لا رسالة فشل
+  /// قديمة)، ثم تُعيد قراءة الخيارات والنتائج معًا.
+  void _retryUniverse() {
+    if (_universeLoading) {
+      return;
+    }
+    setState(() {
+      _universeFailed = false;
+      _universeLoading = true;
+      _refreshToken++;
+    });
+    _loadUniverse();
+  }
+
   void _openProfile(TeacherProfile teacher) {
     Navigator.of(context).pushNamed(
       RoutePaths.teacherProfile,
@@ -219,23 +235,18 @@ class _TeachersScreenState extends State<TeachersScreen> {
                     _universe,
                   ),
                   governoratesLoading: _universeLoading,
+                  // (P29) التمييز بين «لا محافظات في البيانات» و«فشل التحميل»:
+                  // الأول معلومة، والثاني عطل يحتاج إعادة محاولة.
+                  governoratesFailed: _universeFailed,
+                  onRetryGovernorates: _retryUniverse,
                   onChanged: (TeacherFilter next) {
                     setState(() => _filter = next);
                   },
                 ),
-                if (_universeFailed) ...<Widget>[
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton.icon(
-                      onPressed: () {
-                        setState(() => _universeFailed = false);
-                        _loadUniverse();
-                      },
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('تعذّر تحميل خيارات المحافظات — إعادة'),
-                    ),
-                  ),
-                ],
+                // (P29) زر إعادة المحاولة انتقل **داخل** صف المحافظات نفسه
+                // (انظر `TeacherFilterBar.governoratesFailed`): كان فوقه زر
+                // منفصل، فيظهر للنقص مصدران للفعل نفسه، ويبقى النص داخل الصف
+                // يقول «لا توجد محافظات مسجّلة» وهو كلام غير صحيح عند الفشل.
                 const SizedBox(height: AppSpacing.sm),
                 AsyncView<TeacherSearchResult>(
                   // (P18) `reloadKey` بدل `key`: تغيير الفلتر يُعيد الجلب مع
@@ -249,17 +260,38 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   // (P26) «لا نتائج» بلا مخرج تُقرأ كعطل. إن كان هناك فلتر
                   // مفعّل فالإجراء الأساسي هو تفريغه (أقرب طريق لنتائج)، وإلا
                   // فلا زر أصلًا — لا نعرض إجراءً لا يغيّر شيئًا.
-                  emptyBuilder: (BuildContext context) => EmptyState(
-                    icon: Icons.person_search_outlined,
-                    title: 'لا نتائج',
-                    message: TeacherDiscoveryRules.emptyMessage(_filter),
-                    primaryActionLabel: _filter.isActive
-                        ? 'إعادة ضبط البحث'
-                        : null,
-                    onPrimaryAction: _filter.isActive
-                        ? () => setState(() => _filter = TeacherFilter.empty)
-                        : null,
-                  ),
+                  emptyBuilder: (BuildContext context) {
+                    // (P29) التمييز بين الفراغ الحقيقي وفشل التحميل: عند
+                    // الفشل لا نقول «لا يوجد مدرسون» بل نعترف بأننا لا نعرف
+                    // ونعطي زر إعادة المحاولة. النصوص في قواعد الاكتشاف
+                    // (`emptyTitle`/`emptyBody`/`emptyActionLabel`) لتُختبر
+                    // دون رفع واجهة.
+                    final bool failed = _universeFailed;
+                    return EmptyState(
+                      icon: failed
+                          ? Icons.cloud_off_outlined
+                          : Icons.person_search_outlined,
+                      title: TeacherDiscoveryRules.emptyTitle(
+                        dataFailed: failed,
+                      ),
+                      message: TeacherDiscoveryRules.emptyBody(
+                        dataFailed: failed,
+                        filter: _filter,
+                      ),
+                      primaryActionLabel:
+                          TeacherDiscoveryRules.emptyActionLabel(
+                            dataFailed: failed,
+                            filter: _filter,
+                          ),
+                      onPrimaryAction: failed
+                          ? _retryUniverse
+                          : (_filter.isActive
+                                ? () => setState(
+                                    () => _filter = TeacherFilter.empty,
+                                  )
+                                : null),
+                    );
+                  },
                   builder:
                       (BuildContext context, TeacherSearchResult result) {
                         return Column(
