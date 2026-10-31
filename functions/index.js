@@ -156,6 +156,20 @@ exports.adminAuctionOverview = onCall(async (request) => {
   }
 });
 
+/**
+ * النتائج المنشورة حاليًا (شاشة «المميزون» للطلاب والمدرسين).
+ *
+ * عامة للمسجّلين، ولا تحتاج معرّف أسبوع من العميل: الخادم يحدّد دورة العرض.
+ */
+exports.featuredAuctionResults = onCall(async (request) => {
+  assertSignedIn(request);
+  try {
+    return await service.getFeaturedResults({ store, now: new Date() });
+  } catch (error) {
+    rethrow(error);
+  }
+});
+
 /** تعديل إعدادات المزاد (مقاعد، أقل مزايدة، الزيادة، المهل). */
 exports.adminUpdateAuctionConfig = onCall(async (request) => {
   const actor = await assertAdmin(request);

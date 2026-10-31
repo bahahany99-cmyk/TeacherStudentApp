@@ -47,6 +47,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       NotificationTarget.booking => RoutePaths.bookingDetails,
       NotificationTarget.chat => RoutePaths.directChat,
       NotificationTarget.group => RoutePaths.groupDetails,
+      // (P30) إشعارات المزاد تفتح شاشة المزاد نفسها (مقعدي ومهلتي).
+      NotificationTarget.auction => RoutePaths.auction,
     };
 
     try {

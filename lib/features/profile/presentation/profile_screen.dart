@@ -231,6 +231,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       subtitle: 'ما يراه الطلاب في صفحتك',
                       onTap: () => _open(RoutePaths.myTeacherProfile),
                     ),
+                  // (P30) المزاد الأسبوعي: مدخل المدرّس الوحيد إليه. الشاشة
+                  // نفسها تعرض «غير مؤهل» لمن ملفه غير موثّق، وتشرح السبب.
+                  if (user?.role == UserRole.teacher)
+                    SettingsTile(
+                      key: const Key('profile-auction'),
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'مزاد التمييز',
+                      subtitle: 'زايد على مكانك في شريط المميزين هذا الأسبوع',
+                      onTap: () => _open(RoutePaths.auction),
+                    ),
                   // المفضلة للطالب (P13): المدرس لا يحفظ مدرسين ولا مجموعات.
                   if (user?.role == UserRole.student)
                     SettingsTile(

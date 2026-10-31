@@ -65,6 +65,12 @@ REQUIRED_MATCHES = (
     'match /contentReports/{reportId}',
     'match /directChats/{chatId}',
     'match /messages/{messageId}',
+    # (P30) مزاد التمييز الأسبوعي.
+    'match /auctions/{auctionId}',
+    'match /auctionResults/{auctionId}',
+    'match /auctionConfig/{docId}',
+    'match /auctionAudit/{entryId}',
+    'match /auctionIdempotency/{key}',
 )
 
 FORBIDDEN_PATTERNS = (
@@ -516,6 +522,44 @@ def main() -> int:
         )
     if "'reviewedBy', 'accountHidden'" not in code:
         problems.append('teacherProfiles: accountHidden غير مسموح لصاحب الملف')
+
+    # 18) المزاد (P30): **لا كتابة عميل** على أي مسار، والخصوصية مفروضة.
+    auction_blocks = {
+        'match /auctions/{auctionId}': ("allow write: if false", 'auctions'),
+        'match /auctionResults/{auctionId}': ("allow write: if false", 'auctionResults'),
+        'match /auctionConfig/{docId}': ("allow write: if false", 'auctionConfig'),
+        'match /auctionAudit/{entryId}': ("allow write: if false", 'auctionAudit'),
+        'match /auctionIdempotency/{key}': ("allow read, write: if false", 'auctionIdempotency'),
+    }
+    for header, (needle, label) in auction_blocks.items():
+        block = match_block(code, header)
+        if not block:
+            problems.append(f'P30: كتلة {label} غير مقروءة')
+            continue
+        if needle not in block:
+            problems.append(f'P30: {label} تقبل كتابة من العميل (يجب {needle})')
+
+    auctions_block = match_block(code, 'match /auctions/{auctionId}')
+    for needle, message in (
+        (
+            'allow read: if isAdmin()',
+            'P30: مستند الدورة يُقرأ لغير الإدارة',
+        ),
+        (
+            'match /bids/{teacherId}',
+            'P30: مزايدات المدرسين غير مقيّدة بمسار المدرّس نفسه',
+        ),
+        (
+            'match /winners/{teacherId}',
+            'P30: مقاعد الفائزين غير مقيّدة بمسار الفائز نفسه',
+        ),
+    ):
+        if auctions_block and needle not in auctions_block:
+            problems.append(message)
+
+    results_block = match_block(code, 'match /auctionResults/{auctionId}')
+    if results_block and 'allow read: if signedIn()' not in results_block:
+        problems.append('P30: النتائج العامة غير متاحة للمسجّلين')
 
     print(f'أسطر القواعد: {len(raw.splitlines())}')
     if problems:

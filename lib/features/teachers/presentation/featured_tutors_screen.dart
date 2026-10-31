@@ -10,8 +10,10 @@ import 'package:teacher_student_app/core/widgets/async_view.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
 import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/models/weekly_auction.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/featured_rules.dart';
+import 'package:teacher_student_app/features/auction/presentation/auction_winners_strip.dart';
 import 'package:teacher_student_app/features/teachers/presentation/widgets/teacher_showcase_card.dart';
 
 /// شاشة «المدرسون المميزون» الكاملة (P25) — وجهة زر «عرض الكل».
@@ -85,10 +87,12 @@ class _FeaturedTutorsScreenState extends State<FeaturedTutorsScreen> {
                 children: <Widget>[
                   _FeaturedList(
                     teachers: selection.allOnline,
+                    category: AuctionCategory.online,
                     emptyMessage: 'لا يوجد مدرسون أونلاين موثّقون الآن.',
                   ),
                   _FeaturedList(
                     teachers: selection.allOffline,
+                    category: AuctionCategory.inPerson,
                     emptyMessage: 'لا يوجد مدرسون حضوريًا موثّقون الآن.',
                   ),
                 ],
@@ -102,9 +106,17 @@ class _FeaturedTutorsScreenState extends State<FeaturedTutorsScreen> {
 }
 
 class _FeaturedList extends StatelessWidget {
-  const _FeaturedList({required this.teachers, required this.emptyMessage});
+  const _FeaturedList({
+    required this.teachers,
+    required this.category,
+    required this.emptyMessage,
+  });
 
   final List<TeacherProfile> teachers;
+
+  /// (P30) فئة الشريحة — بها يُقرأ شريط فائزي المزاد المنشور.
+  final AuctionCategory category;
+
   final String emptyMessage;
 
   @override
@@ -139,16 +151,23 @@ class _FeaturedList extends StatelessWidget {
       itemBuilder: (BuildContext context, int index) {
         if (index == 0) {
           return ResponsiveContent(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Text(
-                // صياغة صريحة للدورية: الطالب يعرف أن القائمة تتغيّر أسبوعيًا
-                // فلا يظن أن مدرّسًا «اختفى» بلا سبب.
-                'قائمة هذا الأسبوع — تتجدّد كل أسبوع',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.textMuted,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // (P30) أسماء فائزي المزاد المنشورين لهذه الفئة (بلا مبالغ).
+                AuctionWinnersStrip(category: category),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: Text(
+                    // صياغة صريحة للدورية: الطالب يعرف أن القائمة تتغيّر
+                    // أسبوعيًا فلا يظن أن مدرّسًا «اختفى» بلا سبب.
+                    'قائمة هذا الأسبوع — تتجدّد كل أسبوع',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           );
         }

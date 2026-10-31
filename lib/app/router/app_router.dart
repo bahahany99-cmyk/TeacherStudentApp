@@ -4,8 +4,10 @@ import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/constants/app_strings.dart';
 import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/features/auction/presentation/auction_screen.dart';
 import 'package:teacher_student_app/features/auth/presentation/email_auth_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_dashboard_screen.dart';
+import 'package:teacher_student_app/features/admin/presentation/auction_admin_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/admin_guard.dart';
 import 'package:teacher_student_app/features/admin/presentation/featured_teachers_screen.dart';
 import 'package:teacher_student_app/features/admin/presentation/moderation_screen.dart';
@@ -111,6 +113,10 @@ abstract final class AppRouter {
         return _page(BookingDetailsScreen(bookingId: bookingId), settings);
       case RoutePaths.notifications:
         return _page(const NotificationsScreen(), settings);
+      // (P30) مزاد التمييز — المدرّس. الحماية الحقيقية في الخادم (فئة الملف،
+      // الأهلية، والوقت)، فلا يمكن لمن ليس مدرّسًا أن يتخطاها بفتح المسار.
+      case RoutePaths.auction:
+        return _page(const AuctionScreen(), settings);
       case RoutePaths.featuredTeachers:
         return _page(const FeaturedTutorsScreen(), settings);
       case RoutePaths.myData:
@@ -150,6 +156,14 @@ abstract final class AppRouter {
           const AdminGuard(
             title: 'طابور التوثيق',
             child: TeacherVerificationScreen(),
+          ),
+          settings,
+        );
+      case RoutePaths.adminAuction:
+        return _page(
+          const AdminGuard(
+            title: 'مزاد التمييز',
+            child: AuctionAdminScreen(),
           ),
           settings,
         );

@@ -3,9 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
+import 'package:teacher_student_app/data/firebase/cloud_auction_repository.dart';
 import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/admin_repository.dart';
+import 'package:teacher_student_app/data/services/auction_repository.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/services/chat_image_repository.dart';
 import 'package:teacher_student_app/data/services/chat_image_saver.dart';
@@ -42,11 +44,13 @@ class AppServices {
     required this.favorites,
     required this.admin,
     AvatarRepository? avatars,
+    AuctionRepository? auctions,
     ImagePickerGateway? imagePicker,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
     ValueNotifier<int>? groupsRevision,
-  }) : avatars = avatars ?? const EmptyAvatarRepository(),
+  }) : auctions = auctions ?? const EmptyAuctionRepository(),
+       avatars = avatars ?? const EmptyAvatarRepository(),
        imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
        chatImages = chatImages ?? const EmptyChatImageRepository(),
        imageSaver = imageSaver ?? const UnavailableChatImageSaver(),
@@ -117,6 +121,13 @@ class AppServices {
   /// (P24) حفظ صورة المحادثة في معرض الجهاز — زر «تنزيل» في العارض.
   final ChatImageSaver imageSaver;
 
+  /// (P30) مزاد التمييز الأسبوعي.
+  ///
+  /// الأسماء في حزمة Firebase تنادي Cloud Functions في `europe-west1`؛
+  /// والحزمة التجريبية تحاكي التدفق محليًا بلا مزايدة حقيقية. الافتراضي
+  /// [EmptyAuctionRepository] يخدم اختبارات لا تخصّ المزاد.
+  final AuctionRepository auctions;
+
   /// الحزمة المناسبة للبيئة الحالية.
   ///
   /// - Firebase جاهز ← مصادقة وقراءة حقيقية من Firestore (P4 + P5).
@@ -149,6 +160,7 @@ class AppServices {
       reviews: FirestoreReviewRepository(),
       favorites: FirestoreFavoriteRepository(),
       admin: FirestoreAdminRepository(),
+      auctions: CloudAuctionRepository(),
       avatars: FirestoreAvatarRepository(),
       imagePicker: PlatformImagePickerGateway(),
       chatImages: FirestoreChatImageRepository(),
@@ -209,6 +221,8 @@ class AppServices {
       ),
       favorites: DemoFavoriteRepository(),
       admin: DemoAdminRepository(profiles: profiles, reviews: reviews),
+      // (P30) محاكاة محلية فقط: لا مزايدة ولا دفع ولا تمييز بلا خادم.
+      auctions: DemoAuctionRepository(),
       // نفس مسار الصور في الجولة: اختيار ومعاينة، لكن في الذاكرة فقط.
       avatars: avatars ?? DemoAvatarRepository(),
       imagePicker: imagePicker ?? PlatformImagePickerGateway(),

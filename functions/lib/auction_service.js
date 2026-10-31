@@ -700,6 +700,44 @@ async function getTeacherAuctionState({ store, now, uid }) {
 }
 
 /**
+ * النتائج المعروضة الآن — لكل فئة، على شاشة «المميزون» العامة.
+ *
+ * **بلا فهرس مركّب:** المعرّفات مشتقة (`{cycleKey}-{category}`)، فنقرأ دورتين
+ * فقط: دورة هذا الأسبوع (تُنشر السبت) ودورة الأسبوع الماضي (عرضها يستمر حتى
+ * الجمعة 23:59). الأولى تُقدَّم إن كانت منشورة، وإلا فالثانية.
+ *
+ * @param {{store:object, now:Date}} input
+ */
+async function getFeaturedResults({ store, now }) {
+  const config = { ...core.DEFAULT_CONFIG, ...(await store.getConfig()) };
+  const current = core.weeklySchedule(now, config);
+  const previous = core.weeklySchedule(
+    new Date(current.opensAt.getTime() - 24 * 3600 * 1000),
+    config,
+  );
+
+  const categories = {};
+  for (const category of core.CATEGORIES) {
+    categories[category] = null;
+    for (const key of [current.cycleKey, previous.cycleKey]) {
+      const doc = await store.getResults(core.cycleId(key, category));
+      if (doc && doc.published === true) {
+        categories[category] = publicResults(doc);
+        break;
+      }
+    }
+  }
+
+  return {
+    serverNow: now.getTime(),
+    timeZone: core.TIME_ZONE,
+    displayCycleKey:
+      categories.online?.cycleKey ?? categories.inPerson?.cycleKey ?? null,
+    categories,
+  };
+}
+
+/**
  * نظرة الإدارة: الفئتان + الإعدادات + الفائزون بحالات الدفع + آخر الأثر.
  *
  * تُستدعى من دالة إدارية فقط (بعد التحقق من الادعاء/الدور)، ولا تُستخدم في
@@ -799,6 +837,7 @@ module.exports = {
   AUCTION_NOTIFICATION_TYPES,
   ensureWeeklyCycles,
   getTeacherAuctionState,
+  getFeaturedResults,
   getAdminOverview,
   placeBid,
   finalizeAuction,

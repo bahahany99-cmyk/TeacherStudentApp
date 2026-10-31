@@ -3768,3 +3768,39 @@ Actions. اختبارات Firestore تعمل على **محاكي** القواع�
 **إصلاح لاحق في نفس الطور:** `mergeVisible` كانت تُصفّي `extra` فقط، والاستعلام
 المبسّط يعيد الموسوم بالإخفاء في `primary` — فصار الإسقاط على المصدرين (اختبار
 الوحدة كان يغطيه). CI: `f7abf85` ❌ → `3ac5a29` ✅.
+
+## §38 — P30: مزاد التمييز الأسبوعي (خادم كامل + تطبيق + قواعد + اختبارات)
+
+**المطلوب:** نظام مزاد أسبوعي كامل لعشرة مقاعد تمييز (5 أونلاين + 5 حضوري)، كل
+قرار فيه على الخادم، والخصوصية مصونة، والاختبارات تُثبته — لا واجهة تجميلية.
+
+**المُنفَّذ:**
+
+| الملف (جديد ما لم يُذكر) | الدور |
+|---|---|
+| `functions/lib/auction_core.js` | نواة نقية: تحويل توقيت القاهرة عبر `Intl` (بلا مكتبات)، الجدول الأسبوعي، آلة حالات مشتقة من الطوابع الزمنية، تحقق المزايدة (أول مزايدة + 10 زيادات + حظر آخر 10 دقائق)، ترتيب حتمي، اختيار أعلى N، دورة البديل، مفاتيح التكرار. |
+| `functions/lib/auction_service.js` | `ensureWeeklyCycles · placeBid · finalizeAuction · confirmWinnerPayment · runReplacementRound · publishFeatured · expireFeatured · updateConfig` + قراءات عرض منقّحة (`getTeacherAuctionState`, `getFeaturedResults`, `getAdminOverview`). |
+| `functions/lib/firestore_store.js` | متجر Admin SDK بعقد معاملات؛ `create` لا `set` عند إنشاء الدورة (لا دهس لدورة قائمة). |
+| `functions/index.js` | `myAuctionState · placeBid · featuredAuctionResults` + 7 دوال إدارية + 4 مجدولات بتوقيت `Africa/Cairo`، منطقة `europe-west1`. |
+| `functions/test/{memory_store,auction_core.test,auction_service.test}.js` | 74 اختبارًا بلا Firebase: الجدول/DST، الحدود، التعادل، التزامن، التكرار، البديل الواحد، الفراغ، الخصوصية. |
+| `firestore.rules` §16 | لا كتابة عميل على `auctions/**`, `auctionResults`, `auctionConfig`, `auctionAudit`, `auctionIdempotency`؛ والقراءة: الإدارة، أو صاحب المزايدة/المقعد. |
+| `tool/ci/check_rules.py` | فحص بنيوي لبنود P30 (كتل موجودة، وكتابة عميل ممنوعة). |
+| `tool/rules_tests/...test.mjs` | 13 حالة محاكي لخصوصية المزايدات ومنع الكتابة. |
+| `.github/workflows/build.yml` | مهمة `functions` (Node 22) تشغّل `npm --prefix functions test`، وبوابة على بناء APK. |
+| `lib/data/models/weekly_auction.dart` | نماذج قراءة فقط (حالة المدرّس، النتائج العامة، نظرة الإدارة، الإعدادات) — **لا حقل لمنافس**. |
+| `lib/data/services/auction_repository.dart` | العقد + `EmptyAuctionRepository` (افتراضي للاختبارات القائمة). |
+| `lib/data/firebase/cloud_auction_repository.dart` | كل شيء عبر `cloud_functions` في `europe-west1`، وترجمة أخطاء الدوال إلى عربية (رسالة الخادم تُعرض كما هي حين تكون عربية). |
+| `lib/data/demo/demo_auction_repository.dart` | وضع بلا خادم: مزايدة محلية بالشروط نفسها، والإدارة **غير متاحة** (لا تزييف). |
+| `lib/data/validation/auction_rules.dart` | قواعد الواجهة (تلميح فقط) + `canSubmit`. |
+| `lib/features/auction/presentation/*` | شاشة المدرّس، نصوص عربية موحّدة، ساعة الخادم، شريط فائزي الأسبوع. |
+| `lib/features/admin/presentation/auction_admin_screen.dart` | لوحة الإدارة: الدورتان، الفائزون وحالات الدفع، الحسم/البديل/النشر/الإنهاء، الإعدادات، سجل الأثر. |
+| `lib/data/models/app_notification.dart` | ثلاثة أنواع إشعار + `NotificationTarget.auction` (تُفتح بها الشاشة). |
+| `pubspec.yaml` | `cloud_functions` (داخل مدى FlutterFire المتوافق). |
+| `docs/P30_AUCTION.md` | القرارات، الجدول، الخصوصية، التشغيل، وما لم يُنفَّذ. |
+
+**قرارات معمارية ملزمة:** الحالة **مشتقة** لا مخزّنة؛ الترتيب `amount DESC →
+placedAt ASC → teacherId`؛ `requestId` داخل المعاملة؛ الدفع بلا بوّابة (إداري
+موثّق)؛ دورة بديل واحدة؛ النشر للمدفوعين فقط وبلا مبالغ.
+
+**لم يُنفَّذ بعد:** النشر الفعلي (يحتاج Blaze)، محاكي دوال في CI، إشعار تذكير
+قبل انتهاء المهلة، صفحة أرشيف نتائج.

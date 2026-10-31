@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/widgets/responsive_content.dart';
 import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/core/widgets/status_chip.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
+import 'package:teacher_student_app/data/models/weekly_auction.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
@@ -23,6 +24,7 @@ class _AdminOverview {
     required this.reports,
     required this.verified,
     required this.featured,
+    this.auction,
   });
 
   final List<TeacherProfile> queue;
@@ -31,6 +33,9 @@ class _AdminOverview {
 
   /// كم ملفًا معروضًا في شريط «مدرسون مميزون» الآن (P15).
   final int featured;
+
+  /// (P30) نظرة المزاد إن أمكن قراءتها.
+  final AuctionAdminOverview? auction;
 }
 
 /// «لوحة الإدارة» (P14): مدخل واحد لطابور التوثيق والمراجعة.
@@ -94,7 +99,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           await services.admin.listOpenReports();
                       final List<TeacherProfile> all =
                           await services.admin.listAllProfiles();
+                      // (P30) المزاد اختياري في هذه اللوحة: لو لم تكن الدوال
+                      // منشورة (أو تعذّر النداء) تبقى بقية الأرقام صحيحة
+                      // وتظهر بطاقة المزاد بحالة «غير متاح» بدل إسقاط اللوحة.
+                      AuctionAdminOverview? auction;
+                      try {
+                        auction = await services.auctions.loadAdminOverview();
+                      } on Object {
+                        auction = null;
+                      }
                       return _AdminOverview(
+                        auction: auction,
                         queue: queue,
                         reports: reports,
                         verified: all
@@ -168,6 +183,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 onTap: () => Navigator.of(
                                   context,
                                 ).pushNamed(RoutePaths.adminFeatured),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              // (P30) مزاد التمييز الأسبوعي: عدد الفائزين
+                              // المنتظرين دفعًا هو الرقم الذي يعنيه فعل المسؤول.
+                              _OverviewTile(
+                                icon: Icons.gavel_outlined,
+                                title: 'مزاد التمييز',
+                                value: overview.auction == null
+                                    ? '—'
+                                    : '${_pendingPayments(overview.auction!)}',
+                                caption: overview.auction == null
+                                    ? 'يتطلب تفعيل Cloud Functions'
+                                    : 'فائز بانتظار تأكيد الدفع',
+                                accent: AppColors.accentDeep,
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed(RoutePaths.adminAuction),
                               ),
                               // (P19) قائمة المعلّقين مع قرار مباشر: المسؤول
                               // يوثّق من اللوحة بنقرة واحدة بلا فتح شاشة أخرى،
@@ -397,4 +429,17 @@ class _PendingTeachersSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// عدد الفائزين المنتظرين تأكيد دفع في الدورتين.
+///
+/// الرقم يُقرأ من نظرة الإدارة (الخادم)، ولا يُحسب من أي حالة محلية.
+int _pendingPayments(AuctionAdminOverview overview) {
+  int total = 0;
+  for (final AuctionAdminCategory category in overview.categories) {
+    for (final AuctionAdminWinner winner in category.winners) {
+      if (winner.status == 'pendingPayment') total += 1;
+    }
+  }
+  return total;
 }

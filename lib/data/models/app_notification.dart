@@ -35,7 +35,22 @@ enum NotificationType {
   joinAccepted('قُبل طلب انضمامك', NotificationTarget.group),
 
   /// المدرس رفض الطلب ⇒ الطالب.
-  joinRejected('رُفض طلب انضمامك', NotificationTarget.group);
+  joinRejected('رُفض طلب انضمامك', NotificationTarget.group),
+
+  // ── (P30) مزاد التمييز: يكتبها **الخادم فقط** ───────────────────────────
+  // لماذا لا تُقبل من العميل؟ لأنها تعني «فزت» أو «مقعدك متاح»: لو استطاع
+  // أي عميل إنشاءها لاستطاع إيهام مدرّس بفوز لم يحدث. القواعد لا تُدرج هذه
+  // الأنواع في قائمة الإنشاء من العميل، و`auctionWon` تُكتب من Cloud Functions
+  // بعد حسم فعلي فقط. `targetId` هو **معرّف دورة المزاد** (`2026-W45-online`).
+
+  /// فزت بمقعد ⇒ المدرس، بعد إعلان الخميس 09:00.
+  auctionWon('فزت في مزاد التمييز', NotificationTarget.auction),
+
+  /// توفّر لك مقعد في دورة البديل ⇒ المدرس.
+  auctionReplacement('مقعد متاح في مزاد التمييز', NotificationTarget.auction),
+
+  /// انتهت مهلة الدفع ولم يُسجَّل ⇒ المدرس.
+  auctionPaymentExpired('انتهت مهلة دفع المزاد', NotificationTarget.auction);
 
   const NotificationType(this.label, this.target);
 
@@ -56,6 +71,9 @@ enum NotificationType {
     NotificationType.joinRequested => 'joinRequested',
     NotificationType.joinAccepted => 'joinAccepted',
     NotificationType.joinRejected => 'joinRejected',
+    NotificationType.auctionWon => 'auctionWon',
+    NotificationType.auctionReplacement => 'auctionReplacement',
+    NotificationType.auctionPaymentExpired => 'auctionPaymentExpired',
   };
 
   static NotificationType parse(Object? raw) {
@@ -69,6 +87,9 @@ enum NotificationType {
       'joinRequested' => NotificationType.joinRequested,
       'joinAccepted' => NotificationType.joinAccepted,
       'joinRejected' => NotificationType.joinRejected,
+      'auctionWon' => NotificationType.auctionWon,
+      'auctionReplacement' => NotificationType.auctionReplacement,
+      'auctionPaymentExpired' => NotificationType.auctionPaymentExpired,
       // نوع غير معروف: نعرضه كإشعار بلا وجهة بدل إسقاطه بصمت.
       _ => NotificationType.bookingRequested,
     };
@@ -79,11 +100,15 @@ enum NotificationType {
 enum NotificationTarget {
   booking,
   chat,
-  group;
+  group,
+
+  /// (P30) شاشة مزاد التمييز — مقعد الفائز ومهلته.
+  auction;
 
   static NotificationTarget parse(Object? raw) => switch (raw) {
     'chat' => NotificationTarget.chat,
     'group' => NotificationTarget.group,
+    'auction' => NotificationTarget.auction,
     _ => NotificationTarget.booking,
   };
 }

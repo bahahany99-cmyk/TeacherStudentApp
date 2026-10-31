@@ -412,6 +412,38 @@ admin.auth().getUserByEmail('ADMIN_EMAIL').then(async (u) => {
 `verified` ويظهر فورًا في بحث الطالب. أي رفض من الخادم (`permission-denied`) يعني
 أن الادعاء/الدور لم يُضبط كما في أ أو ب.
 
+### 3.12 دوال المزاد الأسبوعي (P30) — نشر وسلوك متوقع
+
+المزاد يحتاج **Cloud Functions**، وهذا يستلزم خطة **Blaze** (لا يعمل على Spark).
+إن لم تُنشر الدوال، تظهر شاشة المزاد حالة صريحة ولا تُقبل أي مزايدة (لا يوجد
+بديل محلي يزوّر النتيجة).
+
+```bash
+# 1) الدوال (nodejs20 · europe-west1 · جدول بتوقيت Africa/Cairo)
+firebase deploy --only functions
+
+# 2) القواعد (بنود §16 الخاصة بالمزاد)
+firebase deploy --only firestore:rules
+
+# 3) تحقق سريع (من حساب مدرّس): يجب أن يعيد cycleKey و phase
+#    اسم الدالة: myAuctionState
+```
+
+- **المستندات:** `auctions/{cycleKey}-{online|inPerson}` + `bids/` + `winners/`،
+  و`auctionResults`، و`auctionConfig/current`، و`auctionAudit`، و`auctionIdempotency`.
+- **الفهارس:** لا فهرس مركّب جديد؛ القراءات بمعرّف مشتق.
+- **الإعداد الافتراضي:** 5 مقاعد لكل فئة، أقل مزايدة 100، خطوة 25، 10 زيادات،
+  سقف 50000، مهلة دفع 24 ساعة، مهلة بديل 12 ساعة. تُعدَّل من شاشة
+  «الإدارة ← مزاد التمييز» (أو `auctionConfig/current`)، وتسري على الدورات
+  القادمة فقط.
+- **المجدولات:** `weeklyOpenAuctions` (اثنين 00:05) · `weeklyFinalizeAuctions`
+  (خميس 09:05) · `weeklyReplacementRound` (جمعة 09:05) · `weeklyPublishFeatured`
+  (سبت 00:05).
+- **لا بوّابة دفع:** تأكيد الدفع يدوي من لوحة الإدارة بعد التحصيل، وكل تأكيد
+  يُسجَّل باسم المنفّذ في `auctionAudit`.
+- **التكلفة:** أربع مهام مجدولة أسبوعيًا + نداءات المزايدة. الاستدعاءات صغيرة؛
+  راقب `Cloud Scheduler` و`Function invocations` في أول أسبوعين.
+
 ## 4. أسئلة مفتوحة (تحتاج قرارك قبل الإنتاج)
 
 | السؤال | الأثر |

@@ -208,16 +208,54 @@ jobs:
           if-no-files-found: ignore
           retention-days: 2
 
+  # ── دوال المزاد (P30): اختبارات Node على نواة وخدمة المزاد ───────────────────
+  # لا تحتاج Firebase ولا محاكيًا: المنطق مكتوب ليُختبر بلا شبكة
+  # (`functions/lib/auction_core.js` نقي، والخدمة تعمل على مستودع في الذاكرة).
+  functions:
+    name: cloud functions (auction tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax check (بلا تبعيات)
+        run: npm --prefix functions run lint
+
+      - name: Run auction tests
+        run: |
+          set -o pipefail
+          status=0
+          npm --prefix functions test > /tmp/functions.txt 2>&1 || status=$?
+          tail -60 /tmp/functions.txt
+
+          summary=$(grep -E "^# (tests|pass|fail) " /tmp/functions.txt | tr '\n' ' ')
+          [ -n "$summary" ] && echo "::notice title=functions tests::$summary"
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/functions.txt "functions-test"
+            exit "$status"
+          fi
+
+          echo "✅ دوال المزاد: كل الاختبارات ناجحة."
+
   # ── بناء APK: عند الطلب فقط، ونتيجة مؤقتة (لا Releases) ─────────────────────
   build_apk:
     name: build apk (عند الطلب)
     if: >-
-      needs.verify.result == 'success' && needs.rules.result == 'success' && (
+      needs.verify.result == 'success' && needs.rules.result == 'success' &&
+      needs.functions.result == 'success' && (
         (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) ||
         (github.event_name == 'push' &&
          contains(github.event.head_commit.message, '[build-release]'))
       )
-    needs: [verify, rules]
+    needs: [verify, rules, functions]
     runs-on: ubuntu-latest
     timeout-minutes: 40
 

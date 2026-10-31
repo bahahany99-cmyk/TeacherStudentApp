@@ -889,3 +889,74 @@ test('admin overview: أسبوع بلا دورات يُنشئها ثم يعرض�
   assert.equal(overview.categories.length, 2);
   assert.ok(overview.categories.every((c) => c.missing === false));
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8) النتائج المعروضة على شاشة «المميزون»
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('featured results: بلا نشر ⇒ لا نتائج (لا أسماء مخمّنة)', async () => {
+  const { store } = await biddingDone();
+  const bundle = await service.getFeaturedResults({ store, now: THURSDAY });
+  assert.equal(bundle.categories.online, null);
+  assert.equal(bundle.categories.inPerson, null);
+  assert.equal(bundle.displayCycleKey, null);
+});
+
+test('featured results: تعرض دورة العرض الحالية لكل فئة على حدة', async () => {
+  const { store } = await paidAndPublished();
+  await service.publishFeatured({ store, now: SATURDAY, auctionId: AUCTION_ONLINE });
+
+  // أثناء أسبوع العرض (السبت): دورة هذا الأسبوع.
+  const during = await service.getFeaturedResults({ store, now: SATURDAY });
+  assert.equal(during.categories.online.cycleKey, CYCLE.cycleKey);
+  assert.equal(during.categories.online.winners.length, 5);
+  assert.equal(during.categories.inPerson, null, 'الفئة الحضورية لم تُنشر');
+
+  // يوم الأربعاء من الأسبوع التالي: آخر دورة منشورة تبقى معروضة.
+  const nextWeek = await service.getFeaturedResults({
+    store,
+    now: cairo(2026, 10, 21, 12),
+  });
+  assert.equal(nextWeek.categories.online.cycleKey, CYCLE.cycleKey);
+});
+
+test('featured results: بعد دورة جديدة تُقدَّم الأحدث', async () => {
+  const { store } = await paidAndPublished();
+  await service.publishFeatured({ store, now: SATURDAY, auctionId: AUCTION_ONLINE });
+
+  // دورة الأسبوع التالي.
+  const nextMonday = cairo(2026, 10, 19, 10);
+  await service.ensureWeeklyCycles({ store, now: nextMonday });
+  const nextCycle = core.weeklySchedule(nextMonday);
+  const nextAuctionId = core.cycleId(nextCycle.cycleKey, 'online');
+  await service.placeBid({
+    store,
+    now: nextMonday,
+    uid: 'on1',
+    category: 'online',
+    cycleKey: nextCycle.cycleKey,
+    amount: 700,
+    requestId: 'next-week-bid-1',
+  });
+  await service.finalizeAuction({ store, now: cairo(2026, 10, 22, 10), auctionId: nextAuctionId });
+  await service.confirmWinnerPayment({
+    store,
+    now: cairo(2026, 10, 22, 12),
+    auctionId: nextAuctionId,
+    teacherId: 'on1',
+    paid: true,
+    actor: 'admin-1',
+  });
+  await service.publishFeatured({
+    store,
+    now: cairo(2026, 10, 24, 0, 10),
+    auctionId: nextAuctionId,
+  });
+
+  const bundle = await service.getFeaturedResults({
+    store,
+    now: cairo(2026, 10, 24, 0, 30),
+  });
+  assert.equal(bundle.categories.online.cycleKey, nextCycle.cycleKey);
+  assert.equal(bundle.displayCycleKey, nextCycle.cycleKey);
+});
