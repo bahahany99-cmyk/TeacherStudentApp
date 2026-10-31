@@ -477,17 +477,13 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     ]);
 
     const stored = await readAsAdmin('teacherProfiles/hidden-1');
-    console.log('P29DIAG stored:', JSON.stringify(stored));
-
     let directDenied = false;
     try {
       await getDoc(doc(asStudent(), 'teacherProfiles/hidden-1'));
     } catch (error) {
       directDenied = true;
-      console.log('P29DIAG direct code:', error.code);
     }
-    console.log('P29DIAG directDenied:', directDenied);
-
+    let broadDump = '';
     try {
       const broad = await getDocs(
         query(
@@ -495,22 +491,14 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
           where('status', '==', 'verified'),
         ),
       );
-      console.log(
-        'P29DIAG broad ids:',
-        JSON.stringify(broad.docs.map((d) => d.id)),
-      );
+      broadDump = JSON.stringify(broad.docs.map((d) => d.id));
     } catch (error) {
-      console.log('P29DIAG broad error:', error.code, error.message);
+      broadDump = `ERR ${error.code}`;
     }
 
-    const strict = await getDocs(
-      query(
-        collection(asStudent(), 'teacherProfiles'),
-        where('status', '==', 'verified'),
-        where('accountHidden', '==', false),
-      ),
+    assert.fail(
+      `DIAG stored=${JSON.stringify(stored)} directDenied=${directDenied} broad=${broadDump}`,
     );
-    assert.equal(strict.docs.filter((d) => d.id === 'hidden-1').length, 0);
   });
 
   it('(P29) المسؤول يستطيع كتابة accountHidden للتوثيق، والحساب المخفي يبقى مخفيًا', async () => {
