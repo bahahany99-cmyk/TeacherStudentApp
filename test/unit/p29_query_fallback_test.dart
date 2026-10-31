@@ -8,10 +8,8 @@ import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.
 
 /// (P29) احتياطي «الحقل الغائب = ظاهر» ومطابقة البحث العربية.
 ///
-/// لا Firebase هنا: السياسة نفسها (صرّح ← واسع ← رجوع عند الرفض) منطق نقي،
-/// فيُختبر بمصادر وهمية حتمية.
-
-class _PermissionDenied implements Exception {}
+/// لا Firebase هنا: السياسة نفسها (دمج الصارم مع الواسع + إسقاط الموسوم
+/// بالإخفاء) منطق نقي، فيُختبر بمصادر وهمية حتمية.
 
 TeacherProfile _teacher({
   required String id,
@@ -35,111 +33,96 @@ TeacherProfile _teacher({
 }
 
 void main() {
-  group('TeacherVisibilityFallback — ترتيب المحاولات', () {
-    test('نتيجة صارمة غير فارغة: لا يُجرَّب الاستعلام الواسع', () async {
-      int broadCalls = 0;
-      final List<String> result = await TeacherVisibilityFallback.resolve<
-        List<String>
-      >(
-        strict: () async => <String>['strict'],
-        broad: () async {
-          broadCalls++;
-          return <String>['broad'];
-        },
-        isEmpty: (List<String> value) => value.isEmpty,
-        isPermissionDenied: (Object error) => error is _PermissionDenied,
-      );
+  group('TeacherVisibilityFallback — دمج الصارم مع الواسع', () {
+    test('الصارم غير فارغ ومع ذلك يُدمج الواسع (حالة «Shady»)', () async {
+      // العطل السابق: ملف ظاهر واحد كان يمنع قراءة الواسع، فيغيب كل ملف قديم.
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveMerged<String>(
+            strict: () async => <String>['visible-new'],
+            broad: () async => <String>['visible-new', 'legacy-shady'],
+            idOf: (String id) => id,
+            isHidden: (String id) => false,
+          );
 
-      expect(result, <String>['strict']);
-      expect(broadCalls, 0, reason: 'طلب إضافي بلا داعٍ يُبطئ الشاشة');
+      expect(result, <String>['visible-new', 'legacy-shady']);
     });
 
-    test('فارغ صارم: يعود بالواسع (هنا يظهر الملف الناقص الحقل)', () async {
-      final List<String> result = await TeacherVisibilityFallback.resolve<
-        List<String>
-      >(
-        strict: () async => const <String>[],
-        broad: () async => <String>['legacy'],
-        isEmpty: (List<String> value) => value.isEmpty,
-        isPermissionDenied: (Object error) => error is _PermissionDenied,
-      );
+    test('بلا تكرار: المستند العائد من الاستعلامين يظهر مرة واحدة', () async {
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveMerged<String>(
+            strict: () async => <String>['a', 'b'],
+            broad: () async => <String>['b', 'a', 'c'],
+            idOf: (String id) => id,
+            isHidden: (String id) => false,
+          );
 
-      expect(result, <String>['legacy']);
+      expect(result, <String>['a', 'b', 'c']);
     });
 
-    test('رفض القواعد للواسع: نعود بالفارغ الصارم بدل إفشال الشاشة', () async {
-      final List<String> result = await TeacherVisibilityFallback.resolve<
-        List<String>
-      >(
-        strict: () async => const <String>[],
-        broad: () async => throw _PermissionDenied(),
-        isEmpty: (List<String> value) => value.isEmpty,
-        isPermissionDenied: (Object error) => error is _PermissionDenied,
-      );
+    test('الموسوم بالإخفاء في الواسع يُسقط دائمًا', () async {
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveMerged<String>(
+            strict: () async => <String>['visible'],
+            broad: () async => <String>['visible', 'hidden', 'legacy'],
+            idOf: (String id) => id,
+            isHidden: (String id) => id == 'hidden',
+          );
 
-      expect(result, isEmpty, reason: 'لا نُظهر حسابًا مخفيًا ولا خطأ تقنيًا');
+      expect(result, <String>['visible', 'legacy']);
     });
 
-    test('خطأ شبكة/مهلة على الواسع يُعاد رفعه (الفشل لا يصبح «لا نتائج»)', () async {
+    test('فشل الواسع لا يُفشل القائمة (أفضل جهد)', () async {
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveMerged<String>(
+            strict: () async => <String>['visible'],
+            broad: () async => throw StateError('permission-denied'),
+            idOf: (String id) => id,
+            isHidden: (String id) => false,
+          );
+
+      expect(result, <String>['visible']);
+    });
+
+    test('فشل الصارم يُرفع (الفشل لا يصبح «لا نتائج»)', () {
       expect(
-        () => TeacherVisibilityFallback.resolve<List<String>>(
-          strict: () async => const <String>[],
-          broad: () async => throw StateError('network'),
-          isEmpty: (List<String> value) => value.isEmpty,
-          isPermissionDenied: (Object error) => error is _PermissionDenied,
-        ),
-        throwsA(isA<StateError>()),
-      );
-    });
-
-    test('خطأ في الاستعلام الصارم نفسه يُرفع (لا ابتلاع)', () {
-      expect(
-        () => TeacherVisibilityFallback.resolve<List<String>>(
-          strict: () async => throw StateError('strict failed'),
+        () => TeacherVisibilityFallback.resolveMerged<String>(
+          strict: () async => throw StateError('network'),
           broad: () async => <String>['x'],
-          isEmpty: (List<String> value) => value.isEmpty,
-          isPermissionDenied: (Object error) => error is _PermissionDenied,
+          idOf: (String id) => id,
+          isHidden: (String id) => false,
         ),
         throwsA(isA<StateError>()),
       );
+    });
+
+    test('broadErrorIsFatal يجعل فشل الواسع ظاهرًا لمن يريده', () {
+      expect(
+        () => TeacherVisibilityFallback.resolveMerged<String>(
+          strict: () async => <String>['visible'],
+          broad: () async => throw StateError('boom'),
+          idOf: (String id) => id,
+          isHidden: (String id) => false,
+          broadErrorIsFatal: true,
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('النتيجتان فارغتان ⇒ قائمة فارغة (لا استثناء)', () async {
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveMerged<String>(
+            strict: () async => const <String>[],
+            broad: () async => const <String>[],
+            idOf: (String id) => id,
+            isHidden: (String id) => false,
+          );
+
+      expect(result, isEmpty);
     });
   });
 
-  group('التصفية الدفاعية — الحساب الموسوم بالإخفاء لا يظهر', () {
-    Map<String, Object?> doc(String id, {Object? hidden}) => <String, Object?>{
-      'id': id,
-      if (hidden != null) 'accountHidden': hidden,
-    };
-
-    test('true الصريحة تُسقط، والغياب وfalse وnull تبقى', () {
-      final List<Map<String, Object?>> visible =
-          TeacherVisibilityFallback.filterVisible<Map<String, Object?>>(
-            <Map<String, Object?>>[
-              doc('absent'),
-              doc('visible', hidden: false),
-              doc('nullish', hidden: null),
-              doc('hidden', hidden: true),
-            ],
-            (Map<String, Object?> value) => value,
-          );
-
-      expect(
-        visible.map((Map<String, Object?> value) => value['id']),
-        <String>['absent', 'visible', 'nullish'],
-      );
-    });
-
-    test('القيمة غير المنطقية لا تُسقط المستند (لا تفسير اجتهادي)', () {
-      expect(
-        TeacherVisibilityFallback.filterVisible<Map<String, Object?>>(
-          <Map<String, Object?>>[doc('weird', hidden: 'true')],
-          (Map<String, Object?> value) => value,
-        ),
-        hasLength(1),
-      );
-    });
-
-    test('isExplicitlyHidden: الغياب ظاهر، وtrue فقط مخفي', () {
+  group('isExplicitlyHidden — الغياب ظاهر', () {
+    test('true فقط مخفي، والغياب/false/null ظاهرة', () {
       expect(
         TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{}),
         isFalse,
@@ -147,6 +130,12 @@ void main() {
       expect(
         TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{
           'accountHidden': false,
+        }),
+        isFalse,
+      );
+      expect(
+        TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{
+          'accountHidden': null,
         }),
         isFalse,
       );

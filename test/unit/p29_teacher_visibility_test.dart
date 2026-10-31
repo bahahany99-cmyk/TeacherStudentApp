@@ -5,6 +5,7 @@ import 'package:teacher_student_app/data/migration/account_hidden_backfill.dart'
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
 import 'package:teacher_student_app/data/validation/teacher_discovery_rules.dart';
+import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.dart';
 
 /// (P29) سلسلة كاملة: المستند الخام ← الترحيل/القرار الإداري ← الاكتشاف.
 ///
@@ -202,6 +203,98 @@ void main() {
           };
 
       expect(_discover(docs), isEmpty);
+    });
+  });
+
+  group('(P29) البحث النصي «sh/Shady» مع ملف بلا accountHidden', () {
+    /// يقلّد `_visible` في المستودع: دمج الصارم مع الواسع بالمعرّف، مع إسقاط
+    /// الموسوم بالإخفاء — لا فرق بين «الاستعلام الأساسي» وأي مسار آخر.
+    Future<List<MapEntry<String, Map<String, Object?>>>> merged(
+      Map<String, Map<String, Object?>> docs,
+    ) {
+      return TeacherVisibilityFallback.resolveMerged<
+        MapEntry<String, Map<String, Object?>>
+      >(
+        strict: () async => <MapEntry<String, Map<String, Object?>>>[
+          for (final MapEntry<String, Map<String, Object?>> entry
+              in docs.entries)
+            if (entry.value['status'] == 'verified' &&
+                entry.value['accountHidden'] == false)
+              entry,
+        ],
+        broad: () async => <MapEntry<String, Map<String, Object?>>>[
+          for (final MapEntry<String, Map<String, Object?>> entry
+              in docs.entries)
+            if (entry.value['status'] == 'verified') entry,
+        ],
+        idOf: (MapEntry<String, Map<String, Object?>> entry) => entry.key,
+        isHidden: (MapEntry<String, Map<String, Object?>> entry) =>
+            TeacherVisibilityFallback.isExplicitlyHidden(entry.value),
+      );
+    }
+
+    TeacherProfile toProfile(MapEntry<String, Map<String, Object?> entry) {
+      return TeacherProfile(
+        id: entry.key,
+        displayName: entry.value['displayName']! as String,
+        subject: entry.value['subject']! as String,
+        stage: entry.value['stage']! as String,
+        area: entry.value['area']! as String,
+        bio: entry.value['bio']! as String,
+        status: TeacherProfileStatus.verified,
+        governorate: entry.value['governorate'] as String?,
+      );
+    }
+
+    test('ملف قديم باسم Shady يظهر مع وجود ملفات ظاهرة أخرى', () async {
+      final Map<String, Map<String, Object?>> docs =
+          <String, Map<String, Object?>>{
+            'visible-1': <String, Object?>{
+              ..._rawProfile(id: 'visible-1', displayName: 'أ. سارة الخطيب'),
+              'accountHidden': false,
+            },
+            'shady': _rawProfile(id: 'shady', displayName: 'Shady Ali'),
+            'hidden-9': _rawProfile(
+              id: 'hidden-9',
+              displayName: 'Shady Hidden',
+              withFlag: true,
+              hiddenValue: true,
+            ),
+          };
+
+      final List<TeacherProfile> teachers = (await merged(
+        docs,
+      )).map(toProfile).toList();
+      expect(
+        teachers.map((TeacherProfile t) => t.id),
+        <String>['visible-1', 'shady'],
+        reason: 'المخفي لا يدخل، والقديم يدخل',
+      );
+
+      for (final String query in <String>['sh', 'Shady', 'shady']) {
+        final TeacherSearchResult result = TeacherDiscoveryRules.search(
+          teachers,
+          TeacherFilter(query: query),
+        );
+        expect(
+          result.teachers.map((TeacherProfile t) => t.id),
+          <String>['shady'],
+          reason: 'بحث «$query»',
+        );
+      }
+    });
+
+    test('بلا ملفات ظاهرة: القديم يظهر أيضًا (لا يشترط وجود ملف يحمل الحقل)', () async {
+      final Map<String, Map<String, Object?>> docs =
+          <String, Map<String, Object?>>{
+            'shady': _rawProfile(id: 'shady', displayName: 'Shady Ali'),
+          };
+
+      final List<TeacherProfile> teachers = (await merged(
+        docs,
+      )).map(toProfile).toList();
+      expect(teachers, hasLength(1));
+      expect(teachers.single.id, 'shady');
     });
   });
 

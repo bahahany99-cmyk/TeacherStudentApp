@@ -220,44 +220,38 @@ class FirestoreTeacherRepository implements TeacherRepository {
     });
   }
 
-  /// استعلام «المدرسون الظاهرون» مع احتياطي للمستندات القديمة (P29).
+  /// استعلام «المدرسون الظاهرون» — دمج الصارم مع الواسع (P29).
   ///
   /// في Firestore **غياب الحقل ≠ `false`**: مستند بلا `accountHidden` لا يطابق
   /// `where('accountHidden', '==', false)`، فيكون موثّقًا ومقروءًا بالمعرّف
   /// وغائبًا عن كل قائمة (صفحة المدرسين، المميزون، خيارات المحافظات).
   ///
-  /// السياسة في [TeacherVisibilityFallback.resolve]: الصارم أولًا، ثم الواسع
-  /// عند الفراغ فقط، ثم الرجوع إلى نتيجة الصارم إن رفضت القواعد الاستعلام
-  /// الواسع. والنتيجة تُصفّى بعد ذلك في العميل: المستند الموسوم
-  /// `accountHidden: true` لا يصل إلى الواجهة حتى لو أعاده الخادم. التفاصيل
-  /// في `docs/P29_MIGRATION.md`.
+  /// **الدمج دائمًا، لا عند الفراغ فقط:** لو انتظرنا فراغ الاستعلام الصارم
+  /// لاختفى كل ملف قديم بمجرد وجود ملف واحد جديد يحمل الحقل — وهو بالضبط ما
+  /// يجعل البحث عن «Shady» بلا نتيجة. نُدمج نتيجتي الصارم والواسع بالمعرّف
+  /// (أولوية الصارم)، ونُسقط كل مستند `accountHidden: true` حتى لو أعاده
+  /// الخادم، ونُكمل بنتيجة الصارم إن فشل الواسع.
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _visible(
     Query<Map<String, dynamic>> Function(Query<Map<String, dynamic>> query)
     refine,
-  ) async {
+  ) {
     // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه يستبعد الملفات المخفية
     // بحذف الحساب، فلا نعتمد على رفض القاعدة للملف.
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-        await TeacherVisibilityFallback.resolve<
-          QuerySnapshot<Map<String, dynamic>>
-        >(
-          strict: () => refine(
-            _profiles
-                .where('status', isEqualTo: 'verified')
-                .where('accountHidden', isEqualTo: false),
-          ).get(),
-          broad: () =>
-              refine(_profiles.where('status', isEqualTo: 'verified')).get(),
-          isEmpty: (QuerySnapshot<Map<String, dynamic>> value) =>
-              value.docs.isEmpty,
-          isPermissionDenied: (Object error) =>
-              error is FirebaseException && error.code == 'permission-denied',
-        );
-    // تصفية دفاعية أخيرة: الحساب الموسوم بالإخفاء لا يدخل الواجهة حتى لو
-    // أعاده الخادم (انظر `TeacherVisibilityFallback.filterVisible`).
-    return TeacherVisibilityFallback.filterVisible<
+    return TeacherVisibilityFallback.resolveMerged<
       QueryDocumentSnapshot<Map<String, dynamic>>
-    >(snapshot.docs, (QueryDocumentSnapshot<Map<String, dynamic>> doc) => doc.data());
+    >(
+      strict: () async => (await refine(
+        _profiles
+            .where('status', isEqualTo: 'verified')
+            .where('accountHidden', isEqualTo: false),
+      ).get()).docs,
+      broad: () async => (await refine(
+        _profiles.where('status', isEqualTo: 'verified'),
+      ).get()).docs,
+      idOf: (QueryDocumentSnapshot<Map<String, dynamic>> doc) => doc.id,
+      isHidden: (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+          TeacherVisibilityFallback.isExplicitlyHidden(doc.data()),
+    );
   }
 
   @override
