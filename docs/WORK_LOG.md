@@ -3714,3 +3714,19 @@ Actions. اختبارات Firestore تعمل على **محاكي** القواع�
 يستبدل القديم). وملف الـAPK يُسمّى الآن
 `darsly-v0.1.0-build30-<abi>-release.apk`، والـartifact
 `darsly-v0.1.0-build30-release` — حتى لا يلتبس بقديم.
+
+### البناء النهائي — `41192293920` (`[build-release]`) ✅
+
+| البند | القيمة |
+|---|---|
+| المهام | `analyze · test` ✅ · `firestore rules (emulator)` ✅ · `build apk` ✅ |
+| النسخة | `0.1.0+30` (رقم بناء **30** — تثبيته يستبدل أي نسخة قديمة) |
+| الـartifact | **`darsly-v0.1.0-build30-release`** (المعرّف `13039881253`، حتى 2026-11-02T10:19Z) |
+| ملفات الـAPK | `darsly-v0.1.0-build30-arm64-release.apk` (21.8 MiB) · `darsly-v0.1.0-build30-arm32-release.apk` (19.6 MiB) |
+| Firebase | 6 تعريفات مضمّنة في **2 من 2** ملف APK ⇒ نسخة حقيقية لا وضع تجريبي |
+| التوقيع | release keystore · INTERNET موجود |
+| المصدر | `5809d19` |
+
+**مسار CI لهذا الطور (شفافية):** `e071ed6` ❌ (نقص `findMine`/`saveMyProfile`
+بعد استبدال نطاق في الملف) → `d2080c5` ❌ (تحذير `_entry` غير مستخدم) →
+`beba73a` ❌ (`_entry` العام مطلوب لمستودعات أخرى) → `5809d19` ✅.
