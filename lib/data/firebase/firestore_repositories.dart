@@ -229,8 +229,9 @@ class FirestoreTeacherRepository implements TeacherRepository {
   ///
   /// السياسة في [TeacherVisibilityFallback.resolve]: الصارم أولًا، ثم الواسع
   /// عند الفراغ فقط، ثم الرجوع إلى نتيجة الصارم إن رفضت القواعد الاستعلام
-  /// الواسع (لوجود حساب مخفي). لا ثغرة: ما يصل إلى الواجهة هو ما تسمح به
-  /// القواعد في كل الحالات. التفاصيل في `docs/P29_MIGRATION.md`.
+  /// الواسع. لا ثغرة: ما يصل إلى الواجهة هو ما تسمح به القواعد في كل الحالات
+  /// (إما يُرفض الاستعلام الواسع، أو يعود بالمستندات المسموحة فقط — والتطبيق
+  /// يقبل الحالتين). التفاصيل في `docs/P29_MIGRATION.md`.
   Future<QuerySnapshot<Map<String, dynamic>>> _visible(
     Query<Map<String, dynamic>> Function(Query<Map<String, dynamic>> query)
     refine,

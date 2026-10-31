@@ -465,11 +465,12 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
   });
 
-  it('(P29) الاستعلام الواسع بلا شرط accountHidden مرفوض عند وجود حساب مخفي', async () => {
+  it('(P29) الاستعلام الواسع لا يكشف الحساب المخفي', async () => {
     // هذا اختبار **سلامة الاحتياطي**: التطبيق يجرّب استعلامًا بلا شرط الحقل
     // عندما يعود الاستعلام الصارم فارغًا (ملفات قديمة تنقصها القيمة). القواعد
-    // «ليست فلترًا»: وجود مستند واحد غير مقروء يجعل الاستعلام الواسع مرفوضًا
-    // بالكامل، فيرجع التطبيق إلى النتيجة الصارمة — فلا يُظهر حسابًا مخفيًا.
+    // «ليست فلترًا»، والخادم قد يرفض الاستعلام بالكامل أو يعيد المستندات
+    // المسموح بها فقط — الحالتان آمنتان **ما دام المخفي لا يعود**. التطبيق
+    // يتعامل مع الاثنتين (انظر `TeacherVisibilityFallback`).
     await seed([
       {
         path: 'teacherProfiles/hidden-1',
@@ -480,16 +481,28 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
       },
     ]);
 
-    await assertFails(
-      getDocs(
+    const visibleIds = [];
+    try {
+      const broad = await getDocs(
         query(
           collection(asStudent(), 'teacherProfiles'),
           where('status', '==', 'verified'),
         ),
-      ),
+      );
+      for (const doc of broad.docs) visibleIds.push(doc.id);
+    } catch (error) {
+      // الرفض الكامل مقبول أيضًا: التطبيق يعود للاستعلام الصارم حينها.
+      assert.match(
+        String(error.code ?? error.message),
+        /permission-denied|PERMISSION_DENIED/,
+      );
+    }
+
+    assert.ok(
+      !visibleIds.includes('hidden-1'),
+      'الحساب المخفي لا يجوز أن يعود من الاستعلام الواسع',
     );
 
-    // والاستعلام الصارم ينجح ويعيد صفرًا (وهذا ما يعرضه التطبيق).
     const strict = await getDocs(
       query(
         collection(asStudent(), 'teacherProfiles'),
