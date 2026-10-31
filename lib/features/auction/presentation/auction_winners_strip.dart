@@ -33,7 +33,9 @@ class _AuctionWinnersStripState extends State<AuctionWinnersStrip> {
   @override
   void initState() {
     super.initState();
-    _load = const Future<Map<AuctionCategory, AuctionResultsView?>>.value(
+    // القيمة الابتدائية فارغة (بلا `const`: `Future.value` ليست ثابتة)،
+    // والقراءة الحقيقية تبدأ في `didChangeDependencies` حيث يتوفر النطاق.
+    _load = Future<Map<AuctionCategory, AuctionResultsView?>>.value(
       <AuctionCategory, AuctionResultsView?>{},
     );
   }

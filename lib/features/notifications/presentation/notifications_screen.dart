@@ -227,6 +227,10 @@ class _NotificationTile extends StatelessWidget {
     NotificationType.joinRequested => Icons.person_add_alt_1_outlined,
     NotificationType.joinAccepted => Icons.how_to_reg_outlined,
     NotificationType.joinRejected => Icons.person_off_outlined,
+    // (P30) إشعارات المزاد: كأس للفوز، ومقعد متاح، ومهلة منتهية.
+    NotificationType.auctionWon => Icons.emoji_events_outlined,
+    NotificationType.auctionReplacement => Icons.event_seat_outlined,
+    NotificationType.auctionPaymentExpired => Icons.timer_off_outlined,
   };
 
   @override

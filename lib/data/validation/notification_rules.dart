@@ -46,6 +46,11 @@ abstract final class NotificationRules {
       NotificationType.joinRejected => subject == null
           ? 'رُفض طلب انضمامك'
           : 'لم يُقبل طلب انضمامك إلى $subject',
+      // (P30) إشعارات المزاد يكتبها الخادم بنصّها العربي؛ هذه الصياغة تُستخدم
+      // فقط إن احتاجها عرض محلي (لا تُنشأ من التطبيق).
+      NotificationType.auctionWon => 'فزت في مزاد التمييز',
+      NotificationType.auctionReplacement => 'مقعد متاح في مزاد التمييز',
+      NotificationType.auctionPaymentExpired => 'انتهت مهلة دفع المزاد',
     };
   }
 
@@ -160,6 +165,12 @@ abstract final class NotificationRules {
         'أنت الآن عضو في المجموعة. افتحها للاطلاع على المواعيد.',
       NotificationType.joinRejected =>
         'يمكنك التقديم على مجموعة أخرى في أي وقت.',
+      NotificationType.auctionWon =>
+        'أكمل الدفع قبل انتهاء المهلة لتظهر في شريط المميزين.',
+      NotificationType.auctionReplacement =>
+        'توفّر مقعد في دورة البديل — أكمل الدفع قبل نهاية مهلة البديل.',
+      NotificationType.auctionPaymentExpired =>
+        'لم يُسجَّل دفع مزايدتك الفائزة، فأُتيح المقعد لدورة البديل.',
     };
   }
 }

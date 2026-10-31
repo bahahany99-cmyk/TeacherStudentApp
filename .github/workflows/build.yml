@@ -235,8 +235,13 @@ jobs:
           npm --prefix functions test > /tmp/functions.txt 2>&1 || status=$?
           tail -60 /tmp/functions.txt
 
-          summary=$(grep -E "^# (tests|pass|fail) " /tmp/functions.txt | tr '\n' ' ')
-          [ -n "$summary" ] && echo "::notice title=functions tests::$summary"
+          # المُبلِّغ المستخدم `spec` فيطبع `ℹ tests 74`، لا صيغة TAP (`# tests`).
+          # `|| true` ضروري: `grep` بلا نتيجة يُرجع 1 ويُسقط الخطوة تحت `set -e`.
+          summary=$(grep -E "^(# |ℹ )(tests|pass|fail) " /tmp/functions.txt \
+            | tr '\n' ' ' || true)
+          if [ -n "$summary" ]; then
+            echo "::notice title=functions tests::$summary"
+          fi
 
           if [ "$status" -ne 0 ]; then
             python3 tool/ci/annotate_log.py /tmp/functions.txt "functions-test"

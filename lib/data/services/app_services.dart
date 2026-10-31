@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:teacher_student_app/core/config/firebase_bootstrap.dart';
 import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/data/demo/demo_auction_repository.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/firebase/cloud_auction_repository.dart';
 import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
