@@ -34,6 +34,19 @@ const CATEGORIES = Object.freeze(['online', 'inPerson']);
 /** ترجمة الفئة إلى القيمة المحفوظة في `teacherProfiles.isOnline`. */
 const CATEGORY_IS_ONLINE = Object.freeze({ online: true, inPerson: false });
 
+/**
+ * الإعدادات الافتراضية.
+ *
+ * **ما هو قابل للتعديل إداريًا؟** الأرقام والمهل وساعة الإعلان:
+ *   - عدد المقاعد، أقل مزايدة، خطوة الزيادة، عدد الزيادات، السقف،
+ *   - ساعة الإعلان (`announceHour`، 0–23)،
+ *   - مهلة الدفع والبديل (بالساعات)، ودقائق الحظر قبل الإغلاق.
+ *
+ * **وما هو ثابت بقصد؟** هيكل الأسبوع نفسه: فتح الاثنين، إغلاق الأربعاء، إعلان
+ * الخميس، دورة البديل الجمعة، وعرض السبت→الجمعة. هذا الهيكل هو **متطلب
+ * المنتج** (P30)، وتغييره من واجهة إدارية يخلط العقود بين الواجهة والدوال
+ * والمجدولات. تغييره ممكن تقنيًا لكنه قرار موثّق لا زر.
+ */
 const DEFAULT_CONFIG = Object.freeze({
   positionsPerCategory: 5,
   minBid: 100,
@@ -41,6 +54,7 @@ const DEFAULT_CONFIG = Object.freeze({
   extraBidLimit: 10,
   maxBid: 50000,
   // نوافذ الأسبوع (توقيت القاهرة). تُقرأ الساعة/الدقيقة من الإعداد.
+  announceHour: 9,
   paymentWindowHours: 24,
   replacementWindowHours: 12,
   bidCutoffMinutes: BID_CUTOFF_MINUTES,
@@ -196,7 +210,7 @@ function weeklySchedule(instant, config = {}) {
   const opensAt = monday;
   const closesAt = new Date(at(2, 23, 59).getTime() + 59 * 1000); // الأربعاء 23:59:59
   const bidCutoffAt = new Date(closesAt.getTime() - cfg.bidCutoffMinutes * 60000);
-  const announcesAt = at(3, 9); // الخميس 09:00
+  const announcesAt = at(3, cfg.announceHour); // الخميس (الساعة من الإعداد)
   const paymentDeadline = new Date(announcesAt.getTime() + cfg.paymentWindowHours * 3600 * 1000);
   const replacementOpensAt = paymentDeadline;
   const replacementDeadline = new Date(

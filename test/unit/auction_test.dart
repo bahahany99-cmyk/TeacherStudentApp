@@ -589,7 +589,10 @@ void main() {
       final Map<String, Object?> map = config.toMap();
       expect(map['minBid'], 150);
       expect(map['extraBidLimit'], 8);
-      expect(map.keys.length, 7);
+      // الحقول السبعة القديمة + ساعة الإعلان + دقائق الحظر.
+      expect(map['announceHour'], 9);
+      expect(map['bidCutoffMinutes'], 10);
+      expect(map.keys.length, 9);
 
       expect(AuctionConfig.fromMap(<Object?, Object?>{}).minBid, 100);
       expect(

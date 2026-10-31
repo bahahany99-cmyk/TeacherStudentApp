@@ -291,7 +291,7 @@ test('finalizeAuction يختار أعلى 5 ويُعيد المقعدين الم
   assert.ok(auction.finalizedAt instanceof Date);
 });
 
-test('الإعلان قبل إغلاق المزايدة مرفوض، ومقبول بإذن تجاوز إداري صريح', async () => {
+test('الإعلان قبل إغلاق المزايدة مرفوض، ومقبول بعلم تجاوز صريح يُنسب للمسؤول', async () => {
   const { store } = await biddingDone();
   await assert.rejects(
     () =>
@@ -302,9 +302,16 @@ test('الإعلان قبل إغلاق المزايدة مرفوض، ومقبو�
     store,
     now: NOW_MONDAY,
     auctionId: AUCTION_ONLINE,
-    actor: 'admin-override',
+    actor: 'admin-1',
+    override: true,
   });
   assert.equal(forced.winners.length, 5);
+
+  // الأثر يحمل هوية المنفّذ الحقيقية لا اسمًا عامًا.
+  const entry = store
+    .auditEntries()
+    .find((item) => item.action === 'auction.finalize');
+  assert.equal(entry.actor, 'admin-1');
 });
 
 test('التعادل: الأسبق مزايدةً يتقدّم، والترتيب محفوظ في المستند', async () => {
@@ -959,4 +966,68 @@ test('featured results: بعد دورة جديدة تُقدَّم الأحدث',
   });
   assert.equal(bundle.categories.online.cycleKey, nextCycle.cycleKey);
   assert.equal(bundle.displayCycleKey, nextCycle.cycleKey);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9) الإعدادات الزمنية: ساعة الإعلان والحظر قبل الإغلاق
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('announceHour يغيّر لحظة الإعلان في الدورات الجديدة فقط', async () => {
+  const store = createMemoryStore();
+  await service.updateConfig({
+    store,
+    now: NOW_MONDAY,
+    actor: 'admin-1',
+    patch: { announceHour: 12, bidCutoffMinutes: 15 },
+  });
+  await service.ensureWeeklyCycles({ store, now: NOW_MONDAY });
+
+  const auction = await store.getAuction(AUCTION_ONLINE);
+  assert.equal(auction.announcesAt.getTime(), cairo(2026, 10, 15, 12).getTime());
+  assert.equal(
+    auction.closesAt.getTime() - auction.bidCutoffAt.getTime(),
+    15 * 60 * 1000,
+  );
+});
+
+test('الحسم قبل ساعة الإعلان مرفوض ولا يُنتج فائزين', async () => {
+  const { store } = await biddingDone();
+  // أثناء نافذة المزايدة: قبل الإغلاق أصلًا.
+  await assert.rejects(
+    () => service.finalizeAuction({ store, now: NOW_MONDAY, auctionId: AUCTION_ONLINE }),
+    (e) => e.code === 'too-early',
+  );
+  // حدث مبكر جدًا بمُهلة معطّلة: نتحقق أن الشرط الثاني (announcesAt) يعمل.
+  const auction = await store.getAuction(AUCTION_ONLINE);
+  await store.setAuction(AUCTION_ONLINE, {
+    ...auction,
+    closesAt: cairo(2026, 10, 15, 8),
+    announcesAt: cairo(2026, 10, 15, 9),
+  });
+  await assert.rejects(
+    () => service.finalizeAuction({ store, now: cairo(2026, 10, 15, 8, 30), auctionId: AUCTION_ONLINE }),
+    (e) => e.code === 'too-early',
+  );
+  const ok = await service.finalizeAuction({
+    store,
+    now: cairo(2026, 10, 15, 9, 5),
+    auctionId: AUCTION_ONLINE,
+  });
+  assert.equal(ok.winners.length, 5);
+});
+
+test('updateConfig يرفض ساعة إعلان أو دقائق حظر خارج النطاق', async () => {
+  const { store } = await setup();
+  for (const patch of [
+    { announceHour: -1 },
+    { announceHour: 24 },
+    { bidCutoffMinutes: 0 },
+    { bidCutoffMinutes: 121 },
+  ]) {
+    await assert.rejects(
+      () => service.updateConfig({ store, now: NOW_MONDAY, actor: 'admin-1', patch }),
+      (e) => e.code === 'invalid-config',
+      `يجب رفض ${JSON.stringify(patch)}`,
+    );
+  }
 });

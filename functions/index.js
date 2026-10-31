@@ -201,11 +201,14 @@ exports.adminFinalizeAuction = onCall(async (request) => {
   const { cycleKey, category } = request.data ?? {};
   try {
     const auctionId = core.cycleId(String(cycleKey), String(category));
+    // إجراء إداري استثنائي: الحسم المبكر يحتاج `override` صريحًا، ويُسجَّل باسم
+    // المسؤول الحقيقي (`actor`) لا باسم عام.
     return await service.finalizeAuction({
       store,
       now: new Date(),
       auctionId,
-      actor: 'admin-override',
+      actor,
+      override: true,
     });
   } catch (error) {
     rethrow(error);
@@ -280,9 +283,15 @@ exports.weeklyOpenAuctions = onSchedule(
   },
 );
 
-/** الخميس 09:05: حسم النتائج وإشعار الفائزين. */
+/**
+ * الخميس: حسم النتائج وإشعار الفائزين.
+ *
+ * كل ساعة (لا 09:05 فقط) لأن ساعة الإعلان قابلة للتعديل إداريًا
+ * (`announceHour`)، والخدمة ترفض ما قبل الموعد (`too-early`) فالتشغيل المبكر
+ * لا يفعل شيئًا — والتشغيل المتكرر آمن (`finalizedAt`).
+ */
 exports.weeklyFinalizeAuctions = onSchedule(
-  { schedule: '5 9 * * 4', timeZone: core.TIME_ZONE },
+  { schedule: '5 * * * 4', timeZone: core.TIME_ZONE },
   async () => {
     const now = new Date();
     const { cycleKey } = core.weeklySchedule(now);
@@ -303,9 +312,9 @@ exports.weeklyFinalizeAuctions = onSchedule(
   },
 );
 
-/** الجمعة 09:05: انقضاء الدفع ثم دورة البديل الواحدة. */
+/** الجمعة: انقضاء الدفع ثم دورة البديل الواحدة (كل ساعة، والخدمة تحرس الموعد). */
 exports.weeklyReplacementRound = onSchedule(
-  { schedule: '5 9 * * 5', timeZone: core.TIME_ZONE },
+  { schedule: '5 * * * 5', timeZone: core.TIME_ZONE },
   async () => {
     const now = new Date();
     const { cycleKey } = core.weeklySchedule(now);

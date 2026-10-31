@@ -169,8 +169,10 @@ async function placeBid({ store, now, uid, cycleKey, category, amount, requestId
  * - **حتمي:** الترتيب من `rankBids` (مبلغ ← أسبق ← معرّف).
  * - **متكرر بأمان:** إن كان `finalizedAt` موجودًا يعيد النتيجة بلا تغيير.
  * - المراكز غير المملوءة (قلة المزايدات) تبقى فارغة ولا تُوزَّع قسرًا.
+ * - **`override`** يسمح للحسم المبكر (قبل الإغلاق) في حالات استثنائية فقط،
+ *   ويُسجَّل باسم المنفّذ الحقيقي في الأثر — لا باسم عام يضيع المسؤولية.
  */
-async function finalizeAuction({ store, now, auctionId, actor }) {
+async function finalizeAuction({ store, now, auctionId, actor, override = false }) {
   return store.transaction(async (tx) => {
     const auction = await tx.getAuction(auctionId);
     if (!auction) {
@@ -186,9 +188,14 @@ async function finalizeAuction({ store, now, auctionId, actor }) {
         ).length,
       };
     }
-    // لا إعلان قبل موعده: يمنع «حسم مبكر» يغيّر نتيجة مزاد جارٍ.
-    if (now.getTime() < new Date(auction.closesAt).getTime() && actor !== 'admin-override') {
-      throw new AuctionError('too-early', 'لا يمكن إعلان النتائج قبل إغلاق المزاد.');
+    // لا إعلان قبل موعده: يمنع «حسم مبكر» يغيّر نتيجة مزاد جارٍ. الشرطان:
+    // بعد إغلاق المزايدة **وبعد** لحظة الإعلان المعتمدة (قابلة للتعديل إداريًا).
+    // والاستثناء يحتاج علمًا صريحًا (`override`) لا مجرد اسم فاعل، ويُسجَّل في
+    // الأثر باسم المنفّذ الحقيقي.
+    const announceTime = new Date(auction.announcesAt ?? auction.closesAt).getTime();
+    const closeTime = new Date(auction.closesAt).getTime();
+    if (override !== true && (now.getTime() < closeTime || now.getTime() < announceTime)) {
+      throw new AuctionError('too-early', 'لا يمكن إعلان النتائج قبل موعدهـا المعلن.');
     }
 
     const bids = await tx.listBids(auctionId);
@@ -539,6 +546,12 @@ async function updateConfig({ store, now, actor, patch }) {
   }
   if (!intInRange(next.maxBid, next.minBid, 10000000)) {
     throw new AuctionError('invalid-config', 'الحد الأقصى يجب أن يكون ≥ أقل مزايدة.');
+  }
+  if (!intInRange(next.announceHour, 0, 23)) {
+    throw new AuctionError('invalid-config', 'ساعة الإعلان يجب أن تكون بين 0 و23.');
+  }
+  if (!intInRange(next.bidCutoffMinutes, 1, 120)) {
+    throw new AuctionError('invalid-config', 'دقائق الحظر قبل الإغلاق يجب أن تكون بين 1 و120.');
   }
   if (!intInRange(next.paymentWindowHours, 1, 168)) {
     throw new AuctionError('invalid-config', 'مهلة الدفع يجب أن تكون بين ساعة و168 ساعة.');

@@ -437,7 +437,8 @@ firebase deploy --only firestore:rules
   «الإدارة ← مزاد التمييز» (أو `auctionConfig/current`)، وتسري على الدورات
   القادمة فقط.
 - **المجدولات:** `weeklyOpenAuctions` (اثنين 00:05) · `weeklyFinalizeAuctions`
-  (خميس 09:05) · `weeklyReplacementRound` (جمعة 09:05) · `weeklyPublishFeatured`
+  (خميس كل ساعة عند :05 — الخدمة ترفض ما قبل ساعة الإعلان) ·
+  `weeklyReplacementRound` (جمعة كل ساعة عند :05) · `weeklyPublishFeatured`
   (سبت 00:05).
 - **لا بوّابة دفع:** تأكيد الدفع يدوي من لوحة الإدارة بعد التحصيل، وكل تأكيد
   يُسجَّل باسم المنفّذ في `auctionAudit`.

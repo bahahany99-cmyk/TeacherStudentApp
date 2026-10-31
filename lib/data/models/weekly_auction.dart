@@ -347,8 +347,10 @@ class AuctionConfig {
     this.bidStep = 25,
     this.extraBidLimit = 10,
     this.maxBid = 50000,
+    this.announceHour = 9,
     this.paymentWindowHours = 24,
     this.replacementWindowHours = 12,
+    this.bidCutoffMinutes = 10,
   });
 
   final int positionsPerCategory;
@@ -356,8 +358,14 @@ class AuctionConfig {
   final int bidStep;
   final int extraBidLimit;
   final int maxBid;
+
+  /// ساعة إعلان النتائج (0–23) بتوقيت القاهرة — الافتراضي 9 صباحًا.
+  final int announceHour;
   final int paymentWindowHours;
   final int replacementWindowHours;
+
+  /// دقائق حظر المزايدة قبل الإغلاق (1–120) — الافتراضي 10.
+  final int bidCutoffMinutes;
 
   AuctionConfig copyWith({
     int? positionsPerCategory,
@@ -365,16 +373,20 @@ class AuctionConfig {
     int? bidStep,
     int? extraBidLimit,
     int? maxBid,
+    int? announceHour,
     int? paymentWindowHours,
     int? replacementWindowHours,
+    int? bidCutoffMinutes,
   }) => AuctionConfig(
     positionsPerCategory: positionsPerCategory ?? this.positionsPerCategory,
     minBid: minBid ?? this.minBid,
     bidStep: bidStep ?? this.bidStep,
     extraBidLimit: extraBidLimit ?? this.extraBidLimit,
     maxBid: maxBid ?? this.maxBid,
+    announceHour: announceHour ?? this.announceHour,
     paymentWindowHours: paymentWindowHours ?? this.paymentWindowHours,
     replacementWindowHours: replacementWindowHours ?? this.replacementWindowHours,
+    bidCutoffMinutes: bidCutoffMinutes ?? this.bidCutoffMinutes,
   );
 
   /// تُرسل كاملة: الخادم يتحقق من النطاقات ثم يحفظ المستند كاملًا.
@@ -384,8 +396,10 @@ class AuctionConfig {
     'bidStep': bidStep,
     'extraBidLimit': extraBidLimit,
     'maxBid': maxBid,
+    'announceHour': announceHour,
     'paymentWindowHours': paymentWindowHours,
     'replacementWindowHours': replacementWindowHours,
+    'bidCutoffMinutes': bidCutoffMinutes,
   };
 
   static AuctionConfig fromMap(Object? raw) {
@@ -396,9 +410,11 @@ class AuctionConfig {
       bidStep: (raw['bidStep'] as num?)?.toInt() ?? 25,
       extraBidLimit: (raw['extraBidLimit'] as num?)?.toInt() ?? 10,
       maxBid: (raw['maxBid'] as num?)?.toInt() ?? 50000,
+      announceHour: (raw['announceHour'] as num?)?.toInt() ?? 9,
       paymentWindowHours: (raw['paymentWindowHours'] as num?)?.toInt() ?? 24,
       replacementWindowHours:
           (raw['replacementWindowHours'] as num?)?.toInt() ?? 12,
+      bidCutoffMinutes: (raw['bidCutoffMinutes'] as num?)?.toInt() ?? 10,
     );
   }
 }

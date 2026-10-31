@@ -570,6 +570,8 @@ class _ConfigCardState extends State<_ConfigCard> {
   late final TextEditingController _bidStep;
   late final TextEditingController _extraLimit;
   late final TextEditingController _maxBid;
+  late final TextEditingController _announceHour;
+  late final TextEditingController _cutoffMinutes;
   late final TextEditingController _paymentHours;
   late final TextEditingController _replacementHours;
 
@@ -583,6 +585,12 @@ class _ConfigCardState extends State<_ConfigCard> {
     _bidStep = TextEditingController(text: '${widget.config.bidStep}');
     _extraLimit = TextEditingController(text: '${widget.config.extraBidLimit}');
     _maxBid = TextEditingController(text: '${widget.config.maxBid}');
+    _announceHour = TextEditingController(
+      text: '${widget.config.announceHour}',
+    );
+    _cutoffMinutes = TextEditingController(
+      text: '${widget.config.bidCutoffMinutes}',
+    );
     _paymentHours = TextEditingController(
       text: '${widget.config.paymentWindowHours}',
     );
@@ -598,6 +606,8 @@ class _ConfigCardState extends State<_ConfigCard> {
     _bidStep.dispose();
     _extraLimit.dispose();
     _maxBid.dispose();
+    _announceHour.dispose();
+    _cutoffMinutes.dispose();
     _paymentHours.dispose();
     _replacementHours.dispose();
     super.dispose();
@@ -612,6 +622,8 @@ class _ConfigCardState extends State<_ConfigCard> {
     final int? bidStep = _value(_bidStep);
     final int? extraLimit = _value(_extraLimit);
     final int? maxBid = _value(_maxBid);
+    final int? announceHour = _value(_announceHour);
+    final int? cutoffMinutes = _value(_cutoffMinutes);
     final int? paymentHours = _value(_paymentHours);
     final int? replacementHours = _value(_replacementHours);
 
@@ -620,6 +632,8 @@ class _ConfigCardState extends State<_ConfigCard> {
         bidStep == null ||
         extraLimit == null ||
         maxBid == null ||
+        announceHour == null ||
+        cutoffMinutes == null ||
         paymentHours == null ||
         replacementHours == null) {
       AppSnackBar.show(
@@ -646,6 +660,22 @@ class _ConfigCardState extends State<_ConfigCard> {
       );
       return;
     }
+    if (announceHour > 23) {
+      AppSnackBar.show(
+        context,
+        'ساعة الإعلان بين 0 و23.',
+        type: AppMessageType.error,
+      );
+      return;
+    }
+    if (cutoffMinutes < 1 || cutoffMinutes > 120) {
+      AppSnackBar.show(
+        context,
+        'دقائق الحظر قبل الإغلاق بين 1 و120.',
+        type: AppMessageType.error,
+      );
+      return;
+    }
     if (maxBid < minBid) {
       AppSnackBar.show(
         context,
@@ -662,6 +692,8 @@ class _ConfigCardState extends State<_ConfigCard> {
         bidStep: bidStep,
         extraBidLimit: extraLimit,
         maxBid: maxBid,
+        announceHour: announceHour,
+        bidCutoffMinutes: cutoffMinutes,
         paymentWindowHours: paymentHours,
         replacementWindowHours: replacementHours,
       ),
