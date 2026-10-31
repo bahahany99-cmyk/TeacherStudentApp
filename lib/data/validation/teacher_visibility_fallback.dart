@@ -143,6 +143,11 @@ abstract final class TeacherVisibilityFallback {
     final Set<String> seen = <String>{};
     final List<T> merged = <T>[];
     for (final T item in primary) {
+      // حتى المصدر الأساسي يُصفّى: الاستعلام المبسّط بلا شرط الحقل يعيد
+      // المستندات المخفية أيضًا، وهي يجب ألا تظهر مهما كان مصدرها.
+      if (isHidden(item)) {
+        continue;
+      }
       if (seen.add(idOf(item))) {
         merged.add(item);
       }
