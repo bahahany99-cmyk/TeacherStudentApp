@@ -465,7 +465,7 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
   });
 
-  it('(P29) DIAGNOSTIC — سلوك الاستعلام الواسع مع حساب مخفي', async () => {
+  it('(P29) الحساب المخفي: قراءته بالمعرّف مرفوضة، والاستعلام الواسع لا يُعتمد عليه وحده', async () => {
     await seed([
       {
         path: 'teacherProfiles/hidden-1',
@@ -476,14 +476,25 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
       },
     ]);
 
-    const stored = await readAsAdmin('teacherProfiles/hidden-1');
-    let directDenied = false;
-    try {
-      await getDoc(doc(asStudent(), 'teacherProfiles/hidden-1'));
-    } catch (error) {
-      directDenied = true;
-    }
-    let broadDump = '';
+    // 1) الضمانة الأساسية: المستند غير مقروء بالمعرّف لغير المسؤول.
+    await assertFails(getDoc(doc(asStudent(), 'teacherProfiles/hidden-1')));
+
+    // 2) الاستعلام الصارم (بحقل الظهور) لا يعيده — وهذا ما تعرضه القائمة.
+    const strict = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.equal(strict.docs.filter((d) => d.id === 'hidden-1').length, 0);
+
+    // 3) ملاحظة مُثبتة على المحاكي: الاستعلام **الواسع** (بلا شرط الحقل) قد
+    //    يُعيد المستند مع أن قراءته المباشرة مرفوضة، أي أن محاكي القواعد لا
+    //    يُصفّي نتائج الاستعلام هنا. لذلك لا يعتمد التطبيق عليه وحده: الاحتياطي
+    //    في `TeacherVisibilityFallback` يُسقط كل مستند `accountHidden: true`
+    //    بعد الاستعلام (اختبار الوحدة يغطيه). نُثبت الملاحظة هنا حتى لا تُفهم
+    //    تصفية الخادم على أنها ضمانة.
     try {
       const broad = await getDocs(
         query(
@@ -491,14 +502,15 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
           where('status', '==', 'verified'),
         ),
       );
-      broadDump = JSON.stringify(broad.docs.map((d) => d.id));
+      // ما يعود هنا لا يُعرض كما هو: التطبيق يُصفّي `accountHidden: true`.
+      assert.ok(Array.isArray(broad.docs.map((d) => d.id)));
     } catch (error) {
-      broadDump = `ERR ${error.code}`;
+      // الرفض الكامل سلوك مقبول أيضًا (وهو سلوك Firestore في الإنتاج).
+      assert.match(
+        String(error.code ?? error.message),
+        /permission-denied|PERMISSION_DENIED/,
+      );
     }
-
-    assert.fail(
-      `DIAG stored=${JSON.stringify(stored)} directDenied=${directDenied} broad=${broadDump}`,
-    );
   });
 
   it('(P29) المسؤول يستطيع كتابة accountHidden للتوثيق، والحساب المخفي يبقى مخفيًا', async () => {

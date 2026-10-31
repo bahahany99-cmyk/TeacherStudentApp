@@ -105,6 +105,60 @@ void main() {
     });
   });
 
+  group('التصفية الدفاعية — الحساب الموسوم بالإخفاء لا يظهر', () {
+    Map<String, Object?> doc(String id, {Object? hidden}) => <String, Object?>{
+      'id': id,
+      if (hidden != null) 'accountHidden': hidden,
+    };
+
+    test('true الصريحة تُسقط، والغياب وfalse وnull تبقى', () {
+      final List<Map<String, Object?>> visible =
+          TeacherVisibilityFallback.filterVisible<Map<String, Object?>>(
+            <Map<String, Object?>>[
+              doc('absent'),
+              doc('visible', hidden: false),
+              doc('nullish', hidden: null),
+              doc('hidden', hidden: true),
+            ],
+            (Map<String, Object?> value) => value,
+          );
+
+      expect(
+        visible.map((Map<String, Object?> value) => value['id']),
+        <String>['absent', 'visible', 'nullish'],
+      );
+    });
+
+    test('القيمة غير المنطقية لا تُسقط المستند (لا تفسير اجتهادي)', () {
+      expect(
+        TeacherVisibilityFallback.filterVisible<Map<String, Object?>>(
+          <Map<String, Object?>>[doc('weird', hidden: 'true')],
+          (Map<String, Object?> value) => value,
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('isExplicitlyHidden: الغياب ظاهر، وtrue فقط مخفي', () {
+      expect(
+        TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{}),
+        isFalse,
+      );
+      expect(
+        TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{
+          'accountHidden': false,
+        }),
+        isFalse,
+      );
+      expect(
+        TeacherVisibilityFallback.isExplicitlyHidden(<String, Object?>{
+          'accountHidden': true,
+        }),
+        isTrue,
+      );
+    });
+  });
+
   group('ArabicText — همزات وتشكيل و«ال» التعريف', () {
     test('كل أشكال الألف متكافئة', () {
       for (final String form in <String>['أحمد', 'إحمد', 'آحمد', 'احمد']) {

@@ -214,10 +214,9 @@ class FirestoreTeacherRepository implements TeacherRepository {
   @override
   Future<List<TeacherProfile>> listVerified() {
     return _guard(() async {
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
-        (Query<Map<String, dynamic>> query) => query,
-      );
-      return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          await _visible((Query<Map<String, dynamic>> query) => query);
+      return mapDocuments(docs.map(_entry), teacherProfileFromMap);
     });
   }
 
@@ -229,28 +228,36 @@ class FirestoreTeacherRepository implements TeacherRepository {
   ///
   /// السياسة في [TeacherVisibilityFallback.resolve]: الصارم أولًا، ثم الواسع
   /// عند الفراغ فقط، ثم الرجوع إلى نتيجة الصارم إن رفضت القواعد الاستعلام
-  /// الواسع. لا ثغرة: ما يصل إلى الواجهة هو ما تسمح به القواعد في كل الحالات
-  /// (إما يُرفض الاستعلام الواسع، أو يعود بالمستندات المسموحة فقط — والتطبيق
-  /// يقبل الحالتين). التفاصيل في `docs/P29_MIGRATION.md`.
-  Future<QuerySnapshot<Map<String, dynamic>>> _visible(
+  /// الواسع. والنتيجة تُصفّى بعد ذلك في العميل: المستند الموسوم
+  /// `accountHidden: true` لا يصل إلى الواجهة حتى لو أعاده الخادم. التفاصيل
+  /// في `docs/P29_MIGRATION.md`.
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _visible(
     Query<Map<String, dynamic>> Function(Query<Map<String, dynamic>> query)
     refine,
-  ) {
+  ) async {
     // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه يستبعد الملفات المخفية
     // بحذف الحساب، فلا نعتمد على رفض القاعدة للملف.
-    return TeacherVisibilityFallback.resolve<QuerySnapshot<Map<String, dynamic>>>(
-      strict: () => refine(
-        _profiles
-            .where('status', isEqualTo: 'verified')
-            .where('accountHidden', isEqualTo: false),
-      ).get(),
-      broad: () =>
-          refine(_profiles.where('status', isEqualTo: 'verified')).get(),
-      isEmpty: (QuerySnapshot<Map<String, dynamic>> snapshot) =>
-          snapshot.docs.isEmpty,
-      isPermissionDenied: (Object error) =>
-          error is FirebaseException && error.code == 'permission-denied',
-    );
+    final QuerySnapshot<Map<String, dynamic>> snapshot =
+        await TeacherVisibilityFallback.resolve<
+          QuerySnapshot<Map<String, dynamic>>
+        >(
+          strict: () => refine(
+            _profiles
+                .where('status', isEqualTo: 'verified')
+                .where('accountHidden', isEqualTo: false),
+          ).get(),
+          broad: () =>
+              refine(_profiles.where('status', isEqualTo: 'verified')).get(),
+          isEmpty: (QuerySnapshot<Map<String, dynamic>> value) =>
+              value.docs.isEmpty,
+          isPermissionDenied: (Object error) =>
+              error is FirebaseException && error.code == 'permission-denied',
+        );
+    // تصفية دفاعية أخيرة: الحساب الموسوم بالإخفاء لا يدخل الواجهة حتى لو
+    // أعاده الخادم (انظر `TeacherVisibilityFallback.filterVisible`).
+    return TeacherVisibilityFallback.filterVisible<
+      QueryDocumentSnapshot<Map<String, dynamic>>
+    >(snapshot.docs, (QueryDocumentSnapshot<Map<String, dynamic>> doc) => doc.data());
   }
 
   @override
@@ -259,12 +266,13 @@ class FirestoreTeacherRepository implements TeacherRepository {
       // شرطان بالمساواة فقط (بلا `orderBy`) ⇒ لا فهرس مركّب (A-91). الترتيب
       // (`featuredOrder` ثم التقييم ثم الاسم) يُطبَّق في العميل بنفس دالة
       // الوضع التجريبي، فلا يختلف الشريط بين البيئتين (P15).
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
-        (Query<Map<String, dynamic>> query) =>
-            query.where('isFeatured', isEqualTo: true),
-      );
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          await _visible(
+            (Query<Map<String, dynamic>> query) =>
+                query.where('isFeatured', isEqualTo: true),
+          );
       return TeacherDiscoveryRules.featured(
-        mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
+        mapDocuments(docs.map(_entry), teacherProfileFromMap),
       );
     });
   }
@@ -274,7 +282,8 @@ class FirestoreTeacherRepository implements TeacherRepository {
     return _guard(() async {
       // شروط الخادم وحدها هنا؛ النص/المادة/المرحلة في العميل. كل شرط مساواة
       // على حقل واحد، فتكفي الفهارس الأحادية المرتّبة تلقائيًا.
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          await _visible(
         (Query<Map<String, dynamic>> query) {
           switch (filter.delivery) {
             case TeacherDeliveryFilter.any:
@@ -291,7 +300,7 @@ class FirestoreTeacherRepository implements TeacherRepository {
         },
       );
       return TeacherDiscoveryRules.search(
-        mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
+        mapDocuments(docs.map(_entry), teacherProfileFromMap),
         filter,
       );
     });
