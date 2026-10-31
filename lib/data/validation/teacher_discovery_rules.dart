@@ -85,13 +85,18 @@ abstract final class TeacherDiscoveryRules {
   }
 
   /// البحث النصي يشمل الاسم والمادة والمرحلة والمكان (بما فيه المحافظة).
+  ///
+  /// (P29) المقارنة عبر `ArabicText.matches` لا `contains` خام: تتجاوز همزات
+  /// الألف (أ/إ/آ/ا)، والتاء المربوطة (ة/ه)، والياء (ى/ي)، والتشكيل والتطويل،
+  /// و«ال» التعريف — فبحث «رياضيات» يجد «الرياضيات» (وهو من أكثر أسباب ظهور
+  /// «لا نتائج» مع وجود نتيجة مطابقة).
   static bool _matchesText(TeacherProfile teacher, String needle) {
-    return ArabicText.normalize(teacher.displayName).contains(needle) ||
-        ArabicText.normalize(teacher.subject).contains(needle) ||
-        ArabicText.normalize(teacher.stage).contains(needle) ||
-        ArabicText.normalize(teacher.locationLabel).contains(needle) ||
-        ArabicText.normalize(teacher.governorate ?? '').contains(needle) ||
-        ArabicText.normalize(teacher.district ?? '').contains(needle);
+    return ArabicText.matches(teacher.displayName, needle) ||
+        ArabicText.matches(teacher.subject, needle) ||
+        ArabicText.matches(teacher.stage, needle) ||
+        ArabicText.matches(teacher.locationLabel, needle) ||
+        ArabicText.matches(teacher.governorate ?? '', needle) ||
+        ArabicText.matches(teacher.district ?? '', needle);
   }
 
   /// الترتيب في المكان (نفس القائمة) — لا يعيد نسخة جديدة.
@@ -149,9 +154,20 @@ abstract final class TeacherDiscoveryRules {
   }
 
   /// المحافظات الموجودة فعلًا في البيانات المعروضة — لا قائمة نظرية.
-  static List<String> governorateOptions(List<TeacherProfile> teachers) {
+  ///
+  /// [extra] اختياري: نتائج البحث الحالية. السبب (P29) أن مصدر الشاشة كان
+  /// استعلامًا منفصلًا (`listVerified`)؛ فإن تعثّر هذا الاستعلام وحده بقي
+  /// الصف يقول «لا توجد محافظات مسجّلة بعد» بينما قائمة المدرسين أمام
+  /// المستخدم مليئة ببيانات فيها محافظات. دمج المصدرين يُبطل هذا التناقض.
+  static List<String> governorateOptions(
+    List<TeacherProfile> teachers, {
+    List<TeacherProfile> extra = const <TeacherProfile>[],
+  }) {
     final List<String> unique = <String>[];
-    for (final TeacherProfile teacher in teachers) {
+    for (final TeacherProfile teacher in <TeacherProfile>[
+      ...teachers,
+      ...extra,
+    ]) {
       final String gov = teacher.governorate?.trim() ?? '';
       if (gov.isEmpty || unique.contains(gov)) {
         continue;

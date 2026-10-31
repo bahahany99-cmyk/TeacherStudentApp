@@ -465,6 +465,41 @@ describe('teacherProfiles/{uid} — الظهور للموثّق فقط', () => {
     );
   });
 
+  it('(P29) الاستعلام الواسع بلا شرط accountHidden مرفوض عند وجود حساب مخفي', async () => {
+    // هذا اختبار **سلامة الاحتياطي**: التطبيق يجرّب استعلامًا بلا شرط الحقل
+    // عندما يعود الاستعلام الصارم فارغًا (ملفات قديمة تنقصها القيمة). القواعد
+    // «ليست فلترًا»: وجود مستند واحد غير مقروء يجعل الاستعلام الواسع مرفوضًا
+    // بالكامل، فيرجع التطبيق إلى النتيجة الصارمة — فلا يُظهر حسابًا مخفيًا.
+    await seed([
+      {
+        path: 'teacherProfiles/hidden-1',
+        data: {
+          ...teacherDoc('hidden-1', { status: 'verified' }),
+          accountHidden: true,
+        },
+      },
+    ]);
+
+    await assertFails(
+      getDocs(
+        query(
+          collection(asStudent(), 'teacherProfiles'),
+          where('status', '==', 'verified'),
+        ),
+      ),
+    );
+
+    // والاستعلام الصارم ينجح ويعيد صفرًا (وهذا ما يعرضه التطبيق).
+    const strict = await getDocs(
+      query(
+        collection(asStudent(), 'teacherProfiles'),
+        where('status', '==', 'verified'),
+        where('accountHidden', '==', false),
+      ),
+    );
+    assert.equal(strict.docs.filter((d) => d.id === 'hidden-1').length, 0);
+  });
+
   it('(P29) المسؤول يستطيع كتابة accountHidden للتوثيق، والحساب المخفي يبقى مخفيًا', async () => {
     await seed([
       {

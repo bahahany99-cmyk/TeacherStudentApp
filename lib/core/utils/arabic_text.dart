@@ -14,16 +14,59 @@ abstract final class ArabicText {
       if ((rune >= 0x064B && rune <= 0x0652) || rune == 0x0640) {
         continue;
       }
+      // الأرقام العربية-الهندية (٠-٩) والفارسية (۰-۹) تُقابَل باللاتينية.
+      if (rune >= 0x0660 && rune <= 0x0669) {
+        buffer.write(rune - 0x0660);
+        continue;
+      }
+      if (rune >= 0x06F0 && rune <= 0x06F9) {
+        buffer.write(rune - 0x06F0);
+        continue;
+      }
       final String char = String.fromCharCode(rune);
       buffer.write(switch (char) {
-        'أ' || 'إ' || 'آ' || 'ٱ' => 'ا',
-        'ى' => 'ي',
+        // كل أشكال الألف (بما فيها الألف الخنجرية) تُوحَّد، فـ«أسامة/اسامة/
+        // إسامة» نص واحد عند البحث.
+        'أ' || 'إ' || 'آ' || 'ٱ' || 'ٲ' || 'ٳ' => 'ا',
+        'ى' || 'ئ' || 'ي' => 'ي',
         'ة' => 'ه',
         'ؤ' => 'و',
-        'ئ' => 'ي',
+        'ک' => 'ك',
+        'گ' => 'ك',
+        'پ' => 'ب',
+        'ڤ' => 'ف',
         _ => char,
       });
     }
     return buffer.toString();
+  }
+
+  /// إزالة «ال» التعريف من بداية الكلمة (للمقارنة فقط).
+  ///
+  /// لازمة لأن المدرس يكتب مادته «الرياضيات» والطالب يبحث «رياضيات» (والعكس)
+  /// — وهو أشهر سبب لظهور «لا نتائج» مع وجود نتيجة مطابقة.
+  static String _stripArticle(String value) {
+    if (value.length > 3 && value.startsWith('ال')) {
+      return value.substring(2);
+    }
+    return value;
+  }
+
+  /// مطابقة نصّية تتجاوز اختلاف الهمزات والتشكيل و«ال» التعريف.
+  ///
+  /// [needle] يجب أن يكون مُطبَّعًا مسبقًا (`normalize`)، والتطبيع متكرّر الآثار
+  /// فلا يضرّ تطبيعه مرتين.
+  static bool matches(String haystack, String needle) {
+    final String normalizedNeedle = normalize(needle);
+    if (normalizedNeedle.isEmpty) {
+      return true;
+    }
+    final String hay = normalize(haystack);
+    if (hay.contains(normalizedNeedle)) {
+      return true;
+    }
+    final String bareHay = _stripArticle(hay);
+    final String bareNeedle = _stripArticle(normalizedNeedle);
+    return bareNeedle.isNotEmpty && bareHay.contains(bareNeedle);
   }
 }

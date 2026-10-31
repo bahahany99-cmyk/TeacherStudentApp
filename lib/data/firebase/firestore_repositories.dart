@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/errors/request_timeout.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/firebase/teacher_profile_writes.dart';
+import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
@@ -213,14 +214,42 @@ class FirestoreTeacherRepository implements TeacherRepository {
   @override
   Future<List<TeacherProfile>> listVerified() {
     return _guard(() async {
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
-          .where('status', isEqualTo: 'verified')
-          // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه هو ما يستبعد الملفات
-          // المخفية بحذف الحساب، فلا تعتمد على رفض القاعدة للملف.
-          .where('accountHidden', isEqualTo: false)
-          .get();
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
+        (Query<Map<String, dynamic>> query) => query,
+      );
       return mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap);
     });
+  }
+
+  /// استعلام «المدرسون الظاهرون» مع احتياطي للمستندات القديمة (P29).
+  ///
+  /// في Firestore **غياب الحقل ≠ `false`**: مستند بلا `accountHidden` لا يطابق
+  /// `where('accountHidden', '==', false)`، فيكون موثّقًا ومقروءًا بالمعرّف
+  /// وغائبًا عن كل قائمة (صفحة المدرسين، المميزون، خيارات المحافظات).
+  ///
+  /// السياسة في [TeacherVisibilityFallback.resolve]: الصارم أولًا، ثم الواسع
+  /// عند الفراغ فقط، ثم الرجوع إلى نتيجة الصارم إن رفضت القواعد الاستعلام
+  /// الواسع (لوجود حساب مخفي). لا ثغرة: ما يصل إلى الواجهة هو ما تسمح به
+  /// القواعد في كل الحالات. التفاصيل في `docs/P29_MIGRATION.md`.
+  Future<QuerySnapshot<Map<String, dynamic>>> _visible(
+    Query<Map<String, dynamic>> Function(Query<Map<String, dynamic>> query)
+    refine,
+  ) {
+    // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه يستبعد الملفات المخفية
+    // بحذف الحساب، فلا نعتمد على رفض القاعدة للملف.
+    return TeacherVisibilityFallback.resolve<QuerySnapshot<Map<String, dynamic>>>(
+      strict: () => refine(
+        _profiles
+            .where('status', isEqualTo: 'verified')
+            .where('accountHidden', isEqualTo: false),
+      ).get(),
+      broad: () =>
+          refine(_profiles.where('status', isEqualTo: 'verified')).get(),
+      isEmpty: (QuerySnapshot<Map<String, dynamic>> snapshot) =>
+          snapshot.docs.isEmpty,
+      isPermissionDenied: (Object error) =>
+          error is FirebaseException && error.code == 'permission-denied',
+    );
   }
 
   @override
@@ -229,11 +258,10 @@ class FirestoreTeacherRepository implements TeacherRepository {
       // شرطان بالمساواة فقط (بلا `orderBy`) ⇒ لا فهرس مركّب (A-91). الترتيب
       // (`featuredOrder` ثم التقييم ثم الاسم) يُطبَّق في العميل بنفس دالة
       // الوضع التجريبي، فلا يختلف الشريط بين البيئتين (P15).
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await _profiles
-          .where('status', isEqualTo: 'verified')
-          .where('accountHidden', isEqualTo: false)
-          .where('isFeatured', isEqualTo: true)
-          .get();
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
+        (Query<Map<String, dynamic>> query) =>
+            query.where('isFeatured', isEqualTo: true),
+      );
       return TeacherDiscoveryRules.featured(
         mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
       );
@@ -245,22 +273,22 @@ class FirestoreTeacherRepository implements TeacherRepository {
     return _guard(() async {
       // شروط الخادم وحدها هنا؛ النص/المادة/المرحلة في العميل. كل شرط مساواة
       // على حقل واحد، فتكفي الفهارس الأحادية المرتّبة تلقائيًا.
-      Query<Map<String, dynamic>> query = _profiles
-          .where('status', isEqualTo: 'verified')
-          .where('accountHidden', isEqualTo: false);
-      switch (filter.delivery) {
-        case TeacherDeliveryFilter.any:
-          break;
-        case TeacherDeliveryFilter.online:
-          query = query.where('isOnline', isEqualTo: true);
-        case TeacherDeliveryFilter.inPerson:
-          query = query.where('isOnline', isEqualTo: false);
-      }
-      if (filter.governorate != null) {
-        query = query.where('governorate', isEqualTo: filter.governorate);
-      }
-
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await _visible(
+        (Query<Map<String, dynamic>> query) {
+          switch (filter.delivery) {
+            case TeacherDeliveryFilter.any:
+              break;
+            case TeacherDeliveryFilter.online:
+              query = query.where('isOnline', isEqualTo: true);
+            case TeacherDeliveryFilter.inPerson:
+              query = query.where('isOnline', isEqualTo: false);
+          }
+          if (filter.governorate != null) {
+            query = query.where('governorate', isEqualTo: filter.governorate);
+          }
+          return query;
+        },
+      );
       return TeacherDiscoveryRules.search(
         mapDocuments(snapshot.docs.map(_entry), teacherProfileFromMap),
         filter,

@@ -62,6 +62,13 @@ class _TeachersScreenState extends State<TeachersScreen> {
   /// يُغيَّر عند السحب للتحديث لإجبار إعادة جلب النتائج أيضًا.
   int _refreshToken = 0;
 
+  /// آخر نتائج بحث **ناجحة** (P29).
+  ///
+  /// مصدر ثانٍ لخيارات المحافظة: لو تعثّر استعلام `listVerified` وحده بينما
+  /// البحث يعمل (أو العكس)، لم يعد الصف يقول «لا توجد محافظات مسجّلة بعد» بينما
+  /// القائمة أمام المستخدم مليئة ببيانات فيها محافظات.
+  List<TeacherProfile> _lastResults = const <TeacherProfile>[];
+
   /// اشتراك طلبات البحث القادمة من شاشة أخرى (الرئيسية).
   ValueNotifier<TeacherSearchRequest?>? _searchRequests;
 
@@ -179,6 +186,48 @@ class _TeachersScreenState extends State<TeachersScreen> {
     _loadUniverse();
   }
 
+  /// بحث مع حفظ النتائج الناجحة (لمصدر المحافظات) — بلا تغيير سلوك الجلب.
+  ///
+  /// لا `setState` أثناء الجلب: التحديث يُؤجَّل لما بعد الإطار، وهو محصور في
+  /// تغيّر فعلي في المجموعة (لا إعادة بناء عند كل حرف).
+  Future<TeacherSearchResult> _search(TeacherFilter filter) async {
+    final TeacherSearchResult result = await AppServicesScope.of(
+      context,
+    ).teachers.search(filter);
+    _rememberResults(result.teachers);
+    return result;
+  }
+
+  void _rememberResults(List<TeacherProfile> teachers) {
+    if (_sameGovernorateSource(teachers, _lastResults)) {
+      return;
+    }
+    _lastResults = teachers;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  /// مقارنة خفيفة: صفّ المحافظات يعتمد على (معرّف، محافظة)، فلا حاجة لإعادة
+  /// بناء عند بحث لم يغيّر أيًّا منهما.
+  bool _sameGovernorateSource(
+    List<TeacherProfile> next,
+    List<TeacherProfile> previous,
+  ) {
+    if (next.length != previous.length) {
+      return false;
+    }
+    for (int index = 0; index < next.length; index++) {
+      if (next[index].id != previous[index].id ||
+          next[index].governorate != previous[index].governorate) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _openProfile(TeacherProfile teacher) {
     Navigator.of(context).pushNamed(
       RoutePaths.teacherProfile,
@@ -231,8 +280,10 @@ class _TeachersScreenState extends State<TeachersScreen> {
                 ),
                 TeacherFilterBar(
                   filter: _filter,
+                  // دمج مصدرين: الملفات الموثّقة + نتائج البحث الحالية.
                   governorates: TeacherDiscoveryRules.governorateOptions(
                     _universe,
+                    extra: _lastResults,
                   ),
                   governoratesLoading: _universeLoading,
                   // (P29) التمييز بين «لا محافظات في البيانات» و«فشل التحميل»:
@@ -254,8 +305,7 @@ class _TeachersScreenState extends State<TeachersScreen> {
                   // تُمسح القائمة كلها (كان ذلك سبب «القفزة» الثانية).
                   reloadKey: (_filter, _refreshToken),
                   keepPreviousData: true,
-                  load: () =>
-                      AppServicesScope.of(context).teachers.search(_filter),
+                  load: () => _search(_filter),
                   isEmpty: (TeacherSearchResult result) => result.isEmpty,
                   // (P26) «لا نتائج» بلا مخرج تُقرأ كعطل. إن كان هناك فلتر
                   // مفعّل فالإجراء الأساسي هو تفريغه (أقرب طريق لنتائج)، وإلا

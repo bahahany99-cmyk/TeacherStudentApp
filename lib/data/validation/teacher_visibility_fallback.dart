@@ -1,0 +1,50 @@
+/// سياسة «الحقل الغائب يعني ظاهرًا» — منطق نقي قابل للاختبار (P29).
+///
+/// ## المشكلة
+///
+/// استعلامات الاكتشاف تفلتر بمساواة صريحة:
+/// `where('accountHidden', '==', false)`، وفي Firestore **غياب الحقل ≠ false**.
+/// فمستند موثّق أُنشئ خارج مسار التطبيق (وحدة تحكّم/استيراد/قبل P17) يُقرأ
+/// بالمعرّف (القواعد تستخدم `get('accountHidden', false)`) لكنه **غائب عن كل
+/// قائمة**: صفحة المدرسين، والمميزون، وخيارات المحافظات (مصدرها نفس الاستعلام).
+///
+/// ## السياسة
+///
+/// 1. **الاستعلام الصارم أولًا** (بشرط `accountHidden == false`): إن أعاد
+///    نتيجة، انتهى الأمر — لا استعلام إضافي، ولا تكلفة قراءة إضافية.
+/// 2. **فارغ ⇒ استعلام واسع** بلا شرط `accountHidden`، فيلتقط المستندات التي
+///    تنقصها القيمة. لا يُعرض منه إلا ما تسمح به القواعد، تمامًا كأي قراءة.
+/// 3. **الاستعلام الواسع مرفوض (`permission-denied`)** ⇒ توجد مستندات لا تسمح
+///    بها القواعد (حساب مخفي، وهذا هو المتوقع: «القواعد ليست فلترًا»). نُعيد
+///    نتيجة الاستعلام الصارم بدل إفشال الشاشة: المستخدم يرى ما يُسمح به، لا
+///    خطأ تقنيًا بسبب حالة بيانات قديمة.
+/// 4. أي خطأ آخر (شبكة، مهلة) **يُعاد رفعه** — لا نُحوّل عطلًا إلى «لا نتائج».
+///
+/// المنطق هنا لا يعرف Firebase: يأخذ دوالًا ويُختبر بمصادر وهمية حتمية.
+library;
+
+abstract final class TeacherVisibilityFallback {
+  /// يُنفّذ [strict]، ولا ينتقل إلى [broad] إلا إذا كان [strict] فارغًا.
+  ///
+  /// [isEmpty] ما الذي يعتبر «لا نتيجة» (في Firestore: `docs.isEmpty`).
+  /// [isPermissionDenied] هل هذا الخطأ رفضٌ من القواعد؟
+  static Future<T> resolve<T>({
+    required Future<T> Function() strict,
+    required Future<T> Function() broad,
+    required bool Function(T value) isEmpty,
+    required bool Function(Object error) isPermissionDenied,
+  }) async {
+    final T strictResult = await strict();
+    if (!isEmpty(strictResult)) {
+      return strictResult;
+    }
+    try {
+      return await broad();
+    } on Object catch (error) {
+      if (isPermissionDenied(error)) {
+        return strictResult;
+      }
+      rethrow;
+    }
+  }
+}
