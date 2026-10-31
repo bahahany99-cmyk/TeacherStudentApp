@@ -93,6 +93,7 @@ abstract final class AuctionText {
     AuctionPhase.replacement =>
       'دورة البديل حتى ${dayTime(state.replacementDeadline ?? state.paymentDeadline)}',
     AuctionPhase.awaitingPublish => 'يبدأ العرض ${dayDate(state.displayStartsAt)}',
+    AuctionPhase.live => 'يظهر الفائزون حتى ${dayDate(state.displayEndsAt)}',
     AuctionPhase.ended => 'انتهى عرض هذا الأسبوع',
   };
 

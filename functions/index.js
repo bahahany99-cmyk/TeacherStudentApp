@@ -346,29 +346,37 @@ exports.weeklyPublishFeatured = onSchedule(
     const now = new Date();
     const due = core.weeklySchedule(now);
 
-    // (1) إنهاء كل دورة منشورة سابقًا انتهى عرضها ولم تُنهَ بعد.
-    try {
-      const snapshot = await getFirestore()
-        .collection('auctions')
-        .where('publishedAt', '!=', null)
-        .get();
-      for (const doc of snapshot.docs) {
-        const data = doc.data();
-        if (data.settledAt) continue;
-        if (new Date(data.displayEndsAt.toDate?.() ?? data.displayEndsAt) >= now) continue;
+    // (1) إنهاء كل دورة منشورة انتهى عرضها ولم تُنهَ بعد.
+    //
+    // **بلا استعلام:** العرض أسبوع واحد، فالدورة المنتهية تكون من واحدة من
+    // الأسبوعين الماضيين. نُجرّب معرّفات مشتقة بالترتيب (لا فهرس، ولا احتمال
+    // أن يفشل الاستعلام وحده فيُترك علم التمييز على مدرّس قديم).
+    const candidateCycles = [];
+    let cursor = new Date(due.opensAt.getTime());
+    for (let week = 0; week < 3; week += 1) {
+      candidateCycles.push(core.weeklySchedule(cursor).cycleKey);
+      cursor = new Date(cursor.getTime() - 7 * 86400000);
+    }
+    for (const cycleKey of candidateCycles) {
+      for (const category of core.CATEGORIES) {
+        const auctionId = core.cycleId(cycleKey, category);
         try {
+          const auction = await store.getAuction(auctionId);
+          if (!auction || !auction.publishedAt || auction.settledAt) continue;
+          const endsAt = new Date(
+            auction.displayEndsAt?.toDate?.() ?? auction.displayEndsAt,
+          ).getTime();
+          if (!Number.isFinite(endsAt) || endsAt >= now.getTime()) continue;
           await service.expireFeatured({
             store,
             now,
-            auctionId: doc.id,
+            auctionId,
             actor: 'scheduler',
           });
         } catch (error) {
-          console.error('expire failed', doc.id, error);
+          console.error('expire failed', auctionId, error);
         }
       }
-    } catch (error) {
-      console.error('expire scan failed', error);
     }
 
     // (2) نشر الدورات التي بدأ عرضها (السبت 00:00).

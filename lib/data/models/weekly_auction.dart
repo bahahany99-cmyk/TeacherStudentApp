@@ -60,7 +60,10 @@ enum AuctionPhase {
   /// انتهت مهل الدفع والبديل، وقبل بدء العرض السبت 00:00.
   awaitingPublish('استعدادًا للعرض', false),
 
-  /// الدورة منتهية (رُفع التمييز بعد أسبوع العرض).
+  /// أسبوع العرض جارٍ: الفائزون المدفوعون يظهرون في شريط المميزين.
+  live('أسبوع العرض جارٍ', false),
+
+  /// الدورة منتهية (انتهى العرض ورُفع التمييز).
   ended('انتهى هذا الأسبوع', false);
 
   const AuctionPhase(this.label, this.canBid);
@@ -79,6 +82,7 @@ enum AuctionPhase {
     'paymentWindow' => AuctionPhase.paymentWindow,
     'replacement' => AuctionPhase.replacement,
     'awaitingPublish' => AuctionPhase.awaitingPublish,
+    'live' => AuctionPhase.live,
     'ended' => AuctionPhase.ended,
     _ => AuctionPhase.scheduled,
   };

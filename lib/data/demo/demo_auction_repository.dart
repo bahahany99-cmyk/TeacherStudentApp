@@ -245,9 +245,9 @@ class _DemoWeek {
     if (now.isBefore(announcesAt)) return AuctionPhase.awaitingFinalize;
     if (now.isBefore(paymentDeadline)) return AuctionPhase.paymentWindow;
     if (now.isBefore(replacementDeadline)) return AuctionPhase.replacement;
-    // العرض نفسه لا يغيّر المرحلة (كما في الخادم): تبقى `awaitingPublish` حتى
-    // يُنهى التمييز نهاية الأسبوع.
-    if (now.isBefore(displayEndsAt)) return AuctionPhase.awaitingPublish;
+    // بعد النشر (السبت 00:00) يصبح العرض جاريًا حتى نهاية الجمعة، ثم منتهيًا
+    // — نفس ترتيب الخادم في `deriveStatus`.
+    if (now.isBefore(displayEndsAt)) return AuctionPhase.live;
     return AuctionPhase.ended;
   }
 

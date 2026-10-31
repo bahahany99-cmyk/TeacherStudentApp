@@ -281,6 +281,10 @@ function deriveStatus(auction, now) {
   if (t < time(auction.announcesAt)) return 'awaitingFinalize';
   if (t < time(auction.paymentDeadline)) return 'paymentWindow';
   if (t < time(auction.replacementDeadline)) return 'replacement';
+  // بعد النشر: عرض جارٍ حتى نهاية الجمعة، ثم منتهٍ (حتى لو تأخر رفع العلم).
+  if (auction.publishedAt) {
+    return t < time(auction.displayEndsAt) ? 'live' : 'ended';
+  }
   return 'awaitingPublish';
 }
 

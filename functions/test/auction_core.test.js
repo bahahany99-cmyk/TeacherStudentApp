@@ -130,9 +130,16 @@ test('deriveStatus يمر بكل المراحل بترتيب صحيح', () => {
   assert.equal(at(cairo(2026, 10, 15, 10)), 'paymentWindow');
   assert.equal(at(cairo(2026, 10, 16, 10)), 'replacement');
   assert.equal(at(cairo(2026, 10, 17, 1)), 'awaitingPublish');
+
+  // بعد النشر: عرض جارٍ حتى نهاية الجمعة، ثم منتهٍ.
+  const published = { ...auction, publishedAt: cairo(2026, 10, 17, 0, 5) };
+  assert.equal(core.deriveStatus(published, cairo(2026, 10, 17, 12)), 'live');
+  assert.equal(core.deriveStatus(published, cairo(2026, 10, 23, 12)), 'live');
+  assert.equal(core.deriveStatus(published, cairo(2026, 10, 24, 0, 30)), 'ended');
+
+  // وأي دورة رُفع تمييزها تُقرأ منتهية فورًا.
   assert.equal(
-    at(cairo(2026, 10, 17, 1)) === 'awaitingPublish' &&
-      core.deriveStatus({ ...auction, settledAt: cairo(2026, 10, 17, 1) }, cairo(2026, 10, 17, 2)),
+    core.deriveStatus({ ...auction, settledAt: cairo(2026, 10, 23, 23, 59) }, cairo(2026, 10, 17, 2)),
     'ended',
   );
 });
