@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/errors/request_timeout.dart';
 import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/firebase/teacher_profile_writes.dart';
+import 'package:teacher_student_app/data/validation/group_teacher_discovery.dart';
 import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
@@ -105,10 +106,19 @@ abstract final class FirestoreCollections {
   static const String contentReports = 'contentReports';
 }
 
+/// ملف مدرس خام: معرّف + حقول — من استعلام أو من قراءة مباشرة.
+///
+/// توحيد النوع ضروري لأن المسار يعمل بمصدرين: استعلام (QueryDocumentSnapshot)
+/// وقراءة بالمعرّف (DocumentSnapshot) لأسماء المدرسين المستخرجة من المجموعات.
+class _TeacherDoc {
+  const _TeacherDoc(this.id, this.data);
+
+  final String id;
+  final Map<String, Object?> data;
+}
+
 /// زوج (معرّف، بيانات) لخرائط التحويل في `firestore_mappers`.
-(String, Map<String, Object?>) _entry(
-  QueryDocumentSnapshot<Map<String, dynamic>> doc,
-) => (doc.id, doc.data());
+(String, Map<String, Object?>) _entry(_TeacherDoc doc) => (doc.id, doc.data);
 
 /// يدمج تدفّقَي قوائم في تدفّق واحد: يُعاد الدمج عند وصول أي طرف.
 ///
@@ -214,44 +224,159 @@ class FirestoreTeacherRepository implements TeacherRepository {
   @override
   Future<List<TeacherProfile>> listVerified() {
     return _guard(() async {
-      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-          await _visible((Query<Map<String, dynamic>> query) => query);
+      final List<_TeacherDoc> docs = await _visible(
+        (Query<Map<String, dynamic>> query) => query,
+      );
       return mapDocuments(docs.map(_entry), teacherProfileFromMap);
     });
   }
 
-  /// استعلام «المدرسون الظاهرون» — دمج الصارم مع الواسع (P29).
+  /// المعرّف + بيانات الملف، من استعلام أو من قراءة مباشرة.
+  static _TeacherDoc _fromQuery(QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+      _TeacherDoc(d.id, d.data());
+
+  static _TeacherDoc _fromDoc(DocumentSnapshot<Map<String, dynamic>> d) =>
+      _TeacherDoc(d.id, d.data() ?? const <String, Object?>{});
+
+  /// استعلام «المدرسون الظاهرون» — ثلاث طبقات (P29).
   ///
-  /// في Firestore **غياب الحقل ≠ `false`**: مستند بلا `accountHidden` لا يطابق
-  /// `where('accountHidden', '==', false)`، فيكون موثّقًا ومقروءًا بالمعرّف
-  /// وغائبًا عن كل قائمة (صفحة المدرسين، المميزون، خيارات المحافظات).
+  /// ## المشكلة التي أوصلت إلى هنا
   ///
-  /// **الدمج دائمًا، لا عند الفراغ فقط:** لو انتظرنا فراغ الاستعلام الصارم
-  /// لاختفى كل ملف قديم بمجرد وجود ملف واحد جديد يحمل الحقل — وهو بالضبط ما
-  /// يجعل البحث عن «Shady» بلا نتيجة. نُدمج نتيجتي الصارم والواسع بالمعرّف
-  /// (أولوية الصارم)، ونُسقط كل مستند `accountHidden: true` حتى لو أعاده
-  /// الخادم، ونُكمل بنتيجة الصارم إن فشل الواسع.
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _visible(
+  /// كل استعلامات الاكتشاف تفلتر `where('accountHidden', '==', false)`، وفي
+  /// Firestore **غياب الحقل ≠ `false`**. فملف بلا الحقل لا يعود من الاستعلام،
+  /// مع أن القراءة المباشرة له مسموحة (القاعدة تستخدم `get(..., false)`).
+  ///
+  /// ## لماذا لا يكفي استعلام «واسع» بلا شرط الحقل؟
+  ///
+  /// لأن قواعد Firestore تُرفض الاستعلام كاملًا إن كان **قد** يعيد مستندًا غير
+  /// مسموح («القواعد ليست فلترًا»). `where('status','==','verified')` وحده لا
+  /// يضمن `accountHidden == false`، فالإنتاج يرفضه — ولهذا بقي المدرسون
+  /// الموثّقون غائبين حتى بعد إضافة ذلك «الاحتياطي» (لقطة «shady» بلا نتائج).
+  ///
+  /// ## الحل: التعريف من مصدر مقروء، ثم قراءة مباشرة
+  ///
+  /// `studyGroups` تُقرأ للطلاب (شرط `isActive == true`) وتحقّقنا منها عمليًا:
+  /// مجموعات المدرسين تظهر بأسمائهم وشارة توثيقهم. فنجمع معرّفات المدرسين من
+  /// المجموعات الظاهرة، ونقرأ كل ملف **بالمعرّف** — وهو الطريق نفسه الذي يعمل
+  /// (شارة التوثيق في بطاقة المجموعة). لا تُضاف إلا الملفات الموثّقة غير
+  /// المخفية، لأن القراءة المباشرة لمخفيّ مرفوضة أصلًا.
+  ///
+  /// الترتيب: الصارم (مطابقة كاملة) ← الواسع (أفضل جهد) ← المشتق من المجموعات.
+  /// الدمج بالمعرّف بلا تكرار، وإسقاط كل `accountHidden: true`. فشل أي مصدر لا
+  /// يُفشل القائمة، وفشل الصارم وحده (شبكة/مهلة) يُرفع.
+  ///
+  /// ⚠️ حدّ معروف: مدرّس موثّق **بلا مجموعات ظاهرة** لا يمكن الوصول إليه من
+  /// العميل قبل ترحيل البيانات (`docs/P29_MIGRATION.md`). الترحيل هو الإصلاح
+  /// الكامل؛ ما هنا يضمن ألّا يبقى المدرّس المرئي في المجموعات غائبًا عن البحث.
+  Future<List<_TeacherDoc>> _visible(
     Query<Map<String, dynamic>> Function(Query<Map<String, dynamic>> query)
-    refine,
-  ) {
+    refine, {
+    bool Function(Map<String, Object?> data)? localMatch,
+  }) async {
     // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه يستبعد الملفات المخفية
     // بحذف الحساب، فلا نعتمد على رفض القاعدة للملف.
-    return TeacherVisibilityFallback.resolveMerged<
-      QueryDocumentSnapshot<Map<String, dynamic>>
-    >(
-      strict: () async => (await refine(
-        _profiles
-            .where('status', isEqualTo: 'verified')
-            .where('accountHidden', isEqualTo: false),
-      ).get()).docs,
-      broad: () async => (await refine(
-        _profiles.where('status', isEqualTo: 'verified'),
-      ).get()).docs,
-      idOf: (QueryDocumentSnapshot<Map<String, dynamic>> doc) => doc.id,
-      isHidden: (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-          TeacherVisibilityFallback.isExplicitlyHidden(doc.data()),
+    final List<_TeacherDoc> primary =
+        await TeacherVisibilityFallback.resolveMerged<_TeacherDoc>(
+          strict: () async => (await refine(
+            _profiles
+                .where('status', isEqualTo: 'verified')
+                .where('accountHidden', isEqualTo: false),
+          ).get()).docs.map(_fromQuery).toList(),
+          broad: () async => (await refine(
+            _profiles.where('status', isEqualTo: 'verified'),
+          ).get()).docs.map(_fromQuery).toList(),
+          idOf: (_TeacherDoc doc) => doc.id,
+          isHidden: (_TeacherDoc doc) =>
+              TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+        );
+
+    final List<_TeacherDoc> fromGroups = await _teachersFromVisibleGroups(
+      localMatch: localMatch,
     );
+    return TeacherVisibilityFallback.mergeVisible<_TeacherDoc>(
+      primary: primary,
+      extra: fromGroups,
+      idOf: (_TeacherDoc doc) => doc.id,
+      isHidden: (_TeacherDoc doc) =>
+          TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+    );
+  }
+
+  /// كم معرّفًا نقرأ كحد أقصى في كل تحديث (حماية من تكلفة غير متوقعة).
+  static const int _maxGroupTeachers = GroupTeacherDiscovery.defaultMax;
+
+  /// صلاحية ذاكرة المشتق: البحث يُنفَّذ مع كل تغيير فلتر، فلا نكرّر نفس
+  /// القراءات في كل ضغطة مفتاح. دقيقتان تُبقي الشاشة سريعة بلا جمود طويل.
+  static const Duration _derivedCacheTtl = Duration(minutes: 2);
+
+  List<_TeacherDoc>? _derivedCache;
+  DateTime? _derivedCachedAt;
+
+  /// يجمع ملفات المدرسين انطلاقًا من المجموعات الظاهرة (P29).
+  ///
+  /// لا يرمي أبدًا: أي فشل (شبكة/صلاحيات/مجموعة بلا مالك) يعني «لا شيء إضافي»،
+  /// فلا تتعطّل صفحة المدرسين بسبب مصدر مساعد. التفاصيل: [GroupTeacherDiscovery].
+  Future<List<_TeacherDoc>> _teachersFromVisibleGroups({
+    bool Function(Map<String, Object?> data)? localMatch,
+  }) async {
+    final DateTime now = DateTime.now();
+    final List<_TeacherDoc>? cached = _derivedCache;
+    final DateTime? cachedAt = _derivedCachedAt;
+    final bool cacheFresh =
+        cached != null &&
+        cachedAt != null &&
+        now.difference(cachedAt) < _derivedCacheTtl;
+
+    List<_TeacherDoc> teachers;
+    if (cacheFresh) {
+      teachers = cached;
+    } else {
+      try {
+        final QuerySnapshot<Map<String, dynamic>> groups = await _firestore
+            .collection(FirestoreCollections.studyGroups)
+            .where('isActive', isEqualTo: true)
+            .get();
+
+        final List<String> ids = GroupTeacherDiscovery.teacherIds(
+          groups.docs.map(
+            (QueryDocumentSnapshot<Map<String, dynamic>> doc) => doc.data(),
+          ),
+          max: _maxGroupTeachers,
+        );
+
+        // قراءات مباشرة: المسار الذي يعمل فعلًا (شارة المجموعة تُبنى به).
+        teachers = await GroupTeacherDiscovery.resolve<_TeacherDoc>(
+          ids,
+          load: (String id) async {
+            final DocumentSnapshot<Map<String, dynamic>> doc = await _profiles
+                .doc(id)
+                .get();
+            final Map<String, Object?>? data = doc.data();
+            if (data == null) {
+              return null;
+            }
+            return _TeacherDoc(doc.id, data);
+          },
+          // نفس شرط الظهور في القواعد والاستعلام: موثّق وغير مخفي.
+          isAcceptable: (_TeacherDoc doc) =>
+              doc.data['status'] == 'verified' &&
+              !TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+        );
+
+        _derivedCache = teachers;
+        _derivedCachedAt = now;
+      } on Object {
+        return const <_TeacherDoc>[];
+      }
+    }
+
+    if (localMatch == null) {
+      return teachers;
+    }
+    return <_TeacherDoc>[
+      for (final _TeacherDoc teacher in teachers)
+        if (localMatch(teacher.data)) teacher,
+    ];
   }
 
   @override
@@ -260,11 +385,11 @@ class FirestoreTeacherRepository implements TeacherRepository {
       // شرطان بالمساواة فقط (بلا `orderBy`) ⇒ لا فهرس مركّب (A-91). الترتيب
       // (`featuredOrder` ثم التقييم ثم الاسم) يُطبَّق في العميل بنفس دالة
       // الوضع التجريبي، فلا يختلف الشريط بين البيئتين (P15).
-      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-          await _visible(
-            (Query<Map<String, dynamic>> query) =>
-                query.where('isFeatured', isEqualTo: true),
-          );
+      final List<_TeacherDoc> docs = await _visible(
+        (Query<Map<String, dynamic>> query) =>
+            query.where('isFeatured', isEqualTo: true),
+        localMatch: (Map<String, Object?> data) => data['isFeatured'] == true,
+      );
       return TeacherDiscoveryRules.featured(
         mapDocuments(docs.map(_entry), teacherProfileFromMap),
       );
@@ -276,8 +401,7 @@ class FirestoreTeacherRepository implements TeacherRepository {
     return _guard(() async {
       // شروط الخادم وحدها هنا؛ النص/المادة/المرحلة في العميل. كل شرط مساواة
       // على حقل واحد، فتكفي الفهارس الأحادية المرتّبة تلقائيًا.
-      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-          await _visible(
+      final List<_TeacherDoc> docs = await _visible(
         (Query<Map<String, dynamic>> query) {
           switch (filter.delivery) {
             case TeacherDeliveryFilter.any:
@@ -292,129 +416,28 @@ class FirestoreTeacherRepository implements TeacherRepository {
           }
           return query;
         },
+        // الملفات المقروءة بالمعرّف لم تمرّ بفلتر الخادم، فنطبّق نفس شرط
+        // الطريقة/المحافظة عليها في العميل (وإلا عادت نتائج لا تطابق الفلتر).
+        localMatch: (Map<String, Object?> data) {
+          final bool? wantOnline = switch (filter.delivery) {
+            TeacherDeliveryFilter.any => null,
+            TeacherDeliveryFilter.online => true,
+            TeacherDeliveryFilter.inPerson => false,
+          };
+          return TeacherVisibilityFallback.matchesOnlineFlag(
+                data,
+                wantOnline,
+              ) &&
+              TeacherVisibilityFallback.matchesGovernorate(
+                data,
+                filter.governorate,
+              );
+        },
       );
       return TeacherDiscoveryRules.search(
         mapDocuments(docs.map(_entry), teacherProfileFromMap),
         filter,
       );
-    });
-  }
-
-  @override
-  Future<TeacherProfile?> findMine(String uid) {
-    return _guard(() async {
-      // قراءة مباشرة للمستند: القاعدة تسمح لصاحبه بأي حالة (`isSelf`)، فلا
-      // نحتاج استعلامًا ولا شرط `status` — وإلا لما رأى المدرس مسودته.
-      final DocumentSnapshot<Map<String, dynamic>> doc = await _profiles
-          .doc(uid)
-          .get();
-      final Map<String, Object?>? data = doc.data();
-      if (!doc.exists || data == null) {
-        return null;
-      }
-      return teacherProfileFromMap(doc.id, data);
-    });
-  }
-
-  @override
-  Future<TeacherProfile> saveMyProfile({
-    required String uid,
-    required TeacherProfileDraft draft,
-  }) {
-    return _guard(() async {
-      // (P22) الصورة إلزامية: نموذج بلا صورة لا يُرسل أصلًا، ولو وصل هنا
-      // (شاشة أخرى، استدعاء مباشر) نرفضه محليًا قبل الكتابة. القواعد ترفضه
-      // أيضًا (`photoSatisfiedFor`)، فالطريقان مغلقان.
-      if (!draft.hasPhoto) {
-        throw const AppException(
-          AppErrorKind.invalidInput,
-          debugMessage: 'teacher profile saved without a photo',
-          overrideTitle: 'الصورة مطلوبة',
-          overrideMessage:
-              'أضف صورة شخصية واضحة قبل حفظ ملفك — بدونها لا يُرسل الملف '
-              'للمراجعة.',
-        );
-      }
-
-      // (P23) المادة والمرحلة إلزاميتان مثل الصورة: ملف بلا مادة أو مرحلة لا
-      // يُرسل للمراجعة. نفس الحدود في `academicFieldsSatisfiedFor` بالقواعد.
-      final String? academicProblem = draft.academicProblem;
-      if (academicProblem != null) {
-        throw AppException(
-          AppErrorKind.invalidInput,
-          debugMessage: 'teacher profile saved without academic fields',
-          overrideTitle: 'بيانات ناقصة',
-          overrideMessage: '$academicProblem — لا يُرسل ملفك للمراجعة بدونها.',
-        );
-      }
-
-      final DocumentReference<Map<String, dynamic>> ref = _profiles.doc(uid);
-      final DocumentSnapshot<Map<String, dynamic>> existing = await ref.get();
-
-      if (existing.exists) {
-        // تعديل: الحقول الوصفية فقط. `update` ترفض المستند الغائب — وهذا
-        // مطلوب: لو حُذف الملف بين القراءة والكتابة لا نُنشئه بلا فحص.
-        final Map<String, Object?> changes = draft.toWriteMap();
-        // تفريغ حقل اختياري = **حذفه**، لا تركه بقيمته القديمة. `merge`
-        // وحدها لا تحذف مفاتيح، فالحذف يحتاج `FieldValue.delete()` صريحًا.
-        for (final String field in <String>[
-          'priceHint',
-          'governorate',
-          'district',
-        ]) {
-          if (!changes.containsKey(field)) {
-            changes[field] = FieldValue.delete();
-          }
-        }
-
-        // (P22) سياسة إعادة التحقق: أي تعديل يعيد الملف إلى قائمة المراجعة.
-        // - الموثّق: تعديل بياناته يُلغي أثر التوثيق القديم، فيعود
-        //   `pendingReview` حتى يراجعته الإدارة على القيم الجديدة.
-        // - المسودة/المرفوض: أول حفظ كامل = طلب مراجعة فعلي.
-        // - المنتظر مراجعةً: مقفل تمامًا (القاعدة ترفض، والنموذج لا يُفتح).
-        final TeacherProfileStatus current =
-            teacherProfileFromMap(uid, existing.data() ?? <String, Object?>{})
-                ?.status ??
-            TeacherProfileStatus.draft;
-        if (current != TeacherProfileStatus.pendingReview) {
-          changes['status'] = TeacherProfileStatus.pendingReview.wireValue;
-        }
-        // (P29) ملف بلا `accountHidden` لا يظهر في أي استعلام اكتشاف. حفظ
-        // صاحبه لملفه فرصة آمنة لإصلاح ذلك: نضيف الحقل عند غيابه فقط، ولا
-        // نمسّ قيمة موجودة (فلا يظهر حساب مخفي بسبب حفظ عادي).
-        changes.addAll(
-          TeacherProfileWrites.ownerSaveBackfill(
-            accountHiddenFlagPresent: (existing.data() ??
-                    const <String, Object?>{})
-                .containsKey('accountHidden'),
-          ),
-        );
-        await ref.update(changes);
-      } else {
-        // إنشاء: الحقول التي تفرضها القاعدة `allow create` حرفيًا.
-        await ref.set(<String, Object?>{
-          ...draft.toWriteMap(),
-          'ownerId': uid,
-          'status': TeacherProfileStatus.pendingReview.wireValue,
-          // (P17) الحقل موجود منذ الإنشاء: استعلامات الاكتشاف تفلتر عليه،
-          // ومستند بلا الحقل لا يظهر في `where(accountHidden == false)`.
-          'accountHidden': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      // نقرأ بعد الكتابة بدل تركيب النموذج محليًا: `createdAt` وقت الخادم
-      // والحقول الإدارية لا نعرفها، فالعرض من المصدر أصدق.
-      final DocumentSnapshot<Map<String, dynamic>> saved = await ref.get();
-      final Map<String, Object?> data = saved.data() ?? <String, Object?>{};
-      final TeacherProfile? profile = teacherProfileFromMap(uid, data);
-      if (profile == null) {
-        throw const AppException(
-          AppErrorKind.unavailable,
-          debugMessage: 'teacher profile saved but unreadable',
-        );
-      }
-      return profile;
     });
   }
 

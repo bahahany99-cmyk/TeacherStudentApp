@@ -4,6 +4,7 @@ import 'package:teacher_student_app/data/firebase/teacher_profile_writes.dart';
 import 'package:teacher_student_app/data/migration/account_hidden_backfill.dart';
 import 'package:teacher_student_app/data/models/teacher_filter.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
+import 'package:teacher_student_app/data/validation/group_teacher_discovery.dart';
 import 'package:teacher_student_app/data/validation/teacher_discovery_rules.dart';
 import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.dart';
 
@@ -21,20 +22,66 @@ class _Doc {
   final Map<String, Object?> data;
 }
 
-/// يقلّد `_visible` في المستودع: دمج الصارم مع الواسع بالمعرّف، مع إسقاط
-/// الموسوم بالإخفاء — أي أن الدمج داخل الاستعلام الأساسي نفسه لا مسارًا جانبيًا.
-Future<List<_Doc>> _mergeDocs(Map<String, Map<String, Object?>> docs) {
-  return TeacherVisibilityFallback.resolveMerged<_Doc>(
-    strict: () async => <_Doc>[
-      for (final MapEntry<String, Map<String, Object?>> entry in docs.entries)
-        if (entry.value['status'] == 'verified' &&
-            entry.value['accountHidden'] == false)
-          _Doc(entry.key, entry.value),
-    ],
-    broad: () async => <_Doc>[
-      for (final MapEntry<String, Map<String, Object?>> entry in docs.entries)
-        if (entry.value['status'] == 'verified') _Doc(entry.key, entry.value),
-    ],
+/// يقلّد `_visible` في المستودع **كما يعمل في الإنتاج**:
+///
+/// 1. الصارم: `verified` + `accountHidden == false` (فارغ حين تنقص الملفات).
+/// 2. الواسع: `verified` بلا شرط الحقل — وتُرفضه القواعد كاملًا في الإنتاج،
+///    فنحاكي ذلك برفع استثناء.
+/// 3. المشتق: معرّفات المدرسين من المجموعات الظاهرة ← قراءة مباشرة للملف.
+///
+/// [groups] هي مستندات `studyGroups` الظاهرة (بها `teacherId`).
+Future<List<_Doc>> _discoverLikeProduction(
+  Map<String, Map<String, Object?>> docs, {
+  List<Map<String, Object?>> groups = const <Map<String, Object?>>[],
+  bool broadRejected = true,
+}) async {
+  final List<_Doc> primary =
+      await TeacherVisibilityFallback.resolveMerged<_Doc>(
+        strict: () async => <_Doc>[
+          for (final MapEntry<String, Map<String, Object?>> entry
+              in docs.entries)
+            if (entry.value['status'] == 'verified' &&
+                entry.value['accountHidden'] == false)
+              _Doc(entry.key, entry.value),
+        ],
+        broad: () async {
+          if (broadRejected) {
+            // «القواعد ليست فلترًا»: الاستعلام بلا شرط الحقل مرفوض كاملًا.
+            throw StateError('permission-denied');
+          }
+          return <_Doc>[
+            for (final MapEntry<String, Map<String, Object?>> entry
+                in docs.entries)
+              if (entry.value['status'] == 'verified')
+                _Doc(entry.key, entry.value),
+          ];
+        },
+        idOf: (_Doc doc) => doc.id,
+        isHidden: (_Doc doc) =>
+            TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+      );
+
+  // الطبقة الثالثة: ما تعرفه المجموعات الظاهرة ⇒ قراءة مباشرة بالمعرّف.
+  final List<String> ids = GroupTeacherDiscovery.teacherIds(groups);
+  final List<_Doc> derived = await GroupTeacherDiscovery.resolve<_Doc>(
+    ids,
+    load: (String id) async {
+      final Map<String, Object?>? data = docs[id];
+      if (data == null) {
+        return null;
+      }
+      // القراءة المباشرة لملف مخفي مرفوضة في القواعد.
+      if (TeacherVisibilityFallback.isExplicitlyHidden(data)) {
+        throw StateError('permission-denied');
+      }
+      return _Doc(id, data);
+    },
+    isAcceptable: (_Doc doc) => doc.data['status'] == 'verified',
+  );
+
+  return TeacherVisibilityFallback.mergeVisible<_Doc>(
+    primary: primary,
+    extra: derived,
     idOf: (_Doc doc) => doc.id,
     isHidden: (_Doc doc) => TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
   );
@@ -264,8 +311,13 @@ void main() {
             ),
           };
 
-      final List<TeacherProfile> teachers = (await _mergeDocs(
+      final List<TeacherProfile> teachers = (await _discoverLikeProduction(
         docs,
+        groups: <Map<String, Object?>>[
+          <String, Object?>{'teacherId': 'visible-1'},
+          <String, Object?>{'teacherId': 'shady'},
+          <String, Object?>{'teacherId': 'hidden-9'},
+        ],
       )).map(_toProfile).toList();
       expect(
         teachers.map((TeacherProfile t) => t.id),
@@ -292,8 +344,11 @@ void main() {
             'shady': _rawProfile(id: 'shady', displayName: 'Shady Ali'),
           };
 
-      final List<TeacherProfile> teachers = (await _mergeDocs(
+      final List<TeacherProfile> teachers = (await _discoverLikeProduction(
         docs,
+        groups: <Map<String, Object?>>[
+          <String, Object?>{'teacherId': 'shady'},
+        ],
       )).map(_toProfile).toList();
       expect(teachers, hasLength(1));
       expect(teachers.single.id, 'shady');

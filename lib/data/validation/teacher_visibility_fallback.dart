@@ -26,6 +26,11 @@
 /// 4. **الواسع أفضل جهد**: إن رفضته القواعد (`permission-denied`) أو فشل
 ///    لأي سبب، نُكمل بنتيجة الصارم بلا إفشال الشاشة. أما فشل **الصارم** فيُرفع
 ///    كما هو — لا نُحوّل عطلًا إلى «لا نتائج».
+/// 5. **الطبقة الثالثة (المصدر العملي):** في الإنتاج ترفض القواعد الاستعلام
+///    الواسع كاملًا لأنه قد يعيد مستندًا غير مسموح، فيبقى الفراغ. لذلك يجمع
+///    `FirestoreTeacherRepository` معرّفات المدرسين من المجموعات الظاهرة
+///    (`studyGroups` مقروءة للطلاب) ويقرأ كل ملف **بالمعرّف** — وهو المسار
+///    الذي يعمل أصلًا (شارة التوثيق في بطاقة المجموعة) — ثم يدمجه هنا.
 ///
 /// ## الأمان: لا نثق في تصفية الخادم وحدها
 ///
@@ -45,6 +50,24 @@ abstract final class TeacherVisibilityFallback {
   /// إلا `true` الصريحة.
   static bool isExplicitlyHidden(Map<String, Object?> data) =>
       data['accountHidden'] == true;
+
+  /// هل يطابق الملف الخام شرط «الطريقة» الذي يفرضه استعلام Firestore؟
+  ///
+  /// [wantOnline] `null` تعني «بلا فلتر»، و`true`/`false` تعني مساواة صريحة على
+  /// `isOnline` — والقيمة الغائبة لا تطابق (نفس سلوك فلتر المساواة في الخادم).
+  ///
+  /// تُستخدم للملفات المقروءة **بالمعرّف** (المشتقة من المجموعات) لأنها لم تمرّ
+  /// بفلتر الخادم؛ بلا هذه المطابقة قد يعيد «حضوري فقط» مدرّسًا عن بُعد.
+  static bool matchesOnlineFlag(Map<String, Object?> data, bool? wantOnline) {
+    if (wantOnline == null) {
+      return true;
+    }
+    return data['isOnline'] == wantOnline;
+  }
+
+  /// مطابقة المحافظة كما يفعل `where('governorate', '==', value)`.
+  static bool matchesGovernorate(Map<String, Object?> data, String? want) =>
+      want == null || data['governorate'] == want;
 
   /// يُدمج نتيجة الاستعلام الصارم مع الواسع (أولوية الصارم، بلا تكرار).
   ///
@@ -73,15 +96,34 @@ abstract final class TeacherVisibilityFallback {
       broadItems = <T>[];
     }
 
+    return mergeVisible<T>(
+      primary: strictItems,
+      extra: broadItems,
+      idOf: idOf,
+      isHidden: isHidden,
+    );
+  }
+
+  /// دمج قائمتين بالمعرّف: [primary] أولًا (أولويتها في الترتيب)، ثم ما هو جديد
+  /// في [extra]. أي عنصر [isHidden] يُسقط من [extra] ولا يدخل الناتج أبدًا.
+  ///
+  /// يُستخدم للمصادر الثلاثة: الصارم، ثم الواسع، ثم الملفات المقروءة بالمعرّف
+  /// انطلاقًا من المجموعات الظاهرة (انظر `FirestoreTeacherRepository._visible`).
+  static List<T> mergeVisible<T>({
+    required List<T> primary,
+    required List<T> extra,
+    required String Function(T item) idOf,
+    required bool Function(T item) isHidden,
+  }) {
     final Set<String> seen = <String>{};
     final List<T> merged = <T>[];
-    for (final T item in strictItems) {
+    for (final T item in primary) {
       if (seen.add(idOf(item))) {
         merged.add(item);
       }
     }
-    for (final T item in broadItems) {
-      // الحساب المخفي لا يدخل القائمة حتى لو أعاده الخادم في الاستعلام الواسع.
+    for (final T item in extra) {
+      // الحساب المخفي لا يدخل القائمة حتى لو أعاده الخادم.
       if (isHidden(item)) {
         continue;
       }
