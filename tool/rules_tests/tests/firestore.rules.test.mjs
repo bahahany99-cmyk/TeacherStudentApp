@@ -5772,3 +5772,300 @@ describe('P24 — صور المحادثة المؤقتة', () => {
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P30 — مزاد التمييز الأسبوعي: الكتابة من الخادم فقط، والقراءة بحدود
+//
+// هذه المجموعات يكتبها **Admin SDK فقط** (Cloud Functions)، والقواعد هنا
+// تُثبت ثلاثة أشياء لا يمكن إثباتها في كود الدوال:
+//   1. لا يزايد عميل ولا يُعلن فائزًا ولا يؤكد دفعًا — ولو كان مسؤولًا.
+//   2. لا يقرأ مدرّس مزايدة غيره ولا مقعد غيره ولا مستند الدورة نفسه.
+//   3. النتائج العامة (`auctionResults`) متاحة للمسجّلين، وبلا أي كتابة.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AUCTION_ID = '2026-W45-online';
+
+/** مستند دورة كما يكتبه الخادم. */
+const auctionDoc = (overrides = {}) => ({
+  id: AUCTION_ID,
+  cycleKey: '2026-W45',
+  category: 'online',
+  timeZone: 'Africa/Cairo',
+  opensAt: new Date('2026-11-02T22:00:00Z'),
+  closesAt: new Date('2026-11-04T21:59:59Z'),
+  bidCutoffAt: new Date('2026-11-04T21:49:59Z'),
+  announcesAt: new Date('2026-11-05T07:00:00Z'),
+  paymentDeadline: new Date('2026-11-06T07:00:00Z'),
+  replacementDeadline: new Date('2026-11-06T19:00:00Z'),
+  displayStartsAt: new Date('2026-11-07T00:00:00Z'),
+  displayEndsAt: new Date('2026-11-13T21:59:59Z'),
+  minBid: 100,
+  bidStep: 25,
+  extraBidLimit: 10,
+  maxBid: 50000,
+  positions: 5,
+  bidCount: 3,
+  biddersCount: 3,
+  highestBid: 500,
+  replacementRound: 0,
+  finalizedAt: null,
+  publishedAt: null,
+  settledAt: null,
+  ...overrides,
+});
+
+const bidDoc = (teacherId, overrides = {}) => ({
+  teacherId,
+  displayName: 'أ. سارة',
+  amount: 500,
+  increasesUsed: 3,
+  placedAt: now(),
+  lastBidAt: now(),
+  updatedAt: now(),
+  status: 'open',
+  ...overrides,
+});
+
+const winnerDoc = (teacherId, overrides = {}) => ({
+  teacherId,
+  displayName: 'أ. سارة',
+  rank: 2,
+  amount: 500,
+  round: 1,
+  status: 'pendingPayment',
+  deadline: new Date('2026-11-06T07:00:00Z'),
+  notifiedAt: now(),
+  confirmedAt: null,
+  confirmedBy: null,
+  ...overrides,
+});
+
+const auctionResultsDoc = () => ({
+  auctionId: AUCTION_ID,
+  cycleKey: '2026-W45',
+  category: 'online',
+  published: true,
+  publishedAt: now(),
+  winners: [
+    { teacherId: 'teacher-1', displayName: 'أ. سارة', rank: 1, round: 1 },
+  ],
+  emptySeats: 4,
+});
+
+const auditDoc = () => ({
+  at: now(),
+  actor: 'system',
+  action: 'bid.place',
+  detail: `${AUCTION_ID}: 500`,
+});
+
+describe('P30 — مزاد التمييز: مستند الدورة لا يُقرأ للعملاء ولا يُكتب', () => {
+  it('الإدارة تقرأ الدورة، والمدرّس والطالب والزائر لا', async () => {
+    await seed([{ path: `auctions/${AUCTION_ID}`, data: auctionDoc() }]);
+    await assertSucceeds(getDoc(doc(asAdmin(), `auctions/${AUCTION_ID}`)));
+    await assertFails(getDoc(doc(asTeacher(), `auctions/${AUCTION_ID}`)));
+    await assertFails(getDoc(doc(asStudent(), `auctions/${AUCTION_ID}`)));
+    await assertFails(getDoc(doc(asGuest(), `auctions/${AUCTION_ID}`)));
+  });
+
+  it('لا سرد لمجموعة المزاد للمدرّس والطالب', async () => {
+    await seed([{ path: `auctions/${AUCTION_ID}`, data: auctionDoc() }]);
+    // التطبيق لا يستعلم `auctions` إطلاقًا (يقرأ من دالة `auctionClock`)،
+    // والقراءة هنا ممنوعة لغير الإدارة حتى لا تُسرَّب عدّادات المزاد.
+    await assertFails(getDocs(collection(asTeacher(), 'auctions')));
+    await assertFails(getDocs(collection(asStudent(), 'auctions')));
+  });
+
+  it('لا يزايد عميل ولا يُعدّل الدورة — ولو كان مسؤولًا', async () => {
+    await seed([{ path: `auctions/${AUCTION_ID}`, data: auctionDoc() }]);
+    await assertFails(
+      setDoc(doc(asTeacher(), `auctions/${AUCTION_ID}`), auctionDoc({ highestBid: 1 })),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), `auctions/${AUCTION_ID}`), { highestBid: 1 }),
+    );
+    await assertFails(
+      updateDoc(doc(asAdmin(), `auctions/${AUCTION_ID}`), { closesAt: now() }),
+    );
+    await assertFails(deleteDoc(doc(asAdmin(), `auctions/${AUCTION_ID}`)));
+
+    // لا تغيير فعلي في المستند.
+    const stored = await readAsAdmin(`auctions/${AUCTION_ID}`);
+    assert.equal(stored.highestBid, 500);
+  });
+
+  it('الإدارة تقرأ الإعدادات، ولا يكتبها أحد من العملاء', async () => {
+    await seed([
+      { path: 'auctionConfig/current', data: { minBid: 100, bidStep: 25, positionsPerCategory: 5 } },
+    ]);
+    await assertSucceeds(getDoc(doc(asAdmin(), 'auctionConfig/current')));
+    await assertFails(getDoc(doc(asTeacher(), 'auctionConfig/current')));
+    await assertFails(getDoc(doc(asStudent(), 'auctionConfig/current')));
+    await assertFails(
+      setDoc(doc(asAdmin(), 'auctionConfig/current'), { minBid: 0, bidStep: 1 }),
+    );
+    await assertFails(
+      updateDoc(doc(asAdmin(), 'auctionConfig/current'), { minBid: 1 }),
+    );
+  });
+});
+
+describe('P30 — مزايدات المدرس: خاصة به وبالإدارة فقط', () => {
+  it('صاحب المزايدة يقرأ مزايدته، ومنافسه لا', async () => {
+    await seed([
+      { path: `auctions/${AUCTION_ID}`, data: auctionDoc() },
+      { path: `auctions/${AUCTION_ID}/bids/teacher-1`, data: bidDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      getDoc(doc(asTeacher(), `auctions/${AUCTION_ID}/bids/teacher-1`)),
+    );
+    // منافس مسجّل آخر: لا مبلغ، لا عدد زيادات، لا توقيت.
+    await assertFails(getDoc(doc(asOther(), `auctions/${AUCTION_ID}/bids/teacher-1`)));
+    await assertFails(getDoc(doc(asStudent(), `auctions/${AUCTION_ID}/bids/teacher-1`)));
+    await assertFails(getDoc(doc(asGuest(), `auctions/${AUCTION_ID}/bids/teacher-1`)));
+    await assertSucceeds(getDoc(doc(asAdmin(), `auctions/${AUCTION_ID}/bids/teacher-1`)));
+  });
+
+  it('لا سرد لمزايدات الدورة — لا للمدرّس ولا للمنافس', async () => {
+    await seed([
+      { path: `auctions/${AUCTION_ID}`, data: auctionDoc() },
+      { path: `auctions/${AUCTION_ID}/bids/teacher-1`, data: bidDoc('teacher-1') },
+      { path: `auctions/${AUCTION_ID}/bids/teacher-2`, data: bidDoc('teacher-2') },
+    ]);
+    await assertFails(
+      getDocs(collection(asTeacher(), `auctions/${AUCTION_ID}/bids`)),
+    );
+    await assertFails(
+      getDocs(collection(asOther(), `auctions/${AUCTION_ID}/bids`)),
+    );
+  });
+
+  it('لا يزايد المدرّس مباشرةً ولا يزيد مبلغه بكتابة عميل', async () => {
+    await seed([
+      { path: `auctions/${AUCTION_ID}`, data: auctionDoc() },
+      { path: `auctions/${AUCTION_ID}/bids/teacher-1`, data: bidDoc('teacher-1') },
+    ]);
+
+    // (أ) مزايدة أولى بلا دالة سحابية.
+    await assertFails(
+      setDoc(doc(asTeacher(), `auctions/${AUCTION_ID}/bids/teacher-1`), bidDoc('teacher-1', { amount: 999999 })),
+    );
+    // (ب) زيادة على مزايدة قائمة.
+    await assertFails(
+      updateDoc(doc(asTeacher(), `auctions/${AUCTION_ID}/bids/teacher-1`), { amount: 999999 }),
+    );
+    // (ج) مزايدة باسم مدرّس آخر.
+    await assertFails(
+      setDoc(doc(asOther(), `auctions/${AUCTION_ID}/bids/teacher-1`), bidDoc('teacher-1')),
+    );
+    // (د) ولا الإدارة تكتب مزايدة يدويًا (التعديل عبر الدوال الموثّقة فقط).
+    await assertFails(
+      updateDoc(doc(asAdmin(), `auctions/${AUCTION_ID}/bids/teacher-1`), { amount: 1 }),
+    );
+
+    const stored = await readAsAdmin(`auctions/${AUCTION_ID}/bids/teacher-1`);
+    assert.equal(stored.amount, 500);
+  });
+});
+
+describe('P30 — الفائزون: مقعد كل فائز خاص به', () => {
+  it('الفائز يقرأ مقعده ومهلته، وغيره لا', async () => {
+    await seed([
+      { path: `auctions/${AUCTION_ID}`, data: auctionDoc() },
+      { path: `auctions/${AUCTION_ID}/winners/teacher-1`, data: winnerDoc('teacher-1') },
+    ]);
+
+    await assertSucceeds(
+      getDoc(doc(asTeacher(), `auctions/${AUCTION_ID}/winners/teacher-1`)),
+    );
+    await assertFails(
+      getDoc(doc(asOther(), `auctions/${AUCTION_ID}/winners/teacher-1`)),
+    );
+    await assertFails(getDoc(doc(asGuest(), `auctions/${AUCTION_ID}/winners/teacher-1`)));
+    await assertSucceeds(getDoc(doc(asAdmin(), `auctions/${AUCTION_ID}/winners/teacher-1`)));
+  });
+
+  it('لا يعلن أحد نفسه فائزًا ولا يؤكد دفع نفسه', async () => {
+    await seed([{ path: `auctions/${AUCTION_ID}`, data: auctionDoc() }]);
+
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), `auctions/${AUCTION_ID}/winners/teacher-1`),
+        winnerDoc('teacher-1', { status: 'paid', rank: 1 }),
+      ),
+    );
+
+    await seed([
+      { path: `auctions/${AUCTION_ID}/winners/teacher-1`, data: winnerDoc('teacher-1') },
+    ]);
+    await assertFails(
+      updateDoc(doc(asTeacher(), `auctions/${AUCTION_ID}/winners/teacher-1`), {
+        status: 'paid',
+        confirmedBy: 'teacher-1',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(asAdmin(), `auctions/${AUCTION_ID}/winners/teacher-1`), {
+        status: 'paid',
+      }),
+    );
+
+    const stored = await readAsAdmin(`auctions/${AUCTION_ID}/winners/teacher-1`);
+    assert.equal(stored.status, 'pendingPayment');
+  });
+});
+
+describe('P30 — النتائج العامة: أسماء ومراكز بلا مبالغ', () => {
+  it('النتائج تُقرأ لكل مسجّل، ولا تُقرأ للزائر', async () => {
+    await seed([{ path: `auctionResults/${AUCTION_ID}`, data: auctionResultsDoc() }]);
+    await assertSucceeds(getDoc(doc(asStudent(), `auctionResults/${AUCTION_ID}`)));
+    await assertSucceeds(getDoc(doc(asTeacher(), `auctionResults/${AUCTION_ID}`)));
+    await assertSucceeds(getDoc(doc(asAdmin(), `auctionResults/${AUCTION_ID}`)));
+    await assertFails(getDoc(doc(asGuest(), `auctionResults/${AUCTION_ID}`)));
+  });
+
+  it('النتائج العامة لا تحمل مبالغ ولا مزايدات', async () => {
+    await seed([{ path: `auctionResults/${AUCTION_ID}`, data: auctionResultsDoc() }]);
+    const stored = await readAsAdmin(`auctionResults/${AUCTION_ID}`);
+    for (const winner of stored.winners) {
+      assert.equal('amount' in winner, false);
+    }
+    assert.equal('bids' in stored, false);
+    assert.equal('highestBid' in stored, false);
+  });
+
+  it('لا كتابة على النتائج من أي عميل', async () => {
+    await seed([{ path: `auctionResults/${AUCTION_ID}`, data: auctionResultsDoc() }]);
+    await assertFails(
+      setDoc(doc(asAdmin(), `auctionResults/${AUCTION_ID}`), auctionResultsDoc()),
+    );
+    await assertFails(
+      updateDoc(doc(asTeacher(), `auctionResults/${AUCTION_ID}`), { emptySeats: 0 }),
+    );
+    await assertFails(deleteDoc(doc(asAdmin(), `auctionResults/${AUCTION_ID}`)));
+  });
+});
+
+describe('P30 — الأثر وبصمات الطلبات: خادم فقط', () => {
+  it('أثر المزاد للإدارة فقط', async () => {
+    await seed([{ path: 'auctionAudit/e1', data: auditDoc() }]);
+    await assertSucceeds(getDoc(doc(asAdmin(), 'auctionAudit/e1')));
+    await assertFails(getDoc(doc(asTeacher(), 'auctionAudit/e1')));
+    await assertFails(getDoc(doc(asStudent(), 'auctionAudit/e1')));
+    await assertFails(getDoc(doc(asGuest(), 'auctionAudit/e1')));
+    await assertFails(setDoc(doc(asAdmin(), 'auctionAudit/e2'), auditDoc()));
+  });
+
+  it('بصمات التكرار لا يقرؤها ولا يكتبها أحد — ولا الإدارة', async () => {
+    await seed([{ path: 'auctionIdempotency/teacher-1_req-1', data: { amount: 500 } }]);
+    await assertFails(getDoc(doc(asTeacher(), 'auctionIdempotency/teacher-1_req-1')));
+    await assertFails(getDoc(doc(asAdmin(), 'auctionIdempotency/teacher-1_req-1')));
+    await assertFails(
+      setDoc(doc(asTeacher(), 'auctionIdempotency/teacher-1_req-2'), { amount: 1 }),
+    );
+    await assertFails(
+      setDoc(doc(asAdmin(), 'auctionIdempotency/teacher-1_req-3'), { amount: 1 }),
+    );
+  });
+});

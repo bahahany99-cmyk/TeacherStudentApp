@@ -4,9 +4,21 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "//functions": "(P30) دوال المزاد الأسبوعي: مزود Node 20 ومنطقة europe-west1 (قريبة من مصر). النشر يتطلب خطة Blaze — لا يُنشر من CI.",
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run lint"
+    ]
+  },
   "emulators": {
     "firestore": {
       "port": 8080,
+      "host": "127.0.0.1"
+    },
+    "functions": {
+      "port": 5001,
       "host": "127.0.0.1"
     },
     "ui": {
