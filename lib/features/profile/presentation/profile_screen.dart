@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/app/router/route_paths.dart';
 import 'package:teacher_student_app/app/session/session_controller.dart';
 import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/core/constants/app_build_info.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/theme/app_colors.dart';
@@ -165,6 +166,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final SessionController session = SessionScope.of(context);
     final AppUser? user = session.user;
+    final ThemeData theme = Theme.of(context);
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -275,6 +277,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
+
+              // (P29) سطر الإصدار: يقطع الشك في «هل هذه النسخة الجديدة؟».
+              // يظهر فقط عندما يمرّر البناء الرقم (CI)، فلا نعرض قيمة مخترعة.
+              if (AppBuildInfo.isVisible)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.md),
+                  child: Text(
+                    AppBuildInfo.label,
+                    key: const Key('profile-build-version'),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
 
               // 5) الجلسة: الخروج فعل عادي، وفي مجموعة مستقلة.
               SettingsGroup(

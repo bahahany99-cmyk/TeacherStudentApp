@@ -33,20 +33,14 @@ class _Doc {
 Future<List<_Doc>> _discoverLikeProduction(
   Map<String, Map<String, Object?>> docs, {
   List<Map<String, Object?>> groups = const <Map<String, Object?>>[],
-  bool broadRejected = true,
+  bool simplifiedRejected = false,
 }) async {
+  // (1) المبسّط: `status == verified` وحده — يجلب ما ينقصه الحقل.
+  //     ترفضه القواعد كاملًا إن كان بين النتائج ملف مخفي.
   final List<_Doc> primary =
-      await TeacherVisibilityFallback.resolveMerged<_Doc>(
-        strict: () async => <_Doc>[
-          for (final MapEntry<String, Map<String, Object?>> entry
-              in docs.entries)
-            if (entry.value['status'] == 'verified' &&
-                entry.value['accountHidden'] == false)
-              _Doc(entry.key, entry.value),
-        ],
-        broad: () async {
-          if (broadRejected) {
-            // «القواعد ليست فلترًا»: الاستعلام بلا شرط الحقل مرفوض كاملًا.
+      await TeacherVisibilityFallback.resolveSimplified<_Doc>(
+        simplified: () async {
+          if (simplifiedRejected) {
             throw StateError('permission-denied');
           }
           return <_Doc>[
@@ -56,12 +50,17 @@ Future<List<_Doc>> _discoverLikeProduction(
                 _Doc(entry.key, entry.value),
           ];
         },
-        idOf: (_Doc doc) => doc.id,
-        isHidden: (_Doc doc) =>
-            TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+        strictFallback: () async => <_Doc>[
+          for (final MapEntry<String, Map<String, Object?>> entry
+              in docs.entries)
+            if (entry.value['status'] == 'verified' &&
+                entry.value['accountHidden'] == false)
+              _Doc(entry.key, entry.value),
+        ],
+        isPermissionDenied: (Object error) => error is StateError,
       );
 
-  // الطبقة الثالثة: ما تعرفه المجموعات الظاهرة ⇒ قراءة مباشرة بالمعرّف.
+  // (3) التعريف من المجموعات الظاهرة ⇒ قراءة مباشرة بالمعرّف.
   final List<String> ids = GroupTeacherDiscovery.teacherIds(groups);
   final List<_Doc> derived = await GroupTeacherDiscovery.resolve<_Doc>(
     ids,
@@ -79,6 +78,7 @@ Future<List<_Doc>> _discoverLikeProduction(
     isAcceptable: (_Doc doc) => doc.data['status'] == 'verified',
   );
 
+  // التصفية في العميل هي الفاصل: `accountHidden == true` يُسقط دائمًا.
   return TeacherVisibilityFallback.mergeVisible<_Doc>(
     primary: primary,
     extra: derived,
@@ -291,6 +291,77 @@ void main() {
           };
 
       expect(_discover(docs), isEmpty);
+    });
+  });
+
+  group('(P29) الاستعلام المبسّط أولًا (طلب صاحب المشروع)', () {
+    test('ملف موثّق بلا accountHidden يظهر من الاستعلام المبسّط وحده', () async {
+      final Map<String, Map<String, Object?>> docs =
+          <String, Map<String, Object?>>{
+            'shady': _rawProfile(id: 'shady', displayName: 'Shady Ali'),
+            'new-one': <String, Object?>{
+              ..._rawProfile(id: 'new-one', displayName: 'أ. سارة'),
+              'accountHidden': false,
+            },
+          };
+
+      final List<_Doc> found = await _discoverLikeProduction(docs);
+      expect(
+        found.map((_Doc doc) => doc.id),
+        <String>['shady', 'new-one'],
+        reason: 'المبسّط يجلب الناقص والممتلئ معًا',
+      );
+    });
+
+    test('القواعد ترفض المبسّط (وجود مخفي) ⇒ الرجوع للصارم لا يفرغ الشاشة', () async {
+      final Map<String, Map<String, Object?>> docs =
+          <String, Map<String, Object?>>{
+            'hidden': _rawProfile(
+              id: 'hidden',
+              withFlag: true,
+              hiddenValue: true,
+            ),
+            'visible': <String, Object?>{
+              ..._rawProfile(id: 'visible'),
+              'accountHidden': false,
+            },
+            'legacy': _rawProfile(id: 'legacy'),
+          };
+
+      final List<_Doc> found = await _discoverLikeProduction(
+        docs,
+        simplifiedRejected: true,
+        groups: <Map<String, Object?>>[
+          <String, Object?>{'teacherId': 'legacy'},
+        ],
+      );
+
+      expect(
+        found.map((_Doc doc) => doc.id),
+        <String>['visible', 'legacy'],
+        reason: 'المخفي لا يظهر، والقديم يصل عبر تعريف المجموعات',
+      );
+    });
+
+    test('خطأ شبكة في المبسّط يُرفع (الفشل ≠ فراغ)', () {
+      expect(
+        () => TeacherVisibilityFallback.resolveSimplified<String>(
+          simplified: () async => throw StateError('network'),
+          strictFallback: () async => <String>['x'],
+          isPermissionDenied: (Object error) => false,
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('رفض الصلاحيات في المبسّط يعود للصارم', () async {
+      final List<String> result =
+          await TeacherVisibilityFallback.resolveSimplified<String>(
+            simplified: () async => throw StateError('permission-denied'),
+            strictFallback: () async => <String>['strict'],
+            isPermissionDenied: (Object error) => error is StateError,
+          );
+      expect(result, <String>['strict']);
     });
   });
 

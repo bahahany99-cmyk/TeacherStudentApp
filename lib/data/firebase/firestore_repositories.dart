@@ -277,26 +277,33 @@ class FirestoreTeacherRepository implements TeacherRepository {
     refine, {
     bool Function(Map<String, Object?> data)? localMatch,
   }) async {
-    // (P17) القواعد **ليست فلترًا**: الاستعلام نفسه يستبعد الملفات المخفية
-    // بحذف الحساب، فلا نعتمد على رفض القاعدة للملف.
+    // (1) استعلام مبسّط: لا شرط على `accountHidden` إطلاقًا، فيجلب الملفات
+    //     التي تنقصها القيمة (وهي أصل الاختفاء). القواعد تسمح به ما دام لا
+    //     يوجد ملف مخفي بين النتائج.
+    //     (2) إن رفضته القواعد (وجود ملف مخفي) ⇒ الاستعلام الصارم المطابق
+    //     للظاهر فقط، حتى لا تفرغ الصفحة بخطأ.
     final List<_TeacherDoc> primary =
-        await TeacherVisibilityFallback.resolveMerged<_TeacherDoc>(
-          strict: () async => (await refine(
+        await TeacherVisibilityFallback.resolveSimplified<_TeacherDoc>(
+          simplified: () async => (await refine(
+            _profiles.where('status', isEqualTo: 'verified'),
+          ).get()).docs.map(_fromQuery).toList(),
+          strictFallback: () async => (await refine(
             _profiles
                 .where('status', isEqualTo: 'verified')
                 .where('accountHidden', isEqualTo: false),
           ).get()).docs.map(_fromQuery).toList(),
-          broad: () async => (await refine(
-            _profiles.where('status', isEqualTo: 'verified'),
-          ).get()).docs.map(_fromQuery).toList(),
-          idOf: (_TeacherDoc doc) => doc.id,
-          isHidden: (_TeacherDoc doc) =>
-              TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+          isPermissionDenied: (Object error) =>
+              error is FirebaseException && error.code == 'permission-denied',
         );
 
+    // (3) تعريف المدرسين من المجموعات الظاهرة ثم قراءة ملفاتهم بالمعرّف:
+    //     يجعل المدرّس يظهر حتى لو رفضت القواعد أي استعلام جماعي.
     final List<_TeacherDoc> fromGroups = await _teachersFromVisibleGroups(
       localMatch: localMatch,
     );
+
+    // التصفية في العميل هي الفاصل النهائي: `accountHidden == true` يُسقط دائمًا،
+    // والغياب يعني ظاهرًا (نفس قراءة القواعد والمُحوِّل).
     return TeacherVisibilityFallback.mergeVisible<_TeacherDoc>(
       primary: primary,
       extra: fromGroups,

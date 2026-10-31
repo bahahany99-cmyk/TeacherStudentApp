@@ -104,6 +104,31 @@ abstract final class TeacherVisibilityFallback {
     );
   }
 
+  /// الاستعلام المبسّط أولًا، ثم الصارم عند رفض القواعد (P29).
+  ///
+  /// **لماذا المبسّط أولًا؟** لأن أي شرط على `accountHidden` يستبعد الملفات التي
+  /// تنقصها القيمة (غياب الحقل لا يطابق مساواة)، وهو أصل اختفاء المدرسين
+  /// الموثّقين. الاستعلام المبسّط `status == verified` وحده يجلبها **إن سمحت
+  /// القواعد** — والقواعد تسمح ما دام لا يوجد مستند مخفي في النتائج.
+  ///
+  /// فإذا رفضت القواعد الاستعلام المبسّط (`permission-denied`، أي أن بين
+  /// الملفات ما هو مخفي)، نرجع إلى الاستعلام الصارم الذي يطابق الظاهر فقط.
+  /// أي خطأ آخر يُرفع كما هو: الفشل لا يصبح «لا نتائج».
+  static Future<List<T>> resolveSimplified<T>({
+    required Future<List<T>> Function() simplified,
+    required Future<List<T>> Function() strictFallback,
+    required bool Function(Object error) isPermissionDenied,
+  }) async {
+    try {
+      return await simplified();
+    } on Object catch (error) {
+      if (!isPermissionDenied(error)) {
+        rethrow;
+      }
+      return strictFallback();
+    }
+  }
+
   /// دمج قائمتين بالمعرّف: [primary] أولًا (أولويتها في الترتيب)، ثم ما هو جديد
   /// في [extra]. أي عنصر [isHidden] يُسقط من [extra] ولا يدخل الناتج أبدًا.
   ///

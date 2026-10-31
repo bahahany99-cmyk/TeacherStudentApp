@@ -451,6 +451,12 @@ jobs:
             fi
           fi
 
+          # (P29) رقم الإصدار يصل إلى التطبيق ليُعرض في «حسابي»: وسيلة القطع
+          # في «هل النسخة المثبّتة هي أحدث بناء؟».
+          APP_VERSION_VALUE="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          defines+=("--dart-define=APP_VERSION=${APP_VERSION_VALUE}")
+          echo "::notice title=build version::APP_VERSION=${APP_VERSION_VALUE}"
+
           flutter build apk --"$MODE" \
             --split-per-abi \
             --target-platform android-arm64,android-arm \
