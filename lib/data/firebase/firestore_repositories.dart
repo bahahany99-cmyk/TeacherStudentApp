@@ -106,11 +106,6 @@ abstract final class FirestoreCollections {
   static const String contentReports = 'contentReports';
 }
 
-/// زوج (معرّف، بيانات) لخرائط التحويل في `firestore_mappers`.
-(String, Map<String, Object?>) _entry(
-  QueryDocumentSnapshot<Map<String, dynamic>> doc,
-) => (doc.id, doc.data());
-
 /// ملف مدرس خام: معرّف + حقول — من استعلام أو من قراءة مباشرة.
 ///
 /// توحيد النوع ضروري لأن مسار الاكتشاف يعمل بمصدرين: استعلام
