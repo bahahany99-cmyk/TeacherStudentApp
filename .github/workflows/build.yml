@@ -1,0 +1,760 @@
+name: Build & Verify
+
+# بوابة G10 (معتمدة من صاحب المشروع 2026-10-26):
+# بيئة العمل لا تحتوي Flutter/Dart وpub.dev محجوب، لذلك التحقق الآلي الحقيقي
+# (analyze / test / APK) يجري على GitHub Actions.
+#
+# سياسة الموارد (قرار 2026-10-27، مُحدَّثة بعد ملاحظات صاحب المشروع):
+# - كل دفعة (push / PR): `analyze` + `test` فقط. **لا بناء APK إطلاقًا** —
+#   لا استهلاك لدقائق CI ولا حصة تخزين.
+# - البناء عند الطلب فقط: `workflow_dispatch` يدويًا، أو دفعة تحمل وسم
+#   `[build-release]` في رسالتها (لأن تفعيل workflow_dispatch من بيئة العمل
+#   محجوب؛ الوسم يبقى «طلبًا صريحًا» لا بناءً تلقائيًا).
+# - الناتج artifact مؤقت (7 أيام) ولا يُنشر في Releases.
+# - Releases للنسخ النهائية الكبرى فقط، وتُنشر يدويًا من صاحب المشروع.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_apk:
+        description: 'ابنِ APK بعد نجاح الفحص والاختبارات'
+        type: boolean
+        default: true
+      build_mode:
+        description: 'نوع البناء'
+        type: choice
+        options:
+          - release        # الأصغر حجمًا (الموصى به للتجربة على الهاتف)
+          - debug
+        default: release
+
+# نُلغي التشغيلات القديمة على نفس الفرع لتوفير دقائق CI.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: analyze · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Toolchain info
+        run: |
+          flutter --version
+          dart --version
+
+      - name: Resolve dependencies
+        run: |
+          set -o pipefail
+          status=0
+          flutter pub get > /tmp/pub.txt 2>&1 || status=$?
+          cat /tmp/pub.txt
+
+          if [ "$status" -ne 0 ]; then
+            # فشل تحليل الإصدارات يُقرأ من الـ annotations (السجلات محجوبة).
+            python3 tool/ci/annotate_log.py /tmp/pub.txt "pub-get"
+            exit "$status"
+          fi
+
+      - name: Firestore rules sanity check
+        run: python3 tool/ci/check_rules.py
+
+      - name: Analyze
+        run: |
+          set -o pipefail
+          status=0
+          dart analyze --format=machine > /tmp/analyze.txt 2>&1 || status=$?
+
+          if [ "$status" -eq 0 ]; then
+            echo "✅ dart analyze: لا أخطاء ولا تحذيرات."
+            exit 0
+          fi
+
+          echo "❌ analyze فشل — الرسائل:"
+          cat /tmp/analyze.txt
+
+          # **الترتيب مقصود:** التحذيرات والأخطاء هي التي تُفشل الأمر، والملاحظات
+          # (lints) لا تُفشله. نشر أول عشرة أسطر كما هي كان يملأ الـannotations
+          # بملاحظات `prefer_const_constructors` ويحجب `unused_import` (تحذير)
+          # فيبدو الفشل بلا سبب. ننشر الفئة المُفشِلة أولًا ثم الملاحظات.
+          grep -E '^(ERROR|WARNING)\|' /tmp/analyze.txt \
+            | head -20 \
+            | while IFS='|' read -r sev type code file line col len msg; do
+                if [ "$sev" = "ERROR" ]; then
+                  echo "::error file=$file,line=$line,col=$col::$code: $msg"
+                else
+                  echo "::warning file=$file,line=$line,col=$col::$code: $msg"
+                fi
+              done
+
+          grep -E '^INFO\|' /tmp/analyze.txt \
+            | head -10 \
+            | while IFS='|' read -r sev type code file line col len msg; do
+                echo "::notice file=$file,line=$line,col=$col::$code: $msg"
+              done
+
+          exit "$status"
+
+      - name: Test
+        run: |
+          set -o pipefail
+          status=0
+          flutter test --reporter expanded > /tmp/test.txt 2>&1 || status=$?
+          tail -120 /tmp/test.txt
+
+          if [ "$status" -ne 0 ]; then
+            # سجلات Actions محجوبة عن بيئة العمل، لذا ننشر الناتج كملاحظات API.
+            python3 tool/ci/annotate_log.py /tmp/test.txt "flutter-test"
+            exit "$status"
+          fi
+
+          echo "✅ flutter test: كل الاختبارات ناجحة."
+
+      # السجلات تُرفع في وضع الطلب فقط (لأننا نستطيع قراءة الـannotations).
+      - name: Upload logs (يدوي فقط)
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: |
+            /tmp/pub.txt
+            /tmp/analyze.txt
+            /tmp/test.txt
+          if-no-files-found: ignore
+          retention-days: 2
+
+  # ── قواعد Firestore على المحاكي (P6) ─────────────────────────────────────────
+  # يتطلب Java (المحاكي يعمل على JVM) وNode. يشغّل القواعد على محاكي حقيقي
+  # ويطابق الحالات المسموحة/المرفوضة في tool/rules_tests/tests/.
+  rules:
+    name: firestore rules (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tool/rules_tests/package-lock.json
+
+      # حزمة المحاكي (~60 م.ب) تُحمَّل مرة وتُخزَّن، فلا تُنزَّل في كل دفعة.
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('tool/rules_tests/package-lock.json') }}
+
+      - name: Install rules-test deps
+        run: npm ci --prefix tool/rules_tests --no-audit --no-fund
+
+      - name: Run rules tests
+        run: |
+          set -o pipefail
+          status=0
+          npm --prefix tool/rules_tests test > /tmp/rules.txt 2>&1 || status=$?
+          tail -80 /tmp/rules.txt
+          # الملخّص دائمًا (نجاحًا أو فشلًا): عدد الفاشل يحدّد إن كان العطل في
+          # الاختبارات أم في تشغيل المحاكي نفسه.
+          grep -E "^ℹ (tests|pass|fail) " /tmp/rules.txt | tr '\n' ' ' \
+            | xargs -r -0 echo "::notice title=rules-summary::" || true
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/rules.txt "firestore-rules"
+            exit "$status"
+          fi
+
+          # ملخص الأرقام كـannotation: ملف الـartifact خارج نطاق الوصول من
+          # بيئة التطوير، والملخص هو ما يمكن التحقق منه فعليًا.
+          summary=$(grep -E "^ℹ (tests|pass|fail) " /tmp/rules.txt | tr '\n' ' ')
+          echo "::notice title=rules tests::$summary"
+          echo "✅ قواعد Firestore: كل حالات السماح/الرفض صحيحة على المحاكي."
+
+      - name: Upload rules log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-test-log
+          path: /tmp/rules.txt
+          if-no-files-found: ignore
+          retention-days: 2
+
+  # ── دوال المزاد (P30): اختبارات Node على نواة وخدمة المزاد ───────────────────
+  # لا تحتاج Firebase ولا محاكيًا: المنطق مكتوب ليُختبر بلا شبكة
+  # (`functions/lib/auction_core.js` نقي، والخدمة تعمل على مستودع في الذاكرة).
+  functions:
+    name: cloud functions (auction tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax check (بلا تبعيات)
+        run: npm --prefix functions run lint
+
+      - name: Run auction tests
+        run: |
+          set -o pipefail
+          status=0
+          npm --prefix functions test > /tmp/functions.txt 2>&1 || status=$?
+          tail -60 /tmp/functions.txt
+
+          # المُبلِّغ المستخدم `spec` فيطبع `ℹ tests 74`، لا صيغة TAP (`# tests`).
+          # `|| true` ضروري: `grep` بلا نتيجة يُرجع 1 ويُسقط الخطوة تحت `set -e`.
+          summary=$(grep -E "^(# |ℹ )(tests|pass|fail) " /tmp/functions.txt \
+            | tr '\n' ' ' || true)
+          if [ -n "$summary" ]; then
+            echo "::notice title=functions tests::$summary"
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/functions.txt "functions-test"
+            exit "$status"
+          fi
+
+          echo "✅ دوال المزاد: كل الاختبارات ناجحة."
+
+  # ── بناء APK: عند الطلب فقط، ونتيجة مؤقتة (لا Releases) ─────────────────────
+  build_apk:
+    name: build apk (عند الطلب)
+    if: >-
+      needs.verify.result == 'success' && needs.rules.result == 'success' &&
+      needs.functions.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) ||
+        (github.event_name == 'push' &&
+         contains(github.event.head_commit.message, '[build-release]'))
+      )
+    needs: [verify, rules, functions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Scaffold Android platform (deterministic, com.darsly.app)
+        run: bash tool/scaffold_android.sh
+
+      # تأكيد Edge-to-Edge على مستوى المنصة: بدون شريط حالة شفاف في styles.xml
+      # يعود الشريط الأسود في شاشة الإقلاع ومعاينة «التطبيقات الحديثة»، وهذه
+      # الخطوة تُثبت أن التعديل طُبِّق فعلًا (سجلات Actions محجوبة عني).
+      - name: Verify edge-to-edge theme
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          required = [
+              'android:statusBarColor">@android:color/transparent',
+              'android:navigationBarColor">@android:color/transparent',
+              'android:windowLightStatusBar">true',
+          ]
+          ok = True
+          for name in ('values', 'values-night'):
+              path = pathlib.Path(f'android/app/src/main/res/{name}/styles.xml')
+              if not path.exists():
+                  print(f'::warning title=edge-to-edge::{path} غير موجود')
+                  continue
+              text = path.read_text(encoding='utf-8')
+              missing = [r for r in required if r not in text]
+              if missing:
+                  ok = False
+                  print(f'::error title=edge-to-edge::{path} ينقصه {len(missing)} عنصر')
+              else:
+                  print(f'::notice title=edge-to-edge::{name}/styles.xml مطابق (شريط شفاف)')
+          sys.exit(0 if ok else 1)
+          PYEOF
+
+      # التوقيع يُحقن فقط إن كانت الأسرار موجودة؛ وإلا يبقى توقيع debug.
+      - name: Apply release signing (إن توفّرت الأسرار)
+        env:
+          DARSLY_KEYSTORE_BASE64: ${{ secrets.DARSLY_KEYSTORE_BASE64 }}
+          DARSLY_STORE_PASSWORD: ${{ secrets.DARSLY_STORE_PASSWORD }}
+          DARSLY_KEY_ALIAS: ${{ secrets.DARSLY_KEY_ALIAS }}
+          DARSLY_KEY_PASSWORD: ${{ secrets.DARSLY_KEY_PASSWORD }}
+        run: python3 tool/ci/apply_signing.py
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # (P18) أيقونة التطبيق: تُولَّد من مصدر واحد (assets/icon/*.png) بعد حل
+      # التبعيات وقبل البناء، فلا نُخزّن مئات ملفات PNG في المستودع.
+      # نفشل البناء لو بقيت أيقونة Flutter الافتراضية: عرض أيقونة خاطئة على
+      # جهاز المستخدم أسوأ من فشل بناء صريح.
+      - name: Generate app icon (flutter_launcher_icons)
+        run: |
+          dart run flutter_launcher_icons
+
+      # تحقّق مستقل: أيقونة التطبيق ليست الافتراضية.
+      #
+      # نفصل التحقق عن التوليد: لو فشل التوليد تظهر رسالته وحدها بلا ضجيج، ولو
+      # «نجح» بلا أثر (خطأ إعداد) يمسكه هذا الفحص. أيقونة خاطئة على جهاز
+      # المستخدم أسوأ من بناء يفشل بصراحة.
+      - name: Verify app icon replaced the default
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          ok = True
+          for density in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
+              path = pathlib.Path(
+                  f'android/app/src/main/res/mipmap-{density}/ic_launcher.png'
+              )
+              if not path.exists():
+                  print(f'::error title=app icon::مفقود {path}')
+                  ok = False
+                  continue
+              size = path.stat().st_size
+              print(f'::notice title=app icon::mipmap-{density} = {size} بايت')
+              # أيقونة Flutter الافتراضية ملف مسطّح صغير؛ أيقونتنا صورة كثيفة.
+              if size < 400:
+                  print(f'::error title=app icon::{path} أصغر من أيقونة حقيقية')
+                  ok = False
+
+          if not list(
+              pathlib.Path('android/app/src/main/res').glob(
+                  'mipmap-anydpi-v26/ic_launcher.xml'
+              )
+          ):
+              print('::warning title=app icon::لا يوجد adaptive icon (anydpi-v26)')
+
+          ios_icon = pathlib.Path(
+              'ios/Runner/Assets.xcassets/AppIcon.appiconset/'
+              'Icon-App-1024x1024@1x.png'
+          )
+          if ios_icon.exists():
+              print('::notice title=app icon::أيقونة iOS 1024 مولَّدة')
+          else:
+              print('::warning title=app icon::أيقونة iOS 1024 غير موجودة')
+
+          sys.exit(0 if ok else 1)
+          PYEOF
+
+      # (P17) قيم Firebase الخمس تُمرَّر وقت البناء — لا ملف google-services.json.
+      # القيم ليست أسرارًا بالمعنى الدقيق (تظهر داخل أي تطبيق Firebase)، لكنها
+      # تبقى في Secrets حتى لا يرتبط المستودع بمشروع بعينه.
+      # نطبع **حضورها فقط** (true/false) ولا نطبع أي قيمة.
+      - name: Report Firebase configuration (بدون كشف قيم)
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          # (P18) معرّف عميل الويب — مطلوب للدخول الأصلي بـGoogle فقط،
+          # وليس لتهيئة Firebase نفسها.
+          #
+          # نقرأ أربعة أماكن محتملة ونأخذ أول قيمة غير فارغة. السبب عملي:
+          # أشيع سبب لظهور السر «غائبًا» هو إضافته في تبويب Variables بدل
+          # Secrets، أو باسم مختلف قليلًا (بدون بادئة FIREBASE_).
+          WEB_CLIENT_ID_SECRET: ${{ secrets.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_VAR: ${{ vars.FIREBASE_GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_ALIAS_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          WEB_CLIENT_ID_ALIAS_VAR: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          missing=0
+          report=""
+          for name in FIREBASE_PROJECT_ID FIREBASE_API_KEY FIREBASE_APP_ID \
+                      FIREBASE_MESSAGING_SENDER_ID FIREBASE_STORAGE_BUCKET; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              report="$report $name=موجود"
+            else
+              report="$report $name=غائب"
+              missing=$((missing + 1))
+            fi
+          done
+          web_id=""
+          web_source=""
+          for pair in \
+              "FIREBASE_GOOGLE_WEB_CLIENT_ID/الأسرار:$WEB_CLIENT_ID_SECRET" \
+              "FIREBASE_GOOGLE_WEB_CLIENT_ID/المتغيرات:$WEB_CLIENT_ID_VAR" \
+              "GOOGLE_WEB_CLIENT_ID/الأسرار:$WEB_CLIENT_ID_ALIAS_SECRET" \
+              "GOOGLE_WEB_CLIENT_ID/المتغيرات:$WEB_CLIENT_ID_ALIAS_VAR"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if [ -n "$value" ] && [ -z "$web_id" ]; then
+              web_id="$value"
+              web_source="$name"
+            fi
+          done
+          if [ -n "$web_id" ]; then
+            # (P18) فحص مشروعية سريع: رقم المشروع في مقدّمة معرّف العميل يجب أن
+            # يطابق FIREBASE_MESSAGING_SENDER_ID. عدم التطابق يعني معرّف عميل
+            # من مشروع Firebase آخر ⇒ فشل الدخول برسالة إعداد.
+            id_project="${web_id%%-*}"
+            if [ -n "$FIREBASE_MESSAGING_SENDER_ID" ] && \
+               [ "$id_project" != "$FIREBASE_MESSAGING_SENDER_ID" ]; then
+              echo "::warning title=Google sign-in::رقم المشروع في معرّف عميل الويب ($id_project) لا يطابق FIREBASE_MESSAGING_SENDER_ID ($FIREBASE_MESSAGING_SENDER_ID) — غالبًا معرّف من مشروع آخر."
+            fi
+            report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=موجود"
+            echo "::notice title=Google sign-in::معرّف عميل الويب موجود — سيُمرَّر كـserverClientId لفتح قائمة حسابات Google الأصلية."
+            # نشاركه مع الخطوة التالية عبر GITHUB_ENV (لا يُطبع أبدًا).
+            echo "GOOGLE_WEB_CLIENT_ID_VALUE=$web_id" >> "$GITHUB_ENV"
+          else
+            # لا سر ولا متغيّر — لكن قد تكون القيمة العامة في الكود (P18)، وهي
+            # كافية تمامًا. نميّز الحالتين حتى لا يقرأ أحدهم تحذيرًا كاذبًا.
+            code_id="$(tr '\n' ' ' < lib/core/config/firebase_public_defaults.dart \
+              | sed -n "s/.*googleWebClientId *= *'\([^']*\)'.*/\1/p" | head -1)"
+            if [ -n "$code_id" ]; then
+              report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=(القيمة العامة في الكود)"
+              echo "::notice title=Google sign-in::لا سر ولا متغيّر باسم معرّف عميل الويب، لكن القيمة العامة موجودة في FirebasePublicDefaults ⇒ الدخول بـGoogle مُهيّأ. (وجود السر ليس مطلوبًا.)"
+            else
+              report="$report FIREBASE_GOOGLE_WEB_CLIENT_ID=غائب"
+              echo "::warning title=Google sign-in::لا معرّف عميل ويب في أي مكان (لا سر، لا متغيّر، لا قيمة عامة) — سيبني التطبيق، لكن زر «المتابعة باستخدام Google» سيعرض رسالة إعداد بدل قائمة الحسابات. التفاصيل في docs/FIREBASE_SETUP.md §3.8."
+            fi
+          fi
+          echo "::notice title=Firebase secrets::$report"
+          if [ "$missing" -eq 0 ]; then
+            echo "FIREBASE_READY=true" >> "$GITHUB_ENV"
+            echo "كل القيم الخمس موجودة ⇒ ENABLE_FIREBASE=true"
+          else
+            echo "FIREBASE_READY=false" >> "$GITHUB_ENV"
+            echo "::warning title=Firebase secrets::ينقص $missing من 5 أسرار — سيُبنى التطبيق في الوضع التجريبي (ENABLE_FIREBASE=false). راجع أسماء الأسرار في Settings ← Secrets and variables ← Actions."
+          fi
+
+      # بناء مقسّم حسب المعمارية: يقلّل الحجم إلى النصف تقريبًا مقارنة بملف
+      # واحد يحمل مكتبات كل المعماريات (Firebase تضيف مكتبات أصلية كبيرة).
+      - name: Build APK
+        env:
+          # وسم الدفعة يعني release دائمًا؛ وإلا نأخذ مدخلات التشغيل اليدوي.
+          MODE: ${{ inputs.build_mode || 'release' }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -o pipefail
+          status=0
+
+          # لا نُمرّر قيمًا فارغة: تمرير ENABLE_FIREBASE=true بلا إعدادات
+          # يُسقط التهيئة ويُربك المستخدم. البناء التجريبي يبقى صالحًا للتجربة.
+          defines=(--dart-define=ENABLE_FIREBASE=false)
+          if [ "$FIREBASE_READY" = "true" ]; then
+            defines=(
+              --dart-define=ENABLE_FIREBASE=true
+              "--dart-define=FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID"
+              "--dart-define=FIREBASE_API_KEY=$FIREBASE_API_KEY"
+              "--dart-define=FIREBASE_APP_ID=$FIREBASE_APP_ID"
+              "--dart-define=FIREBASE_MESSAGING_SENDER_ID=$FIREBASE_MESSAGING_SENDER_ID"
+              "--dart-define=FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
+            )
+            # لا نُمرّر قيمة فارغة: عندئذٍ يظهر للمستخدم رسالة إعداد صريحة
+            # بدل محاولة دخول تفشل بغموض.
+            if [ -n "${GOOGLE_WEB_CLIENT_ID_VALUE:-}" ]; then
+              defines+=("--dart-define=FIREBASE_GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID_VALUE")
+            fi
+          fi
+
+          # (P29) رقم الإصدار يصل إلى التطبيق ليُعرض في «حسابي»: وسيلة القطع
+          # في «هل النسخة المثبّتة هي أحدث بناء؟».
+          APP_VERSION_VALUE="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          defines+=("--dart-define=APP_VERSION=${APP_VERSION_VALUE}")
+          echo "::notice title=build version::APP_VERSION=${APP_VERSION_VALUE}"
+
+          flutter build apk --"$MODE" \
+            --split-per-abi \
+            --target-platform android-arm64,android-arm \
+            "${defines[@]}" \
+            > /tmp/build.txt 2>&1 || status=$?
+          tail -80 /tmp/build.txt
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/build.txt "apk-build"
+            exit "$status"
+          fi
+
+          ls -l build/app/outputs/flutter-apk/*.apk
+
+          # (P18) إثبات إذن الإنترنت في **البيان المدموج** (ملف نصي من Gradle)
+          # وفي ملف APK نفسه. بلا INTERNET يفشل كل طلب شبكي في release، ويظهر
+          # للمستخدم «لا يوجد اتصال بالإنترنت» رغم أن الشبكة تعمل.
+          merged_manifest="$(find build/app/intermediates -name AndroidManifest.xml \
+            -path '*release*' 2>/dev/null | head -1)"
+          if [ -n "$merged_manifest" ] && grep -q 'android.permission.INTERNET' "$merged_manifest"; then
+            echo "::notice title=Android permissions::إذن INTERNET موجود في البيان المدموج ($merged_manifest)."
+          else
+            echo "::warning title=Android permissions::إذن INTERNET غير موجود في البيان المدموج (${merged_manifest:-لم يُعثر على البيان}) — كل طلبات الشبكة ستفشل في نسخة release."
+          fi
+          # داخل الـAPK يكون البيان بصيغة XML ثنائية **ومضغوطًا**، فالـgrep على
+          # الملف الخام لا يراه (أعطى «0 من 2» زورًا مرتين: مرة لترميز UTF-16،
+          # ومرة للضغط). نفكّ ضغط المدخل ثم نبحث بالترميزين.
+          python3 - <<'APKPERM'
+          import glob
+          import zipfile
+
+          target = 'android.permission.INTERNET'
+          forms = (target.encode(), target.encode('utf-16-le'))
+          found, total = 0, 0
+          for apk in sorted(glob.glob('build/app/outputs/flutter-apk/*.apk')):
+              total += 1
+              ok = False
+              try:
+                  with zipfile.ZipFile(apk) as bundle:
+                      for name in bundle.namelist():
+                          if not name.endswith('AndroidManifest.xml'):
+                              continue
+                          blob = bundle.read(name)
+                          if any(form in blob for form in forms):
+                              ok = True
+                              break
+              except zipfile.BadZipFile:
+                  ok = False
+              found += 1 if ok else 0
+          print(f'::notice title=Android permissions::إذن INTERNET موجود داخل {found} من {total} ملف APK (بعد فكّ الضغط).')
+          APKPERM
+
+          # إثبات أن **الـمعرّف نفسه** دخل البناء، لا مجرد نص اللاحقة.
+          #
+          # ⚠️ خطأ سابق (اكتُشف 2026-10-29): البحث عن
+          # `apps.googleusercontent.com` وحدها يعطي **إيجابية كاذبة**، لأن هذا
+          # النص موجود أصلًا داخل مكتبة google_sign_in_android. لذلك نستخرج
+          # القيمة الفعّالة (من السر إن وُجد، وإلا من القيمة العامة في الكود)
+          # ثم نبحث عنها **كاملة** داخل كل APK. وإن كانت فارغة نصرّح بذلك.
+          effective_id="${GOOGLE_WEB_CLIENT_ID_VALUE:-}"
+          id_source="الأسرار"
+          if [ -z "$effective_id" ]; then
+            # نقرأ الملف كسطر واحد أولًا حتى ينجح الاستخراج سواء كانت القيمة
+            # في سطرها أو مقسومة على سطرين.
+            effective_id="$(tr '\n' ' ' < lib/core/config/firebase_public_defaults.dart \
+              | sed -n "s/.*googleWebClientId *= *'\([^']*\)'.*/\1/p" | head -1)"
+            id_source="القيمة العامة في الكود"
+          fi
+
+          if [ -z "$effective_id" ]; then
+            echo "::warning title=Google sign-in::لا معرّف عميل ويب في هذا البناء (لا سر ولا قيمة عامة) ⇒ زر Google سيعرض «تسجيل الدخول بـGoogle غير مُهيّأ» ولن تظهر قائمة الحسابات."
+          else
+            google_hits=0
+            total_apks=$(ls build/app/outputs/flutter-apk/*.apk | wc -l)
+            for apk in build/app/outputs/flutter-apk/*.apk; do
+              if grep -aqF "$effective_id" "$apk"; then
+                google_hits=$((google_hits + 1))
+              fi
+            done
+            if [ "$google_hits" -eq "$total_apks" ] && [ "$google_hits" -gt 0 ]; then
+              echo "::notice title=Google sign-in::المعرّف الفعّال (من $id_source) مضمّن في $google_hits من $total_apks ملف APK — زر Google سيفتح قائمة الحسابات الأصلية (لا متصفح)."
+            else
+              echo "::warning title=Google sign-in::المعرّف الفعّال (من $id_source) غير موجود داخل $((total_apks - google_hits)) من $total_apks ملف APK — راجع خطوة البناء."
+            fi
+          fi
+
+          # إثبات أن قيم Firebase دخلت البناء فعلًا: نبحث عن معرّف المشروع
+          # **داخل** الـAPK بلا طباعة قيمته. الغياب يعني أن البناء تجريبي.
+          if [ "$FIREBASE_READY" = "true" ]; then
+            hits=0
+            for apk in build/app/outputs/flutter-apk/*.apk; do
+              if grep -aqF "$FIREBASE_PROJECT_ID" "$apk"; then
+                hits=$((hits + 1))
+              fi
+            done
+            echo "::notice title=Firebase في الـAPK::دُفعت 6 تعريفات — معرّف المشروع مضمّن في $hits من $(ls build/app/outputs/flutter-apk/*.apk | wc -l) ملف APK"
+          else
+            echo "::warning title=Firebase في الـAPK::بُني في الوضع التجريبي (ENABLE_FIREBASE=false)"
+          fi
+
+      # الحجم الحقيقي يُنشر كـannotation لأن سجلات Actions محجوبة عن بيئة
+      # التطوير؛ هكذا يُقاس الحجم فعليًا لا تقديرًا.
+      - name: Report APK sizes
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, os
+          lines = []
+          for path in sorted(glob.glob('build/app/outputs/flutter-apk/*.apk')):
+              mb = os.path.getsize(path) / (1024 * 1024)
+              lines.append(f"{os.path.basename(path)} = {mb:.1f} MiB")
+              print(f"::notice title=APK size::{os.path.basename(path)} = {mb:.1f} MiB")
+          open('/tmp/apk_sizes.txt', 'w').write("\n".join(lines))
+          PYEOF
+
+      # التحقق من التوقيع: يظهر في annotations حتى نعرف أي مفتاح وُقّع به.
+      - name: Report signing (بدون كشف أي سر)
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import base64, hashlib, pathlib, re
+          gradle = None
+          for name in ('build.gradle.kts', 'build.gradle'):
+              p = pathlib.Path('android/app') / name
+              if p.exists():
+                  gradle = p
+                  break
+          if gradle is None:
+              print('::warning::لم أجد ملف Gradle لتقرير التوقيع')
+          else:
+              text = gradle.read_text(encoding='utf-8')
+              uses_release = 'signingConfigs.release' in text or 'getByName("release")' in text
+              msg = 'توقيع الإصدار (keystore)' if uses_release else 'توقيع debug (لم تُضبط الأسرار)'
+              print(f'::notice title=APK signing::{msg}')
+          PYEOF
+
+      # بصمة الشهادة **من داخل الـAPK نفسه**.
+      #
+      # لماذا لا `keytool -printcert -jarfile`؟ لأنه يقرأ توقيع **v1 (JAR)** فقط،
+      # وبناءنا يخرج بتوقيعي v2/v3 (minSdk 23) فيفشل بلا شهادة. ولماذا لا نقرأ
+      # `~/.android/debug.keystore`؟ لأن مكانه يختلف حسب `ANDROID_SDK_HOME`
+      # (سقط هذا في أول محاولة). الحل: نقرأ كتلة توقيع APK مباشرة — أدقّ مصدر،
+      # وهو ما يُسجَّل حرفيًا في Firebase Console.
+      - name: Report APK certificate SHA-1 / SHA-256
+        if: success()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, hashlib, os, struct
+
+          MAGIC = b'APK Sig Block 42'
+          V2, V3 = 0x7109871A, 0xF05368C0
+
+
+          def first_cert(der_bytes):
+              """يستخرج أول شهادة X.509 (DER) من كتلة توقيع v2/v3."""
+              eocd = der_bytes.rfind(b'PK\x05\x06')
+              if eocd < 0:
+                  return None
+              cd_off = struct.unpack_from('<I', der_bytes, eocd + 16)[0]
+              if der_bytes[cd_off - 16:cd_off] != MAGIC:
+                  return None
+              size = struct.unpack_from('<Q', der_bytes, cd_off - 24)[0]
+              pos, end = cd_off - size, cd_off - 24
+              blocks = {}
+              while pos < end:
+                  pair_len = struct.unpack_from('<Q', der_bytes, pos)[0]
+                  pair_id = struct.unpack_from('<I', der_bytes, pos + 8)[0]
+                  blocks[pair_id] = der_bytes[pos + 12:pos + 8 + pair_len]
+                  pos += 8 + pair_len
+              for scheme in (V2, V3):
+                  value = blocks.get(scheme)
+                  if not value:
+                      continue
+                  off = 4                                   # طول قائمة الموقّعين
+                  off += 4                                  # طول الموقّع الأول
+                  off += 4                                  # طول signed data
+                  digests_len = struct.unpack_from('<I', value, off)[0]
+                  off += 4 + digests_len                    # تجاوز البصمات
+                  off += 4                                  # طول قائمة الشهادات
+                  cert_len = struct.unpack_from('<I', value, off)[0]
+                  off += 4
+                  return value[off:off + cert_len]
+              return None
+
+
+          def colon(hexdigest):
+              h = hexdigest.upper()
+              return ':'.join(h[i:i + 2] for i in range(0, len(h), 2))
+
+
+          apks = sorted(glob.glob('build/app/outputs/flutter-apk/*.apk'))
+          if not apks:
+              print('::error title=fingerprints::لا يوجد APK')
+              raise SystemExit(1)
+          for apk in apks:
+              name = os.path.basename(apk)
+              with open(apk, 'rb') as handle:
+                  cert = first_cert(handle.read())
+              if cert is None:
+                  print(f'::warning title=fingerprints::{name}: تعذّر قراءة كتلة التوقيع')
+                  continue
+              print(f'::notice title=SHA-1 ({name})::{colon(hashlib.sha1(cert).hexdigest())}')
+              print(f'::notice title=SHA-256 ({name})::{colon(hashlib.sha256(cert).hexdigest())}')
+          PYEOF
+
+          # موقع مفتاح debug الذي استخدمه Gradle (يختلف حسب ANDROID_SDK_HOME).
+          # نطبعه لنعرف هل هو مفتاح مُثبَّت في صورة الـrunner (ثابت بين البناءات)
+          # أم مفتاح مُولَّد لحظيًا (بصمته تتغيّر كل بناء).
+          for candidate in \
+            "$HOME/.android/debug.keystore" \
+            "${ANDROID_SDK_HOME:-/none}/.android/debug.keystore" \
+            "${ANDROID_USER_HOME:-/none}/debug.keystore" \
+            "${ANDROID_HOME:-/none}/.android/debug.keystore"; do
+            if [ -f "$candidate" ]; then
+              FP=$(keytool -list -v -keystore "$candidate" -alias androiddebugkey \
+                     -storepass android -keypass android 2>/dev/null \
+                     | grep -m1 'SHA1:' | sed 's/.*SHA1: *//')
+              echo "::notice title=keystore:: $candidate → $FP"
+            fi
+          done
+
+      # اسم ملف صريح يميّز النسخة (P29): بلا ذلك تُنزَّل كل نسخة باسم
+      # `app-arm64-v8a-release.apk`، فيصعب التمييز بين نسخة جديدة وقديمة على
+      # الهاتف — وهو ما أوقع صاحب المشروع في تثبيت نسخة قديمة.
+      - name: Label APK (اسم يميّز النسخة)
+        id: label
+        if: success()
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          NAME_VER="${VERSION%%+*}"
+          BUILD_NO="${VERSION##*+}"
+          MODE="${{ inputs.build_mode || 'release' }}"
+          LABEL="v${NAME_VER}-build${BUILD_NO}"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          echo "::notice title=إصدار البناء::النسخة $VERSION (build $BUILD_NO) — وضع $MODE"
+
+          # نُعيد التسمية مع الحفاظ على تمييز المعمارية (arm64/arm).
+          for apk in build/app/outputs/flutter-apk/*.apk; do
+            base="$(basename "$apk" .apk)"
+            abi="${base##*-}"
+            case "$base" in
+              *arm64-v8a*) abi="arm64" ;;
+              *armeabi-v7a*) abi="arm32" ;;
+            esac
+            target="build/app/outputs/flutter-apk/darsly-${LABEL}-${abi}-${MODE}.apk"
+            cp "$apk" "$target"
+          done
+          ls -l build/app/outputs/flutter-apk/darsly-*.apk
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: darsly-${{ steps.label.outputs.label || 'apk' }}-${{ inputs.build_mode || 'release' }}
+          path: build/app/outputs/flutter-apk/darsly-*.apk
+          if-no-files-found: error
+          retention-days: 2

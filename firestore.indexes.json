@@ -1,0 +1,22 @@
+{
+  "//": "فهارس مركّبة مطلوبة للاستعلامات المستخدمة فعليًا في الكود. لا فهارس مضافة قبل استخدامها.",
+  "indexes": [
+    {
+      "collectionGroup": "teacherProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "studyGroups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "teacherId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

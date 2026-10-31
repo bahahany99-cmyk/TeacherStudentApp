@@ -1,0 +1,322 @@
+import 'package:flutter/material.dart';
+
+import 'package:teacher_student_app/app/router/route_paths.dart';
+import 'package:teacher_student_app/app/session/current_student.dart';
+import 'package:teacher_student_app/app/session/current_teacher.dart';
+import 'package:teacher_student_app/app/session/session_controller.dart';
+import 'package:teacher_student_app/app/session/session_scope.dart';
+import 'package:teacher_student_app/core/errors/app_exception.dart';
+import 'package:teacher_student_app/core/theme/app_colors.dart';
+import 'package:teacher_student_app/core/theme/app_spacing.dart';
+import 'package:teacher_student_app/core/widgets/app_card.dart';
+import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
+import 'package:teacher_student_app/core/widgets/empty_state.dart';
+import 'package:teacher_student_app/core/widgets/info_note.dart';
+import 'package:teacher_student_app/core/widgets/responsive_content.dart';
+import 'package:teacher_student_app/core/widgets/section_header.dart';
+import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/user_role.dart';
+import 'package:teacher_student_app/data/services/app_services_scope.dart';
+import 'package:teacher_student_app/data/validation/notification_rules.dart';
+
+/// شاشة الإشعارات (P12).
+///
+/// **القراءة فقط لما يخصّك:** القائمة تُقرأ بمستلم الجلسة، والقواعد ترفض أي
+/// مستند لغيره — العزل في الخادم لا في هذه الشاشة.
+///
+/// **الفتح يقود إلى مكانه:** كل نوع إشعار يعرف وجهته (حجز/محادثة/مجموعة)،
+/// والضغط يعلّمه مقروءًا ثم يفتح الشاشة المناسبة.
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  bool _markingAll = false;
+
+  String _viewerId(SessionController session) {
+    return session.role == UserRole.teacher
+        ? CurrentTeacher.idOf(session)
+        : CurrentStudent.idOf(session);
+  }
+
+  Future<void> _open(AppNotification notification, String viewerId) async {
+    final String route = switch (notification.target) {
+      NotificationTarget.booking => RoutePaths.bookingDetails,
+      NotificationTarget.chat => RoutePaths.directChat,
+      NotificationTarget.group => RoutePaths.groupDetails,
+      // (P30) إشعارات المزاد تفتح شاشة المزاد نفسها (مقعدي ومهلتي).
+      NotificationTarget.auction => RoutePaths.auction,
+    };
+
+    try {
+      if (!notification.isRead) {
+        await AppServicesScope.of(context).notifications.markRead(
+          notificationId: notification.id,
+          recipientId: viewerId,
+        );
+      }
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+    // (P25) لا حاجة لإعادة قراءة بعد العودة: البثّ الحيّ حدّث القائمة أصلًا
+    // (تعليم «مقروء» نفسه يصل عبر `watchMine`). الانتقال وحده يكفي.
+    await Navigator.of(
+      context,
+    ).pushNamed(route, arguments: notification.targetId);
+  }
+
+  Future<void> _markAll(String viewerId) async {
+    setState(() => _markingAll = true);
+    try {
+      await AppServicesScope.of(
+        context,
+      ).notifications.markAllRead(viewerId);
+    } on AppException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppSnackBar.show(
+        context,
+        error.overrideMessage ?? error.message,
+        type: AppMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _markingAll = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SessionController session = SessionScope.of(context);
+    final String viewerId = _viewerId(session);
+
+    return Scaffold(
+      // شفاف لعرض تدرّج الخلفية العالمي (نسخة 3).
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('الإشعارات'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'تعليم الكل مقروءًا',
+            onPressed: _markingAll ? null : () => _markAll(viewerId),
+            icon: const Icon(Icons.done_all_rounded),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            ResponsiveContent(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const SectionHeader(
+                    title: 'آخر التحديثات',
+                    subtitle: 'حجوزاتك ورسائلك ومقاعدك — في مكان واحد',
+                  ),
+                  // (P25) **قائمة حيّة** لا قراءة عند الفتح: الإشعار يُرسله
+                  // الخادم من عملية طرف آخر (طالب يحجز، مدرس يقبل)، فالشاشة
+                  // المفتوحة كانت تبقى قديمة حتى إعادة فتحها. الآن
+                  // `watchMine` يدفع كل مستند جديد فور وصوله.
+                  StreamBuilder<List<AppNotification>>(
+                    stream: AppServicesScope.of(
+                      context,
+                    ).notifications.watchMine(viewerId),
+                    builder: (
+                      BuildContext context,
+                      AsyncSnapshot<List<AppNotification>> snapshot,
+                    ) {
+                      if (snapshot.hasError) {
+                        return const EmptyState(
+                          icon: Icons.wifi_off_rounded,
+                          title: 'تعذّر تحميل الإشعارات',
+                          message: 'تحقّق من الاتصال، ثم ارجع إلى هذه الشاشة.',
+                        );
+                      }
+                      // لا `initialData`: التمييز بين «لم يصل شيء بعد» و«لا
+                      // إشعارات» يمنع وميض «لا إشعارات» في كل فتح.
+                      if (!snapshot.hasData) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppSpacing.lg,
+                          ),
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final List<AppNotification> items = snapshot.data!;
+                      if (items.isEmpty) {
+                        return const EmptyState(
+                          icon: Icons.notifications_none,
+                          title: 'لا إشعارات',
+                          message:
+                              'سيصلك إشعار عند تحرّك طلب حجز أو وصول رسالة '
+                              'أو توفّر مقعد في مجموعة.',
+                        );
+                      }
+                      return Column(
+                        children: <Widget>[
+                          for (final AppNotification item in items)
+                            Padding(
+                              padding: AppSpacing.listGap,
+                              child: _NotificationTile(
+                                notification: item,
+                                onTap: () => _open(item, viewerId),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const InfoNote(
+                    icon: Icons.lock_outline,
+                    text:
+                        'لا يرى أحد إشعاراتك، ولا يمكن لأحد إنشاء إشعار لك إلا '
+                        'بناءً على حجز أو محادثة أو عضوية مجموعة بينكما.',
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationTile extends StatelessWidget {
+  const _NotificationTile({required this.notification, required this.onTap});
+
+  final AppNotification notification;
+  final VoidCallback onTap;
+
+  IconData get _icon => switch (notification.type) {
+    NotificationType.bookingRequested => Icons.event_available_outlined,
+    NotificationType.bookingAccepted => Icons.check_circle_outline,
+    NotificationType.bookingRejected => Icons.cancel_outlined,
+    NotificationType.rescheduleProposed => Icons.swap_horiz,
+    NotificationType.directMessage => Icons.forum_outlined,
+    NotificationType.waitlistPromoted => Icons.groups_outlined,
+    NotificationType.joinRequested => Icons.person_add_alt_1_outlined,
+    NotificationType.joinAccepted => Icons.how_to_reg_outlined,
+    NotificationType.joinRejected => Icons.person_off_outlined,
+    // (P30) إشعارات المزاد: كأس للفوز، ومقعد متاح، ومهلة منتهية.
+    NotificationType.auctionWon => Icons.emoji_events_outlined,
+    NotificationType.auctionReplacement => Icons.event_seat_outlined,
+    NotificationType.auctionPaymentExpired => Icons.timer_off_outlined,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool unread = !notification.isRead;
+
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          CircleAvatar(
+            radius: AppSpacing.avatarMd / 2.8,
+            backgroundColor: unread
+                ? theme.colorScheme.primaryContainer
+                : AppColors.statusNeutral.withAlpha(60),
+            child: Icon(
+              _icon,
+              size: 20,
+              color: unread
+                  ? theme.colorScheme.onPrimaryContainer
+                  : AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        notification.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: unread
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (unread)
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsetsDirectional.only(
+                          start: AppSpacing.xs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                  ],
+                ),
+                if (notification.body != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    notification.body!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  NotificationRules.relativeTime(
+                    notification.createdAt,
+                    now: DateTime.now(),
+                  ),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,57 @@
+# ===== أسرار وبيانات اعتماد (لا تُرفع أبدًا) =====
+*.env
+.env.*
+*.pem
+*.key
+*.p12
+*.p12.b64
+*.jks
+*.keystore
+*.key
+key.properties
+secrets/
+# (P17) مجلد مفاتيح التوقيع وملف بياناته — يبقى خارج Git دائمًا.
+signing/
+CREDENTIALS.txt
+# إعداد Firebase المحلي (يُولَّد بأمر flutterfire configure — غير مُرفوع)
+google-services.json
+GoogleService-Info.plist
+lib/core/config/firebase_options.dart
+lib/firebase_options.dart
+
+# ===== Flutter / Dart =====
+# مخرجات البناء والحزم
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+coverage/
+doc/api/
+*.g.dart.bak
+
+# ملفات المنصة المولّدة محليًا (تُنشأ بأمر flutter create، وتحتوي مسارات جهازك)
+android/local.properties
+
+# ===== Node (اختبارات قواعد Firestore في tool/rules_tests) =====
+node_modules/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebaserc
+
+# ===== محررات وأدوات =====
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# ===== Python (أدوات CI) =====
+__pycache__/
+*.pyc

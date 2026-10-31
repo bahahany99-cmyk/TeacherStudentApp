@@ -1,0 +1,1880 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// قواعد أمان Firestore — تطبيق «درسلي»
+//
+// السياسة المعتمدة (A-42، 2026-10-27):
+//   1. users/{uid}: قراءة/كتابة لصاحبه فقط، والدور لا يتغيّر بعد الكتابة الأولى.
+//   2. teacherProfiles/{uid}: القراءة العامة للملفات **الموثّقة** فقط؛ صاحبه
+//      يرى ملفه بكل حالاته ولا يستطيع تغيير status.
+//   3. الإدارة (P14): لا وصول إداري بلا Custom Claim `admin` يُضبط بمفتاح خدمة
+//      خارج التطبيق. القرار (توثيق/رفض) وحسم البلاغات وحذف المحتوى المخالف
+//      كلها مشروطة بـ`request.auth.token.admin == true`، وقرار التوثيق مقيّد
+//      بقائمة حقول معلنة (لا يكتب المسؤول أي حقل آخر).
+//  14. الحجب قبل التوثيق (P14): المدرس غير الموثّق **لا يقبل** حجزًا ولا طلب
+//      انضمام ولا يرقّي منتظرًا (`teacherVerified()`)، ولا يظهر في البحث أصلًا.
+//      الفحص يقرأ ملفه من `teacherProfiles` في نفس المعاملة، فلا ينفع إخفاء
+//      الحالة في الواجهة.
+//   4. المجموعات (P7) وصاحبها فقط يكتب، والطلبات (P8) لكل طالب طلبه الواحد،
+//      وحجز المقعد زيادة واحدة ذرّية يقبلها الخادم لا الواجهة.
+//   5. الجدول والمحادثة (P9): يقرأهما صاحب المجموعة والأعضاء المقبولون فقط
+//      (`exists()` على مستند العضو)، ويكتب الجدول المالك وحده، ولا رسالة
+//      تُعدَّل أو تُحذف بعد إرسالها.
+//   6. قائمة الانتظار (P9): للمجموعة **المكتملة** فقط، والمنتظر لا يشغل مقعدًا
+//      ولا يرى الجدول/المحادثة. إزالة عضو تنقص المقعد، وقبول منتظر يزيده —
+//      كلاهما بمعاملة، والقواعد تحدّ الفرق بمقعد واحد في الاتجاهين.
+//   7. سعة المجموعة (P9): حدّ **صارم 40**، ولا تُقلَّب تحت المنضمين، ولا
+//      تتغيّر مع seatsTaken في كتابة واحدة. والنقل بين مجموعتين يحرّك مقعدًا
+//      في كل اتجاه ويُنشئ عضوية تحمل groupId مطابقًا لمسارها.
+//   9. الحجوزات (P10): الطالب ينشئ، والمدرس يقبل/يرفض/يعلن التنفيذ، والطرفان
+//      يلغيان ويقترحان وقتًا بديلًا — كل انتقال بقائمة حقول محددة. وتقويم يومي
+//      لكل مدرس يحوّل «هل الوقت مشغول؟» إلى قراءة مستند واحد داخل المعاملة.
+//  10. المحادثات المباشرة (P11): خيط واحد لكل زوج (مدرس، طالب) بمعرّف مشتق،
+//      ولا خيط بلا أصل: حجز بين الطرفين، أو عضوية مجموعة عند المدرس، أو
+//      استفسار يسمح به المدرس صراحةً. والقراءة والكتابة للطرفين فقط.
+//  11. الإشعارات (P12): المستلم وحده يقرأ ويعلّم مقروءًا ويحذف. والإنشاء من
+//      الطرف الذي نفّذ الفعل فعلًا (`actorId == uid`)، بعد التحقق من **علاقة
+//      حقيقية** بينه وبين المستلم: حجز يجمعهما، أو محادثة يشاركان فيها، أو
+//      مجموعة يملكها والمستلم عضو فيها. لا يوجد «أرسل إشعارًا لأي أحد».
+//  12. التقييمات (P13): لا يُكتب تقييم إلا لحجز **منفّذ** لصاحبه، ومعرّف
+//      التقييم هو معرّف الحجز — فلا تقييم مكرر ولا تقييم بلا حصة. ولا تعديل
+//      ولا حذف بعد الكتابة. والمتوسط في `teacherRatings` لا يتحرك إلا بمقدار
+//      تقييمٍ أُنشئ في **نفس الكتابة الذرّية** (getAfter)، فلا يمكن نفخه.
+//  13. المفضلة (P13): مستند لكل (طالب، نوع، هدف) بمعرّف مشتق، وقراءته وحذفه
+//      لصاحبه فقط، ولا تعديل أصلًا.
+//  16. الاكتشاف والتمييز (P15): `teacherProfiles` تُقرأ للطلاب **للموثّقين فقط**
+//      (شرط واحد في قاعدة القراءة يقيّد أي استعلام)، وطريقة التقديم
+//      (`isOnline`) والمكان (`governorate`/`district`) يكتبها صاحب الملف ضمن
+//      قائمة حقوله. أما التمييز (`isFeatured`/`featuredOrder`) فإداري وحده:
+//      خارج قائمة المالك، ولا يُغيّر إلا في كتابة تمسّ هذين الحقلين فقط
+//      (`affectedKeys().hasOnly`) وعلى ملف موثّق — فلا يُستخدم التمييز غطاءً
+//      لتعديل اسم أو حالة.
+//  17. حذف الحساب (P17): **حذف ناعم** بمهلة 7 أيام. صاحب الحساب وحده يكتب
+//      `status`/`scheduledDeletionAt` في مستنده، وبانتقالات محددة: طلب
+//      (active ← pending_deletion بموعد داخل 8 أيام) أو استعادة
+//      (pending_deletion ← active قبل انتهاء الموعد، بحذف الحقل). ولا تمديد
+//      للمهلة ولا محو للموعد. وأثناء الحذف: الملف يخرج من الاكتشاف بعلم
+//      `accountHidden` على الملف نفسه (لا بقراءة مستند المستخدم: القواعد تعدّ
+//      `get()` على مستند غائب خطأً لا `false`)، و`teacherVerified()` يصبح
+//      `false` فلا يقبل المدرس أي طلب جديد.
+//   8. تنظيف صفوف النقل (P9): المالك يحذف صفوف الانضمام/الانتظار **المفتوحة**
+//      فقط (pending/accepted وwaiting/promoted)؛ الصفوف المغلقة تاريخ لا يُمحى.
+//      لا يُفتح الحذف على العضوية ولا على المقاعد، فلا يستطيع أحد «تحرير
+//      مقعد» بالحذف.
+//
+//  18. مزاد التمييز الأسبوعي (P30): **كل** كتابة على المزاد من الخادم (Cloud
+//      Functions بمفتاح خدمة) لا من التطبيق — لا مزايدة، ولا إعلان فائز، ولا
+//      تأكيد دفع، ولا تعديل إعداد. والقواعد تحكم القراءة فقط: مستند الدورة
+//      والمزايدات لا يقرأها إلا الإدارة أو صاحب المزايدة، والنتائج العامة
+//      (`auctionResults`) أسماء ومراكز بلا مبالغ ولا خاسرين.
+//
+// المبدأ الحاكم: **كل شيء ممنوع إلا ما نُصّ عليه**. القاعدة الأخيرة ترفض أي
+// مجموعة مستندات غير مذكورة، حتى لو أضافها كود لاحقًا بالخطأ.
+//
+// ⚠️ هذه القواعد لم تُنشر بعد. النشر يتم من صاحب المشروع (انظر docs/P5_FIRESTORE.md).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── دوال مساعدة ──────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // ── الصلاحية الإدارية: مصدران لا ثالث لهما ────────────────────────────
+    //
+    // 1) **Custom Claim** (`request.auth.token.admin`) يُضبط بمفتاح خدمة خارج
+    //    التطبيق (Admin SDK). التطبيق لا يستطيع منح نفسه هذا الادعاء إطلاقًا.
+    // 2) **دور المستند** `users/{uid}.role == 'admin'` (P19) — يُضبط أيضًا من
+    //    خارج التطبيق (Console / Admin SDK). ولا يمكن للتطبيق كتابته:
+    //    `allow create` على `users` يقبل `student|teacher` فقط، و`allow update`
+    //    يشترط `role == resource.data.role`، فلا مسار لترقية نفسه.
+    //
+    // 🔒 **لماذا فصلنا دالة القراءة عن دالة الكتابة؟**
+    // `get()` في القواعد محكوم بسقف (10 نداءات لكل طلب/استعلام). لو استُخدمت
+    // دالة الدور في قواعد **القراءة** لَما استطاع مسؤول بلا Claim قراءة
+    // استعلام يعيد أكثر من عشرة مستندات (تُرفض النتيجة كلها). لذلك:
+    // - `isAdmin()` للقراءة: الادعاء فقط، بلا `get()` إطلاقًا.
+    // - `isAdminWriter()` للكتابة: الادعاء أو دور المستند. كل كتابة تخص مستندًا
+    //   واحدًا (أو دفعة صغيرة) فتبقى داخل السقف.
+    //
+    // الاختبارات والأثر العملي في `tool/rules_tests` §P19.
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    /// دور المستند — يُقرأ بـ`get()` على مسار معروف، ويُحصَر بفحص الوجود حتى
+    /// لا يتحوّل «المستخدم بلا مستند» إلى خطأ تقييم في القاعدة.
+    function userRoleDoc() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? ''
+        : get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('role', '');
+    }
+
+    /// **دور المستند وحده** (بلا Claim): المسار الذي يجعل «المسؤول» معرّفًا
+    /// داخل قاعدة البيانات لا في رمز الهوية. يُستخدم في ثلاث قراءات إدارية
+    /// محدودة (طابور التوثيق، البلاغات، مستندات المستخدمين) لا في الاكتشاف
+    /// العام — انظر التعليق أدناه.
+    function isAdminDoc() {
+      return signedIn() && userRoleDoc() == 'admin';
+    }
+
+    /// صلاحية **الكتابة** الإدارية: الادعاء أولًا (`||` يقطع، فلا `get()`
+    /// لمسؤول يحمل Claim)، ثم دور المستند كمسار بديل موثّق.
+    ///
+    /// ⚠️ **لماذا لا نستخدمها في القراءة؟** لأن قواعد القراءة تُقيَّم لكل
+    /// مستند يُعيده استعلام، وكل `get()` فيها يُحسب ضمن سقف عشرة نداءات لكل
+    /// استعلام. وضع فحص المستند هناك كان سيُعطّل بحث الطلاب نفسه (استعلام
+    /// `teacherProfiles` الموثّق) لأي مستخدم عادي يحاول تجاوز عشرة نتائج.
+    /// فالقراءة الإدارية (لوحة الإدارة/طابور التوثيق) تحتاج **الادعاء**،
+    /// والكتابة الإدارية تقبل الادعاء **أو** دور المستند.
+    function isAdminWriter() {
+      return signedIn()
+        && (request.auth.token.admin == true || userRoleDoc() == 'admin');
+    }
+
+    // هل هذا المدرس **موثّق وحسابه نشط**؟ (P14 + P17)
+    //
+    // قراءة مستندات بمسار معروف، فتصلح داخل المعاملات أيضًا. الملف الغائب أو
+    // غير الموثّق = غير مخوّل: لا «موافقة ضمنية» لمدرس لم يُراجع.
+    // (P17) وطلب الحذف يوقف كل ما يفعله المدرس (قبول حجز، إنشاء مجموعة، إرسال
+    // إشعار…) حتى لو بقي رمز هويته صالحًا على جهاز آخر. الاستعادة تعيد القدرة
+    // فورًا (نفس الشرط يُعاد تقييمه).
+    //
+    // ⚠️ **لماذا علم على ملف المدرس لا قراءة مستند المستخدم؟** محرّك القواعد
+    // يعامل `exists()`/`get()` على مستند **غائب** كخطأ تقييم لا كـ`false`، وخطأ
+    // واحد في سلسلة `&&` يُسقط الشرط كله — أي أن قراءة `users/{uid}` من داخل
+    // قاعدة قراءة كانت ستُخفي كل ملف مدرس لا مستند مستخدم له (كشفتها اختبارات
+    // المحاكي في P17). فالحذف الناعم يكتب علم `accountHidden` **في نفس الكتابة
+    // الذرّية** على الملف، والقواعد تقرأه من المستند الذي تُقيّمه أصلًا.
+    function teacherVerified(uid) {
+      return exists(/databases/$(database)/documents/teacherProfiles/$(uid))
+        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.status == 'verified'
+        && get(/databases/$(database)/documents/teacherProfiles/$(uid)).data.get('accountHidden', false) == false;
+    }
+
+    // ── 1) users/{uid} ───────────────────────────────────────────────────────
+    match /users/{uid} {
+      // (P19) المسؤول بدور المستند يقرأ مستندات المستخدمين أيضًا (الواجهة
+      // تعرض أسماء أصحاب الملفات في الطابور). `isAdminDoc()` آخرًا حتى لا
+      // يُستدعى `get()` إلا إذا فشل الشرطان الأرخص.
+      allow read: if isSelf(uid) || isAdmin() || isAdminDoc();
+
+      // (P18) `phone` و`stage` حقول شخصية يحرّرها صاحب الحساب من «بياناتي».
+      // حدودهما هنا هي نفس حدود التحقق في التطبيق (`ProfileRules`)، فلا
+      // يُقبل في الواجهة ما ترفضه القاعدة.
+      function validContactFields() {
+        return (!('phone' in request.resource.data.keys())
+              || (request.resource.data.phone is string
+                  && request.resource.data.phone.size() >= 8
+                  && request.resource.data.phone.size() <= 20))
+          && (!('stage' in request.resource.data.keys())
+              || (request.resource.data.stage is string
+                  && request.resource.data.stage.size() >= 2
+                  && request.resource.data.stage.size() <= 40));
+      }
+
+      // (P22) الصورة الافتراضية: رقم تصميم ثابت 0..5 يُكتب مرة واحدة عند
+      // إنشاء الحساب، فيرى الطالب صورة شخصية من أول لحظة بدل دائرة فارغة.
+      // الرقم للعرض فقط؛ التطبيق يرسم التصميم محليًا بلا أي تحميل.
+      function validAvatarPreset() {
+        return (!('avatarPreset' in request.resource.data.keys())
+              || (request.resource.data.avatarPreset is int
+                  && request.resource.data.avatarPreset >= 0
+                  && request.resource.data.avatarPreset < 6));
+      }
+
+      allow create: if isSelf(uid)
+        && request.resource.data.role in ['student', 'teacher']
+        && request.resource.data.keys().hasOnly(
+             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt',
+              'phone', 'stage', 'avatarPreset'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80
+        && validContactFields()
+        && validAvatarPreset();
+
+      // حالة الحساب (P17): تُقرأ كـ`active` عند غياب الحقل، فكل مستند قديم
+      // (قبل هذه المرحلة) يبقى نشطًا بلا ترحيل بيانات.
+      function accountStatusOf(data) {
+        return data.get('status', 'active');
+      }
+
+      // الانتقالات المسموحة لحالة الحساب — ثلاثة فقط:
+      //  1. **بلا تغيير**: تعديل الاسم/البريد لا يمسّ الحالة ولا الموعد (وإلا
+      //     صار كل تحديث للملف الشخصي قادرًا على محو موعد الحذف).
+      //  2. **طلب الحذف**: active ← pending_deletion، مع موعد في المستقبل
+      //     وبسقف المهلة (7 أيام + هامش يوم لفروق ساعة الجهاز عن ساعة الخادم).
+      //  3. **الاستعادة**: pending_deletion ← active، بشرط أن الموعد **لم يمرّ**
+      //     وأن الحقل يُحذف بالكامل (لا `null`): لا يُترك أثر لموعد ماضٍ.
+      // ولا مسار رابع: لا تمديد للمهلة (الفرع 2 يشترط الحالة الحالية active)،
+      // ولا حذف الموعد مع البقاء على pending_deletion.
+      function validAccountStateChange() {
+        return (accountStatusOf(request.resource.data) == accountStatusOf(resource.data)
+            && request.resource.data.get('scheduledDeletionAt', null)
+               == resource.data.get('scheduledDeletionAt', null))
+          || (accountStatusOf(request.resource.data) == 'pending_deletion'
+            && accountStatusOf(resource.data) == 'active'
+            && 'scheduledDeletionAt' in request.resource.data.keys()
+            && request.resource.data.scheduledDeletionAt is timestamp
+            && request.resource.data.scheduledDeletionAt > request.time
+            && request.resource.data.scheduledDeletionAt
+               <= request.time + duration.value(8, 'd'))
+          || (accountStatusOf(request.resource.data) == 'active'
+            && accountStatusOf(resource.data) == 'pending_deletion'
+            && !('scheduledDeletionAt' in request.resource.data.keys())
+            && 'scheduledDeletionAt' in resource.data.keys()
+            && resource.data.scheduledDeletionAt > request.time);
+      }
+
+      // الدور ثابت: أي محاولة لتغييره تُرفض. بقية الحقول (الاسم/البريد) يجوز
+      // تحديثها، وحقلا الحذف الناعم (P17) بانتقالات `validAccountStateChange`
+      // وحدها. الحقول غير المعروفة مرفوضة.
+      allow update: if isSelf(uid)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.keys().hasOnly(
+             ['displayName', 'email', 'role', 'createdAt', 'roleChosenAt',
+              'status', 'scheduledDeletionAt', 'phone', 'stage',
+              'avatarPreset'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 80
+        && validContactFields()
+        && validAvatarPreset()
+        && validAccountStateChange();
+
+      // لا حذف من التطبيق: حذف الحساب إجراء إداري (سياسة الاحتفاظ T-10).
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 2) teacherProfiles/{uid} ─────────────────────────────────────────────
+    match /teacherProfiles/{uid} {
+      // القراءة: الملف الموثّق للجميع، وصاحبه يرى ملفه بأي حالة (P14).
+      // هذا شرط **الاكتشاف** الحقيقي: أي استعلام من الطالب على غير الموثّق
+      // يُرفض كاملًا، فلا يفيده حذف شرط `status` من التطبيق (P15).
+      // (P17) الملف الموثّق لصاحب حساب **غير مجدول للحذف**: الحذف الناعم يُخرج
+      // الملف من الاكتشاف فورًا (`accountHidden`)، مع بقاء المستند (الاستعادة
+      // تُعيده بلا فقدان بيانات). صاحبه يرى ملفه دائمًا، والمسؤول يرى الكل.
+      // (P19) ترتيب الشروط مقصود: الشرطان الأرخص أولًا حتى لا يُستدعى `get()`
+      // لمستخدم عادي أصلًا (اكتشاف الطالب يُحلّ من المستند نفسه). المسؤول
+      // بدور المستند يحتاج `get()` واحدًا، ونتيجته مُخبَّأة داخل الطلب الواحد
+      // لأن المسار ثابت (`users/{uid}` الخاص بالمتصل) — فلا يتضخّم مع عدد
+      // مستندات الاستعلام. اختبار «15 ملفًا معلّقًا» في `tool/rules_tests`
+      // يثبت ذلك عمليًا على المحاكي.
+      allow read: if isSelf(uid)
+        || (resource.data.status == 'verified'
+            && resource.data.get('accountHidden', false) == false)
+        || isAdmin()
+        || isAdminDoc();
+
+      // حقول يملكها صاحب الملف: التعريف وطريقة التقديم والمكان (P15).
+      // `isFeatured`/`featuredOrder` إداريان، و`reviewNote`… قرار مراجعة —
+      // لكنها مذكورة هنا لأن التحديث يقارن المستند كاملًا: صاحب الملف يرسل
+      // هذه الحقول كما هي (merge) فيجب أن تُقبل **بلا تغيير** لا أن تُرفض.
+      // (P17) `accountHidden` يملكه صاحب الملف: هو علم «أخفيت ملفي لحذف
+      // الحساب»، لا قرار توثيق. يكفي أن يكتبه هو في نفس كتابة طلب الحذف.
+      function profileKeys() {
+        return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
+                'stage', 'area', 'bio', 'priceHint', 'isOnline',
+                'governorate', 'district', 'isFeatured', 'featuredOrder',
+                'reviewNote', 'reviewedAt', 'reviewedBy', 'accountHidden',
+                'photoPath'];
+      }
+
+      // (P22) مسار الصورة المعتمد لمستخدم معيّن: `avatars/{uid}`.
+      // يمنع كتابة مسار ملف شخص آخر في ملفك (صورة شخص آخر على حسابك).
+      function canonicalPhotoPath(ownerUid) {
+        return 'avatars/' + string(ownerUid);
+      }
+
+      // (P22) الصورة إلزامية **عند الإرسال للمراجعة** لا عند إنشاء المسودة.
+      // - وجود مستند الصورة `avatars/{uid}` مطلوب فعلًا (لا مجرد نص في الملف).
+      // - المسار يجب أن يكون مسار صاحب الملف نفسه.
+      // سبب ربطها بالحالة: الحساب يُنشأ تلقائيًا كمسودة فارغة عند اختيار دور
+      // «مدرس» قبل أن يرفع أي صورة، فاشتراطها على كل كتابة كان سيُفشل تسجيل
+      // الدور نفسه. أما لحظة الإرسال للمراجعة فهي اللحظة التي تُعرض فيها
+      // الصورة للطلاب، ومنها تُفرض.
+      function hasProfilePhoto(ownerUid) {
+        return request.resource.data.get('photoPath', '') == canonicalPhotoPath(ownerUid)
+          && exists(/databases/$(database)/documents/avatars/$(ownerUid));
+      }
+
+      // (P22) سياسة التعديل والمراجعة — تُفرض على الخادم لا في الواجهة:
+      //  1. `pendingReview`: التعديل **مرفوض** (الملف بين يدي الإدارة؛ تعديله
+      //     أثناء المراجعة يعني أن ما وُثّق ليس ما يراه الطالب).
+      //  2. `verified`: التعديل مسموح **بشرط** إعادة الحالة إلى `pendingReview`
+      //     (إعادة تحقّق). لا مسار لتعديل ملف موثّق مع بقائه موثّقًا.
+      //  3. `draft`/`rejected`: تُبقى الحالة كما هي، أو تُرفع إلى `pendingReview`
+      //     عند إعادة الإرسال.
+      function ownerStatusTransitionAllowed() {
+        return resource.data.status != 'pendingReview'
+          && (
+               (resource.data.status == 'verified'
+                 && request.resource.data.status == 'pendingReview')
+            || (resource.data.status in ['draft', 'rejected']
+                 && request.resource.data.status in ['draft', 'rejected',
+                                                     'pendingReview'])
+          );
+      }
+
+      // الصورة مطلوبة كلما صار الملف في دورة المراجعة (منتظرًا أو موثّقًا).
+      function photoSatisfiedFor(status, ownerUid) {
+        return status == 'draft' || status == 'rejected'
+          || hasProfilePhoto(ownerUid);
+      }
+
+      // حدود الحقول الاختيارية: نص قصير أو غياب، ممنوع أي نوع آخر.
+      function validOptionalText(field, maxLength) {
+        return !(field in request.resource.data.keys())
+          || (request.resource.data[field] is string
+              && request.resource.data[field].size() >= 2
+              && request.resource.data[field].size() <= maxLength);
+      }
+
+      // (P22) المادة والمرحلة: من القائمة المعتمدة **أو** نص مخصّص كتبه المدرس
+      // («العلوم المتكاملة»، «رياض الأطفال»). القاعدة لا تعرف القائمة (ولا
+      // يجوز أن تعرفها: تحديث القائمة كان سيصير نشر قواعد)، فتشترط النوع
+      // والحدّين فقط: نص من حرفين إلى أربعين، بلا نوع آخر.
+      function validAcademicField(field) {
+        return field in request.resource.data.keys()
+          && request.resource.data[field] is string
+          && request.resource.data[field].size() >= 2
+          && request.resource.data[field].size() <= 40;
+      }
+
+      // (P23) الحقول الأكاديمية إلزامية **عند الإرسال للمراجعة** لا عند إنشاء
+      // المسودة: التطبيق ينشئ مسودة تلقائيًا عند اختيار دور «مدرس» قبل أن
+      // يكتب المدرس مادته أو يرفع صورته. اشتراطها على كل كتابة كان سيُفشل
+      // اختيار الدور نفسه، وتركها غير مشروطة عند الإرسال يفتح ملفًا للمراجعة
+      // بلا مادة ولا مرحلة.
+      // ⚠️ لغة القواعد بلا `if`/`return` — تعبير شرطي واحد فقط.
+      function academicFieldsSatisfiedFor(status) {
+        return (status == 'draft' || status == 'rejected')
+          ? ((!('subject' in request.resource.data.keys())
+                || validAcademicField('subject'))
+             && (!('stage' in request.resource.data.keys())
+                || validAcademicField('stage')))
+          : (validAcademicField('subject') && validAcademicField('stage'));
+      }
+
+      function validProfilePayload() {
+        return request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 80
+          && request.resource.data.keys().hasOnly(profileKeys())
+          && (!('isOnline' in request.resource.data.keys())
+              || request.resource.data.isOnline is bool)
+          && validOptionalText('governorate', 40)
+          && validOptionalText('district', 60)
+          && academicFieldsSatisfiedFor(request.resource.data.status);
+      }
+
+      // عند الإنشاء: لا حقل إداري إطلاقًا — الملف يبدأ بلا تمييز ولا قرار.
+      function noAdminFields() {
+        return !('isFeatured' in request.resource.data.keys())
+          && !('featuredOrder' in request.resource.data.keys())
+          && !('reviewNote' in request.resource.data.keys())
+          && !('reviewedAt' in request.resource.data.keys())
+          && !('reviewedBy' in request.resource.data.keys());
+      }
+
+      // عند التحديث من صاحب الملف: كل حقل إداري **بلا تغيير**، وإلا صار
+      // بإمكانه تمييز نفسه أو محو سبب رفضه.
+      function unchangedAdminFields() {
+        return (!('isFeatured' in request.resource.data.keys())
+              || request.resource.data.isFeatured == resource.data.isFeatured)
+          && (!('featuredOrder' in request.resource.data.keys())
+              || request.resource.data.featuredOrder == resource.data.featuredOrder)
+          && (!('reviewNote' in request.resource.data.keys())
+              || request.resource.data.reviewNote == resource.data.reviewNote)
+          && (!('reviewedAt' in request.resource.data.keys())
+              || request.resource.data.reviewedAt == resource.data.reviewedAt)
+          && (!('reviewedBy' in request.resource.data.keys())
+              || request.resource.data.reviewedBy == resource.data.reviewedBy);
+      }
+
+      // الإنشاء: صاحبه فقط.
+      // - `draft`: المسودة التلقائية عند اختيار دور «مدرس» (بلا صورة بعد).
+      // - `pendingReview`: إرسال من النموذج ⇒ **الصورة إلزامية**.
+      allow create: if isSelf(uid)
+        && request.resource.data.ownerId == uid
+        && request.resource.data.status in ['draft', 'pendingReview']
+        && validProfilePayload()
+        && photoSatisfiedFor(request.resource.data.status, uid)
+        && noAdminFields();
+
+      // قائمة حقول المسؤول: الحقول الوصفية **زائد** حقول القرار الأربعة.
+      // `isFeatured`/`featuredOrder` لها مسار منفصل (`validAdminCuration`)،
+      // و`rating`/`reviewsCount` تبقى خارج الاثنين: التقييم يُحسب من
+      // `teacherRatings` ولا يُكتب يدويًا (A-85).
+      function adminDecisionKeys() {
+        return ['ownerId', 'displayName', 'status', 'createdAt', 'subject',
+                'stage', 'area', 'bio', 'priceHint', 'isOnline',
+                'governorate', 'district', 'reviewNote',
+                'reviewedAt', 'reviewedBy', 'accountHidden', 'photoPath'];
+      }
+
+      // قرار إداري (P14): توثيق/رفض. لا يغيّر المالك، والحالة من المجموعة
+      // المعلنة، وسبب الرفض — إن وُجد — بنفس حدود `AdminRules.reasonProblem`.
+      function validAdminDecision() {
+        return request.resource.data.keys().hasOnly(adminDecisionKeys())
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.status in
+               ['draft', 'pendingReview', 'verified', 'rejected']
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 80
+          && (!('reviewNote' in request.resource.data.keys())
+              || (request.resource.data.reviewNote is string
+                  && request.resource.data.reviewNote.size() >= 5
+                  && request.resource.data.reviewNote.size() <= 200));
+      }
+
+      // تمييز إداري (P15): **الحقلان وحدهما** يتغيّران في الكتابة.
+      // - `affectedKeys().hasOnly` يمنع تمرير أي تعديل آخر (اسم/حالة/نبذة) مع
+      //   التمييز، فلا يُستخدم التمييز غطاءً لقرار آخر.
+      // - الملف يجب أن يكون موثّقًا: تمييز مسودة يعني إبراز ملف لا يُقرأ للطلاب.
+      // - الترتيب عدد صحيح 0..999، والأصغر يظهر أولًا في شريط الرئيسية.
+      function validAdminCuration() {
+        return isAdminWriter()
+          && resource.data.status == 'verified'
+          && request.resource.data.status == 'verified'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+               ['isFeatured', 'featuredOrder'])
+          && request.resource.data.isFeatured is bool
+          && request.resource.data.featuredOrder is int
+          && request.resource.data.featuredOrder >= 0
+          && request.resource.data.featuredOrder <= 999;
+      }
+
+      // التحديث: صاحبه يعدّل حقوله الوصفية فقط (والحقول الإدارية كما هي)،
+      // والمسؤول يصدر قرارًا مقيّدًا أو يُميّز عبر المسار المخصّص.
+      // - status و ownerId ثابتان لصاحب الملف (يُضبطان إداريًا أو عند الإنشاء).
+      // - rating و reviewsCount غير مذكورة في أي قائمة ⇒ لا يكتبها أحد يدويًا.
+      // استثناء واحد لا يمسّ المحتوى: علم «أخفيت ملفي» الذي يكتبه المسار
+      // الناعم لحذف الحساب (P17). لا يغيّر حقلًا وصفيًا ولا حالة، فلا يعيد
+      // التحقق ولا يفتح بابًا لتعديل المحتوى.
+      function onlyHidingFlagChanged() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                 ['accountHidden'])
+          && request.resource.data.accountHidden is bool;
+      }
+
+      allow update: if (isAdminWriter()
+          && (validAdminDecision() || validAdminCuration()))
+        || (
+        isSelf(uid)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && validProfilePayload()
+        && unchangedAdminFields()
+        && ownerStatusTransitionAllowed()
+        && photoSatisfiedFor(request.resource.data.status, uid)
+      )
+        || (isSelf(uid) && onlyHidingFlagChanged());
+
+      // لا حذف من التطبيق.
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 3) studyGroups/{groupId} ─────────────────────────────────────────────
+    // القراءة: النشِطة للمسجّلين، وصاحبها يرى الموقوفة.
+    // الكتابة: **المدرس صاحب المجموعة فقط** (P7): إنشاء/تعديل/إيقاف.
+    // لا حذف من التطبيق — الإيقاف عبر isActive بدل فقدان سجل الطلاب.
+    match /studyGroups/{groupId} {
+      function isGroupOwner() {
+        return signedIn() && request.auth.uid == resource.data.teacherId;
+      }
+
+      function validGroupPayload() {
+        return request.resource.data.title is string
+          && request.resource.data.title.size() >= 3
+          && request.resource.data.title.size() <= 80
+          && request.resource.data.subject is string
+          && request.resource.data.subject.size() > 0
+          && request.resource.data.subject.size() <= 40
+          && request.resource.data.stage is string
+          && request.resource.data.stage.size() > 0
+          && request.resource.data.stage.size() <= 40
+          && request.resource.data.teacherName is string
+          && request.resource.data.teacherName.size() > 0
+          && request.resource.data.teacherName.size() <= 80
+          && request.resource.data.meetingMode in ['online', 'home', 'center']
+          && request.resource.data.isActive is bool;
+      }
+
+      // السعة: عدد صحيح بين 2 و**40 حدًّا صارمًا** (A-70)، ولا تقل عن المنضمين.
+      // هذا الفحص يغطي تعديل السعة في أي وقت، ويبقى seatsTaken مشدودًا في
+      // قاعدة التعديل العامة (أ): أي محاولة لتغيير الاثنين معًا تُرفض.
+      function validSeats() {
+        return request.resource.data.seatsTotal is int
+          && request.resource.data.seatsTotal >= 2
+          && request.resource.data.seatsTotal <= 40
+          && request.resource.data.seatsTotal >= request.resource.data.seatsTaken;
+      }
+
+      function groupKeys() {
+        return ['teacherId', 'teacherName', 'title', 'subject', 'stage',
+                'seatsTotal', 'seatsTaken', 'meetingMode', 'scheduleNote',
+                'isActive'];
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.isActive == true
+             || request.auth.uid == resource.data.teacherId
+           ));
+
+      allow create: if signedIn()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.keys().hasOnly(groupKeys())
+        && request.resource.data.seatsTaken == 0
+        && request.resource.data.isActive == true
+        && validGroupPayload()
+        && validSeats()
+        && (
+             !('scheduleNote' in request.resource.data.keys())
+             || (request.resource.data.scheduleNote is string
+                 && request.resource.data.scheduleNote.size() <= 120)
+           );
+
+      // (أ) تعديل البيانات العادي: المالك فقط، ولا يغيّر المالك ولا المقاعد
+      // المشغولة. قبول الطلبات له قاعدة منفصلة (ب) لأن القواعد تُقيَّم كـOR.
+      allow update: if isAdminWriter() || (
+        isGroupOwner()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.seatsTaken == resource.data.seatsTaken
+        && request.resource.data.keys().hasOnly(groupKeys())
+        && validGroupPayload()
+        && validSeats()
+        && (
+             !('scheduleNote' in request.resource.data.keys())
+             || (request.resource.data.scheduleNote is string
+                 && request.resource.data.scheduleNote.size() <= 120)
+           )
+      );
+
+      // (ب) حجز مقعد عند قبول طلب انضمام (P8) أو قبول منتظر أو **نقل عضو**
+      // إلى هذه المجموعة (P9):
+      //   - المالك فقط، والمجموعة منشورة.
+      //   - **لا يتغيّر أي حقل آخر** غير seatsTaken (diff.hasOnly).
+      //   - الزيادة **واحد بالضبط** ولا تتجاوز السعة الكلية.
+      // وبما أن المعاملة تُعيد قراءة المستند، فإن قبولين متزامنين على المقعد
+      // الأخير لا يمرّان: الثاني يرى seatsTaken مساويًا للسعة فيُرفض.
+      allow update: if isGroupOwner()
+        && resource.data.isActive == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seatsTaken'])
+        && request.resource.data.seatsTaken == resource.data.seatsTaken + 1
+        && request.resource.data.seatsTaken <= resource.data.seatsTotal;
+
+      // (ج) تحرير مقعد عند إزالة عضو **أو نقل عضو خارج المجموعة** (P9):
+      //   - المالك فقط (يعمل مع المجموعة الموقوفة أيضًا: الإدارة لا تتوقف).
+      //   - **لا يتغيّر أي حقل آخر** غير seatsTaken، والنقص واحد بالضبط.
+      //   - لا يصبح العدد سالبًا.
+      allow update: if isGroupOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seatsTaken'])
+        && request.resource.data.seatsTaken == resource.data.seatsTaken - 1
+        && request.resource.data.seatsTaken >= 0;
+
+      allow delete: if isAdminWriter();
+// (نص scheduleNote الفارغ مقبول: يعني «بلا موعد محدد».)
+
+      // أعضاء المجموعة: المدرس صاحب المجموعة والإدارة فقط.
+      // الطالب لا يرى أسماء بقية الطلاب (خصوصية).
+      //
+      // الإنشاء مسموح للمالك فقط لأنه يحدث داخل معاملة قبول الطلب أو النقل؛
+      // ومعرّف المستند يجب أن يساوي معرّف الطالب نفسه، فلا يمكن كتابة عضو
+      // مزيّف باسم طالب آخر. ويُشترط أيضًا:
+      //   - `groupId` داخل المستند يساوي مسار المجموعة (ربط صريح لا يُزوَّر)،
+      //   - ألّا تتجاوز العضوية سعة المجموعة (A-71)،
+      //   - وحقول أثر النقل (`movedAt` / `movedFromGroupTitle`) اختيارية
+      //     ومقيّدة النوع والحجم — يكتبها التطبيق وحده في معاملة النقل.
+      match /members/{memberId} {
+        function parentTeacherId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        allow read: if isAdmin()
+          || (signedIn() && request.auth.uid == parentTeacherId());
+
+        // في معاملة/دفعة، تُقيَّم القواعد على **الحالة بعد الكتابة**، فشرط
+        // «مقعد حر» قبل الكتابة كان سيرفض حجز **المقعد الأخير** نفسه (لحظة
+        // الاكتمال). لذلك نفحص ألّا تتجاوز العضوية السعة بعد التنفيذ؛ أما
+        // ضمان «مقعد واحد مقابل كل حجز» فهو حصرًا في قاعدتي studyGroups
+        // (ب) و(ج) — زيادة/نقصان **واحد بالضبط** بلا تغيير أي حقل آخر.
+        function parentWithinCapacity() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken <= get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+        }
+
+        allow create: if isAdminWriter() || (
+          signedIn()
+          && request.auth.uid == parentTeacherId()
+          && memberId == request.resource.data.studentId
+          && request.resource.data.keys().hasOnly(
+               ['studentId', 'groupId', 'name', 'joinedAt', 'status',
+                'movedAt', 'movedFromGroupTitle'])
+          && (!('movedAt' in request.resource.data.keys())
+              || request.resource.data.movedAt is timestamp)
+          && (!('movedFromGroupTitle' in request.resource.data.keys())
+              || (request.resource.data.movedFromGroupTitle is string
+                  && request.resource.data.movedFromGroupTitle.size() <= 80))
+          && request.resource.data.groupId == groupId
+          && request.resource.data.status == 'active'
+          && request.resource.data.joinedAt is timestamp
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && parentWithinCapacity()
+        );
+
+        // التعديل إداري فقط (لا حالة عضو تُكتب من التطبيق).
+        allow update: if isAdminWriter();
+
+        // الإزالة (P9): صاحب المجموعة أو الإدارة. الحذف وحده لا يكفي — التطبيق
+        // ينقص seatsTaken في المعاملة نفسها، وقاعدة studyGroups (ج) تسمح بمقعد
+        // واحد فقط، فلا يمكن «حذف عضو» دون تحرير مقعده ولا العكس.
+        allow delete: if isAdminWriter() || (signedIn() && request.auth.uid == parentTeacherId());
+      }
+
+      // ── P9: الجدول الأسبوعي ──────────────────────────────────────────────
+      // القراءة: صاحب المجموعة وكل عضو مقبول. الكتابة: صاحب المجموعة فقط.
+      match /sessions/{sessionId} {
+        function groupOwnerId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        function isOwner() {
+          return signedIn() && request.auth.uid == groupOwnerId();
+        }
+
+        function isMember() {
+          return signedIn() && exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid));
+        }
+
+        function sessionKeys() {
+          return ['groupId', 'teacherId', 'title', 'weekday', 'startMinutes',
+                  'durationMinutes', 'locationNote', 'isCancelled', 'createdAt'];
+        }
+
+        // نفس حدود العميل (SessionRules)، والحصة لا تعبر منتصف الليل.
+        function validSession() {
+          return request.resource.data.title is string
+            && request.resource.data.title.size() >= 3
+            && request.resource.data.title.size() <= 60
+            && request.resource.data.weekday in ['saturday', 'sunday', 'monday',
+                 'tuesday', 'wednesday', 'thursday', 'friday']
+            && request.resource.data.startMinutes is int
+            && request.resource.data.startMinutes >= 0
+            && request.resource.data.startMinutes <= 1380
+            && request.resource.data.durationMinutes is int
+            && request.resource.data.durationMinutes >= 15
+            && request.resource.data.durationMinutes <= 240
+            && request.resource.data.startMinutes + request.resource.data.durationMinutes <= 1440
+            && request.resource.data.isCancelled is bool
+            && request.resource.data.locationNote is string
+            && request.resource.data.locationNote.size() <= 60;
+        }
+
+        allow read: if isAdmin() || isOwner() || isMember();
+
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly(sessionKeys())
+          && request.resource.data.groupId == groupId
+          && request.resource.data.teacherId == request.auth.uid
+          && request.resource.data.isCancelled == false
+          && validSession();
+
+        // التعديل لا ينقل الموعد لمجموعة أخرى ولا يغيّر مالكه.
+        allow update: if isOwner()
+          && request.resource.data.keys().hasOnly(sessionKeys())
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.teacherId == resource.data.teacherId
+          && validSession();
+
+        // لا حذف من التطبيق: الإلغاء عبر isCancelled يحفظ سجل الجدول.
+        allow delete: if isAdminWriter();
+      }
+
+      // ── P9: محادثة المجموعة ──────────────────────────────────────────────
+      // نفس الجمهور: المالك والأعضاء المقبولون فقط. ولا تعديل ولا حذف بعد
+      // الإرسال — سجل المحادثة للقراءة فقط بعد كتابته.
+      match /messages/{messageId} {
+        function groupOwnerId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        function isOwner() {
+          return signedIn() && request.auth.uid == groupOwnerId();
+        }
+
+        function isMember() {
+          return signedIn() && exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid));
+        }
+
+        allow read: if isAdmin() || isOwner() || isMember();
+
+        // لا انتحال مرسل: senderId يجب أن يساوي uid الطالب، ولا يكتب إلا عضو
+        // أو المالك. الطول والمفاتيح مقيدة، والوقت من العميل (خادم الزمن
+        // الكامل يحتاج دالة — مقبول لأن الترتيب فقط هو المستخدم).
+        allow create: if (isOwner() || isMember())
+          && request.resource.data.keys().hasOnly(
+               ['groupId', 'senderId', 'senderName', 'senderRole', 'text', 'sentAt'])
+          && request.resource.data.groupId == groupId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 80
+          && request.resource.data.senderRole in ['student', 'teacher']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.sentAt is timestamp;
+
+        allow update, delete: if isAdminWriter();
+      }
+    }
+
+    // ── 4) groupJoinRequests/{requestId} — طلبات الانضمام (P8) ───────────────
+    // المعرّف حتمي: `groupId_studentId`، فطلب واحد لكل طالب في كل مجموعة.
+    // المالك منسوخ في المستند (teacherId) حتى تكون القراءة فحصًا على حقول
+    // المستند نفسه بلا get() لكل سطر في القائمة.
+    match /groupJoinRequests/{requestId} {
+      function joinRequestKeys() {
+        return ['groupId', 'groupTitle', 'teacherId', 'studentId',
+                'studentName', 'status', 'requestedAt', 'decidedAt',
+                'decidedBy'];
+      }
+
+      // سطر واحد لكل تعبير: أسهل في المراجعة، ولا يعتمد على متابعة السطر.
+      function groupIsActive(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.isActive == true;
+      }
+
+      function groupHasFreeSeat(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken < get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+      }
+
+      function groupIsJoinable(groupId) {
+        return groupIsActive(groupId) && groupHasFreeSeat(groupId);
+      }
+
+      function validNewRequest() {
+        return request.resource.data.groupId is string
+          && request.resource.data.groupTitle is string
+          && request.resource.data.groupTitle.size() >= 3
+          && request.resource.data.groupTitle.size() <= 80
+          && request.resource.data.teacherId is string
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && request.resource.data.requestedAt is timestamp
+          && request.resource.data.status == 'pending'
+          && request.resource.data.keys().hasOnly(joinRequestKeys());
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.studentId == request.auth.uid
+             || resource.data.teacherId == request.auth.uid
+           ));
+
+      // الطالب ينشئ طلبه فقط، لطالب مسجّل، لمجموعة منشورة بها مقعد، وبمعرّف
+      // المستند المشتق. لا يستطيع كتابة حالة غير pending ولا نسب الطلب لمدرس آخر.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && requestId == request.resource.data.groupId + '_' + request.auth.uid
+        && validNewRequest()
+        && groupIsJoinable(request.resource.data.groupId)
+        && request.resource.data.teacherId == get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)).data.teacherId
+        && request.resource.data.teacherId != request.auth.uid;
+
+      // (أ) قرار المدرس: pending ← accepted/rejected، وبلا لمس أي حقل آخر.
+      // «حجز مقعد في مجموعة» قرار مدرس ⇒ يتطلب توثيقًا (P14).
+      allow update: if signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+
+      // (ب) إلغاء الطالب لطلبه المعلّق — الحالة **ومعها موعد التهدئة** (P24).
+      //
+      // ⚠️ هذا الحقل ليس تجميليًا: حلقة «أرسل ⇒ ألغِ ⇒ أرسل» كانت بلا حد،
+      // فيستطيع طالب واحد إغراق المدرس بعشرات الطلبات في دقيقة. القواعد تفرض
+      // أن يكتب الإلغاء موعدًا في المستقبل (لا ماضيًا ولا محذوفًا)، فلا يمكن
+      // للعميل تجاوز التهدئة بتعديل الطلب.
+      // - الحد الأدنى 4 دقائق (أقل من مدة التطبيق 5 دقائق بهامش فرق الساعة).
+      // - الحد الأعلى 30 دقيقة: لا يقفل الطالب نفسه سنة بسبب ساعة خاطئة.
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.cooldownUntil is timestamp
+        && request.resource.data.cooldownUntil >= request.time + duration.value(4, 'm')
+        && request.resource.data.cooldownUntil <= request.time + duration.value(30, 'm')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cooldownUntil']);
+
+      // (ج) إعادة الطلب بعد رفض/إلغاء: نفس المستند يعود pending، بشرط أن
+      // تكون المجموعة ما زالت منشورة وبها مقعد (السعة تُفحص من جديد).
+      //
+      // (P24) **وأن تكون فترة التهدئة انتهت.** `request.time` هو وقت الخادم،
+      // فالساعة المحلية للطالب لا تُقصّر المدة. السجلات القديمة بلا
+      // `cooldownUntil` تُقرأ بصفر ⇒ لا حجب عليها (توافق رجعي).
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status in ['rejected', 'cancelled']
+        && validNewRequest()
+        && request.time >= resource.data.get('cooldownUntil', timestamp.value(0))
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.teacherId == resource.data.teacherId
+        && groupIsJoinable(resource.data.groupId);
+
+      // حذف السجل (P9): صاحب المجموعة، **وفقط للصفوف المفتوحة**
+      // (`pending`/`accepted`). يُستخدم في معاملة نقل العضو: صفوف المجموعة
+      // المصدر تُحذف بعد خروج العضو، فلا يبقى طلب «مقبول» لطالب خارجها.
+      //
+      // لماذا شرط الحالة لا فحص العضوية؟ لأن `exists()` في معاملة يقرأ الحالة
+      // **قبل** الكتابة، فشرط «ليس عضوًا» كان يرفض حذف نفس السجل في المعاملة
+      // التي تُخرجه من العضوية (تحقّق على المحاكي). وشرط الحالة بلا أي قراءة
+      // مستندات: يحمي تاريخ الطلبات المغلقة (مرفوض/ملغى) من المحو، ويترك
+      // الصفوف المفتوحة للمالك ينظّفها.
+      allow delete: if isAdminWriter() || (
+        signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && resource.data.status in ['pending', 'accepted']
+      );
+    }
+
+    // ── 4-ب) groupWaitlist/{entryId} — قائمة انتظار المجموعة المكتملة (P9) ──
+    // المعرّف حتمي: `groupId_studentId`، فصف واحد لكل طالب في كل مجموعة.
+    // **المنتظر ليس عضوًا**: لا مستند في members، فلا يقرأ الجدول ولا المحادثة.
+    match /groupWaitlist/{entryId} {
+      function waitlistKeys() {
+        return ['groupId', 'groupTitle', 'teacherId', 'studentId',
+                'studentName', 'status', 'addedAt', 'decidedAt', 'decidedBy'];
+      }
+
+      function groupIsActive(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.isActive == true;
+      }
+
+      function groupIsFull(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTaken >= get(/databases/$(database)/documents/studyGroups/$(groupId)).data.seatsTotal;
+      }
+
+      function groupOwnerId(groupId) {
+        return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+      }
+
+      function validNewEntry() {
+        return request.resource.data.groupId is string
+          && request.resource.data.groupTitle is string
+          && request.resource.data.groupTitle.size() >= 3
+          && request.resource.data.groupTitle.size() <= 80
+          && request.resource.data.teacherId is string
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && request.resource.data.addedAt is timestamp
+          && request.resource.data.status == 'waiting'
+          && request.resource.data.keys().hasOnly(waitlistKeys());
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             resource.data.studentId == request.auth.uid
+             || resource.data.teacherId == request.auth.uid
+           ));
+
+      // الطالب يضيف نفسه فقط، لمجموعة **مكتملة** ومنشورة، وبمعرّف مشتق.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && entryId == request.resource.data.groupId + '_' + request.auth.uid
+        && validNewEntry()
+        && groupIsActive(request.resource.data.groupId)
+        && groupIsFull(request.resource.data.groupId)
+        && request.resource.data.teacherId == groupOwnerId(request.resource.data.groupId)
+        && request.resource.data.teacherId != request.auth.uid;
+
+      // (أ) المدرس يقبل منتظرًا: waiting ← promoted، وبلا لمس أي حقل آخر.
+      // زيادة المقعد تحدث بتعديل منفصل على المجموعة تقبله القاعدة (ب).
+      // ترقية منتظر = قبول عضو جديد ⇒ تتطلب توثيقًا (P14).
+      allow update: if signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'promoted'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy']);
+
+      // (ب) الطالب يغادر الطابور — الحالة فقط، وبلا قرار مدرس.
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'left'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+
+      // (ج) العودة بعد المغادرة: الصف نفسه يعود waiting، بشرط أن تكون المجموعة
+      // ما زالت مكتملة ومنشورة (تُفحص من جديد، لا اعتمادًا على الحالة القديمة).
+      allow update: if signedIn()
+        && resource.data.studentId == request.auth.uid
+        && resource.data.status == 'left'
+        && validNewEntry()
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.teacherId == resource.data.teacherId
+        && resource.data.teacherId == groupOwnerId(resource.data.groupId)
+        && groupIsActive(resource.data.groupId)
+        && groupIsFull(resource.data.groupId);
+
+      // حذف الصف (P9): صاحب المجموعة، وفقط للصفوف المفتوحة
+      // (`waiting`/`promoted`). نفس منطق طلبات الانضمام وسيببه نفسه (قراءة
+      // المعاملة تسبق الكتابة)، ولا أثر على المقاعد.
+      allow delete: if isAdminWriter() || (
+        signedIn()
+        && resource.data.teacherId == request.auth.uid
+        && resource.data.status in ['waiting', 'promoted']
+      );
+    }
+
+    // ── 5) bookingRequests/{bookingId} — الحجوزات (P10) ──────────────────────
+    // القراءة لطرفي الطلب فقط. الإنشاء للطالب، والقرار للمدرس، والإلغاء
+    // للطرفين، وكل انتقال مقيّد بقائمة الحقول المسموح بتغييرها (A-75).
+    //
+    // **ما لا تستطيع القواعد فرضه:** تقاطع المواعيد (تحتاج استعلامًا). لذلك
+    // يوجد مستند تقويم يومي لكل مدرس (5-ب) تكتبه المعاملة نفسها، وكشف التعارض
+    // في الطبقة الوسطى. القواعد تمنع أن يكتب التقويمَ غيرُ المدرس، أو أن يضيف
+    // أحدٌ حجزًا دون قرار مدرس.
+    match /bookingRequests/{bookingId} {
+      function bookingKeys() {
+        return ['teacherId', 'teacherName', 'studentId', 'studentName',
+                'subject', 'note', 'status', 'requestedAt', 'dateKey',
+                'startMinutes', 'durationMinutes', 'decidedAt', 'decidedBy',
+                'cancelledAt', 'cancelledBy', 'proposalDateKey',
+                'proposalStartMinutes', 'proposedBy', 'proposedAt'];
+      }
+
+      function decisionKeys() {
+        return ['status', 'decidedAt', 'decidedBy'];
+      }
+
+      function cancellationKeys() {
+        return ['status', 'cancelledAt', 'cancelledBy'];
+      }
+
+      function proposalKeys() {
+        return ['status', 'proposalDateKey', 'proposalStartMinutes',
+                'proposedBy', 'proposedAt'];
+      }
+
+      // قبول اقتراح يحرّك الموعد إلى الوقت المقترح ويمسح حقول الاقتراح.
+      function acceptanceAfterProposalKeys() {
+        return ['status', 'decidedAt', 'decidedBy', 'dateKey', 'startMinutes',
+                'durationMinutes', 'proposalDateKey', 'proposalStartMinutes',
+                'proposedBy', 'proposedAt'];
+      }
+
+      function changedOnly(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      function validSlot() {
+        return request.resource.data.durationMinutes in [30, 45, 60, 90, 120]
+          && request.resource.data.startMinutes is int
+          && request.resource.data.startMinutes >= 480
+          && request.resource.data.startMinutes + request.resource.data.durationMinutes <= 1320
+          && request.resource.data.dateKey is string
+          && request.resource.data.dateKey.size() == 10;
+      }
+
+      function validProposal() {
+        return request.resource.data.proposalStartMinutes is int
+          && request.resource.data.proposalStartMinutes >= 480
+          && request.resource.data.proposalStartMinutes + resource.data.durationMinutes <= 1320
+          && request.resource.data.proposalDateKey is string
+          && request.resource.data.proposalDateKey.size() == 10
+          && request.resource.data.proposedAt is timestamp;
+      }
+
+      function isRequesterTeacher() {
+        return signedIn() && resource.data.teacherId == request.auth.uid;
+      }
+
+      function isRequesterStudent() {
+        return signedIn() && resource.data.studentId == request.auth.uid;
+      }
+
+      allow read: if isAdmin()
+        || (signedIn() && (
+             request.auth.uid == resource.data.studentId
+             || request.auth.uid == resource.data.teacherId
+           ));
+
+      // الإنشاء: الطالب لنفسه، لمدرس **موثّق** آخر، بحالة pending وموعد صالح.
+      // (P16) شرط التوثيق هنا لا في الواجهة: الملف غير الموثّق لا يُقرأ للطلاب،
+      // وطلب حجز عليه يفتح باب إزعاج بلا حصة ممكنة. المدرس غير الموثّق يستطيع
+      // قراءة طلباته لكنه لا يستطيع قبولها (P14)، فلا معنى لوصول الطلب أصلًا.
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && teacherVerified(request.resource.data.teacherId)
+        && request.resource.data.teacherId is string
+        && request.resource.data.teacherId != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt is timestamp
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() >= 3
+        && request.resource.data.subject.size() <= 80
+        && request.resource.data.studentName is string
+        && request.resource.data.teacherName is string
+        && (!('note' in request.resource.data.keys())
+            || (request.resource.data.note is string
+                && request.resource.data.note.size() <= 200))
+        && validSlot()
+        && request.resource.data.keys().hasOnly(bookingKeys());
+
+      // (أ) ردّ المدرس على اقتراح وقت بديل: قبول (يصبح الوقت المقترح هو
+      // الموعد — نتحقق أنه هو نفسه) أو رفض (يُنهي الطلب).
+      // القبول/الرفض قرار مدرس ⇒ يتطلب توثيقًا (P14).
+      allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'rescheduleProposed'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(acceptanceAfterProposalKeys())
+        && (
+             request.resource.data.status == 'rejected'
+             || (
+                  request.resource.data.dateKey == resource.data.proposalDateKey
+                  && request.resource.data.startMinutes == resource.data.proposalStartMinutes
+                )
+           );
+
+      // (أ-٢) ردّ الطالب على اقتراح المدرس — نفس الشرطين بالضبط، بالدور الآخر.
+      allow update: if isRequesterStudent()
+        && resource.data.status == 'rescheduleProposed'
+        && resource.data.proposedBy == 'teacher'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(acceptanceAfterProposalKeys())
+        && (
+             request.resource.data.status == 'rejected'
+             || (
+                  request.resource.data.dateKey == resource.data.proposalDateKey
+                  && request.resource.data.startMinutes == resource.data.proposalStartMinutes
+                )
+           );
+
+      // (ب) المدرس يقبل طلبًا معلّقًا بلا اقتراح (الحقول الأساسية كما هي).
+      // **قبل التوثيق لا يوجد قبول** (P14): الطالب ينتظر، والملف يُراجع.
+      allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // (ج) المدرس يرفض طلبًا معلّقًا — بلا أي تغيير في الموعد المطلوب.
+      allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'rejected'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // (د) اقتراح وقت بديل: من أي طرف، لطلب معلّق أو مؤكد، بموعد صالح.
+      allow update: if (isRequesterTeacher() || isRequesterStudent())
+        && resource.data.status in ['pending', 'accepted']
+        && request.resource.data.status == 'rescheduleProposed'
+        && request.resource.data.proposedBy in ['teacher', 'student']
+        && validProposal()
+        && changedOnly(proposalKeys());
+
+      // (هـ) إلغاء: من أي طرف، والحالة تُصنَّف مبكرًا/متأخرًا في الطبقة الوسطى
+      // (التصنيف للعرض لا يمنح صلاحية، فالقواعد تقبل الحالتين).
+      allow update: if (isRequesterTeacher() || isRequesterStudent())
+        && resource.data.status in ['pending', 'accepted', 'rescheduleProposed']
+        && request.resource.data.status in ['cancelled', 'cancelledLate']
+        && request.resource.data.cancelledBy == request.auth.uid
+        && request.resource.data.cancelledAt is timestamp
+        && changedOnly(cancellationKeys());
+
+      // (و) إعلان التنفيذ: المدرس وحده، ولموعد مؤكد.
+      allow update: if isRequesterTeacher()
+        && teacherVerified(request.auth.uid)
+        && resource.data.status == 'accepted'
+        && request.resource.data.status == 'completed'
+        && request.resource.data.decidedBy == request.auth.uid
+        && request.resource.data.decidedAt is timestamp
+        && changedOnly(decisionKeys());
+
+      // لا حذف: سجل الحجز يبقى بعد الإلغاء.
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 5-ب) teacherCalendar/{teacherId_dateKey} — تقويم يومي (P10) ──────────
+    // مستند واحد لكل مدرس/يوم يحمل فترات محجوزة. وجوده يجعل قرار القبول
+    // وقراءة التقويم في معاملة واحدة، فيتسلسل القبولان المتزامنان (A-76).
+    //
+    // المالك يضيف/يحدّث، وأي مسجّل يستطيع **الحذف فقط** (لأن الطالب يلغي
+    // حجزه بنفسه فيحرّر وقته). الحذف لا يضيف وقتًا ولا يغيّر المالك.
+    match /teacherCalendar/{calendarId} {
+      function busyKeys() {
+        return ['teacherId', 'dateKey', 'busy'];
+      }
+
+      // (P16) `resource == null` مقصود: القبول يقرأ **تقويم اليوم** داخل معاملة
+      // قبل أن يكون المستند موجودًا (أول حجز في اليوم). بدون هذا الشرط تفشل
+      // قراءة مستند غير موجود بالقواعد، فيُرفض أول حجز في كل يوم.
+      allow read: if isAdmin()
+        || (signedIn() && (resource == null
+                           || resource.data.teacherId == request.auth.uid));
+
+      allow create: if signedIn()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.dateKey is string
+        && request.resource.data.busy is map
+        && request.resource.data.keys().hasOnly(busyKeys());
+
+      allow update: if signedIn()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.dateKey == resource.data.dateKey
+        && request.resource.data.keys().hasOnly(busyKeys())
+        && request.resource.data.busy is map
+        && (
+             // (أ) المدرس صاحب التقويم: يضيف أو يحرّر أي فترة.
+             request.auth.uid == resource.data.teacherId
+             // (ب) غيره: **إزالة فقط** — لا يزيد حجم الخريطة ولا يضيف مفاتيح.
+             || (
+                  request.resource.data.busy.size() <= resource.data.busy.size()
+                  && request.resource.data.busy.keys().hasOnly(resource.data.busy.keys())
+                )
+           );
+
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 6) teacherSettings/{teacherId} — خصوصية المدرس (P11) ─────────────────
+    // قرار واحد صريح: هل يستقبل المدرس رسائل قبل الحجز؟ **غياب المستند يعني
+    // الرفض** (A-78): لا نكتب القيمة الافتراضية نيابةً عن المدرس.
+    //
+    // القراءة لكل مسجّل: الطالب يحتاجها قبل أن يبادر، وهي قيمة منطقية واحدة
+    // لا تكشف شيئًا آخر. الكتابة لصاحبها فقط وبحقلين محددين.
+    match /teacherSettings/{teacherId} {
+      allow read: if isAdmin() || signedIn();
+
+      allow create, update: if isSelf(teacherId)
+        && request.resource.data.keys().hasOnly(
+             ['allowDirectMessages', 'updatedAt'])
+        && request.resource.data.allowDirectMessages is bool
+        && request.resource.data.updatedAt is timestamp;
+
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 7) directChats/{chatId} — محادثات مباشرة (P11) ───────────────────────
+    // **الخيط مشتق من الطرفين:** `chatId == teacherId + '_' + studentId`، فلا
+    // يمكن إنشاء محادثة مزيّفة أو خيط ثانٍ لنفس الزوج.
+    //
+    // الأصل الموثّق إجباري، وواحد فقط:
+    //   - `booking`: يوجد حجز بين الطرفين فعلًا، وحالته ليست الرفض.
+    //   - `group`: الطالب عضو (exists على مستند العضوية) عند هذا المدرس.
+    //   - `inquiry`: المدرس فعّل `allowDirectMessages` (غياب الإعداد = رفض).
+    //
+    // القراءة للطرفين فقط، والرسائل في المجموعة الفرعية تُورَّث بالفحص نفسه.
+    match /directChats/{chatId} {
+      function chatKeys() {
+        return ['teacherId', 'teacherName', 'studentId', 'studentName',
+                'subject', 'origin', 'bookingId', 'groupId', 'createdAt',
+                'lastMessageAt', 'lastMessageText', 'lastSenderId',
+                'studentLastReadAt', 'teacherLastReadAt'];
+      }
+
+      function isParticipant() {
+        return signedIn() && (
+          request.auth.uid == resource.data.teacherId
+          || request.auth.uid == resource.data.studentId
+        );
+      }
+
+      function isCreatorParticipant() {
+        return signedIn() && (
+          request.auth.uid == request.resource.data.teacherId
+          || request.auth.uid == request.resource.data.studentId
+        );
+      }
+
+      function idMatchesParties() {
+        return chatId == request.resource.data.teacherId + '_'
+          + request.resource.data.studentId;
+      }
+
+      function commonPayload() {
+        return signedIn()
+          && isCreatorParticipant()
+          && idMatchesParties()
+          && request.resource.data.teacherId != request.resource.data.studentId
+          && request.resource.data.keys().hasOnly(chatKeys())
+          && request.resource.data.origin is string
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.teacherName is string
+          && request.resource.data.teacherName.size() > 0
+          && request.resource.data.teacherName.size() <= 80
+          && request.resource.data.studentName is string
+          && request.resource.data.studentName.size() > 0
+          && request.resource.data.studentName.size() <= 80
+          && (!('subject' in request.resource.data.keys())
+              || (request.resource.data.subject is string
+                  && request.resource.data.subject.size() <= 80));
+      }
+
+      function bookingOfChat() {
+        return get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.bookingId)).data;
+      }
+
+      function teacherSettingsDoc() {
+        return get(/databases/$(database)/documents/teacherSettings/$(request.resource.data.teacherId)).data;
+      }
+
+      // `resource == null` ليست ثغرة: هي حالة «المستند غير موجود». بدونها
+      // تصبح قراءة خيط لم يُنشأ بعد **ممنوعة** لا «غير موجودة»، فينكسر تدفّق
+      // «إن لم توجد محادثة فأنشئها» في العميل.
+      allow read: if isAdmin() || resource == null || isParticipant();
+
+      // (أ) خيط مرتبط بحجز: الطالب أو المدرس، والحجز يخصّ الطرفين معًا.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'booking'
+        && request.resource.data.bookingId is string
+        && !('groupId' in request.resource.data.keys())
+        && bookingOfChat().studentId == request.resource.data.studentId
+        && bookingOfChat().teacherId == request.resource.data.teacherId
+        && bookingOfChat().status in ['pending', 'accepted', 'rescheduleProposed',
+                                      'completed', 'cancelled', 'cancelledLate'];
+
+      // (ب) خيط عضو مجموعة: العضوية موجودة، والمجموعة لهذا المدرس نفسه.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'group'
+        && request.resource.data.groupId is string
+        && !('bookingId' in request.resource.data.keys())
+        && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)/members/$(request.resource.data.studentId))
+        && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.groupId)).data.teacherId == request.resource.data.teacherId;
+
+      // (ج) استفسار قبل الحجز: الطالب ينشئه، **والمدرس فعّل** الخيار.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'inquiry'
+        && request.resource.data.studentId == request.auth.uid
+        && !('bookingId' in request.resource.data.keys())
+        && !('groupId' in request.resource.data.keys())
+        && teacherSettingsDoc().allowDirectMessages == true;
+
+      // (ج-٢) خيط طلب انضمام (P24): الطالب أرسل طلبًا معلّقًا (أو قُبل) لهذا
+      // المدرس، فصار بينهما سبب حقيقي للتواصل قبل أن يصبح عضوًا. السند يقرأه
+      // الخادم من مستند الطلب نفسه (لا من العميل)، ولذلك لا يمكن فتح خيط
+      // «طلب انضمام» بلا طلب فعلي.
+      allow create: if commonPayload()
+        && request.resource.data.origin == 'joinRequest'
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.groupId is string
+        && !('bookingId' in request.resource.data.keys())
+        && get(/databases/$(database)/documents/groupJoinRequests/$(request.resource.data.groupId + '_' + request.auth.uid)).data.status in ['pending', 'accepted']
+        && get(/databases/$(database)/documents/groupJoinRequests/$(request.resource.data.groupId + '_' + request.auth.uid)).data.teacherId == request.resource.data.teacherId;
+
+      // (د) حالة القراءة: كل طرف يكتب حقلَه وحده، ولا يمسّ شيئًا آخر.
+      // `size() > 0` ضروري: كتابة القيمة نفسها لا تُنتج فروقًا، فتنجح
+      // `hasOnly` على مجموعة فارغة — وهذا منفذ لكتابة «لا شيء» باسم القراءة.
+      allow update: if isParticipant()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
+        && (
+             (request.auth.uid == resource.data.studentId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentLastReadAt'])
+              && request.resource.data.studentLastReadAt is timestamp)
+             ||
+             (request.auth.uid == resource.data.teacherId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacherLastReadAt'])
+              && request.resource.data.teacherLastReadAt is timestamp)
+           );
+
+      // (هـ) ملخّص آخر رسالة: يكتبه مرسل الرسالة نفسه فقط، بعدها في الدفعة
+      // نفسها. لا يغيّر الأطراف ولا الأصل، ولا يُرجِع الزمن للخلف.
+      //
+      // **حدّ معروف:** القواعد لا تستطيع إثبات أن الرسالة كُتبت في نفس الدفعة
+      // (`get` يرى ما قبلها)، فمنعنا هنا ما يضر: لا ينتحل المرسل، ولا يغيّر
+      // إلا ثلاثة حقول، ولا يعرض نصًا أطول من حدّه. النص نفسه في مجموعة
+      // الرسائل محكوم بقاعدة القراءة/الكتابة الخاصة بها.
+      allow update: if isParticipant()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.origin == resource.data.origin
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
+        && request.resource.data.lastSenderId == request.auth.uid
+        && request.resource.data.lastMessageAt is timestamp
+        && request.resource.data.lastMessageAt >= resource.data.get('lastMessageAt', timestamp.value(0))
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessageText.size() > 0
+        && request.resource.data.lastMessageText.size() <= 500
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['lastMessageAt', 'lastMessageText', 'lastSenderId']);
+
+      // لا حذف من التطبيق: المحادثة سجل، والحذف قرار إداري.
+      allow delete: if isAdminWriter();
+
+      // ── 7-ب) رسائل المحادثة ─────────────────────────────────────────────
+      // القراءة للطرفين فقط، والكتابة لمرسِل يساوي معرّفه `uid`، وبشرط أن
+      // يظل المحتوى مسموحًا: استفسار أُوقف استقباله، أو حجز مرفوض، يمنعان
+      // **الجديد** ولا يمسحان القديم (سجل يُقرأ ولا يُعاد كتابته).
+      match /messages/{messageId} {
+        function parentChat() {
+          return get(/databases/$(database)/documents/directChats/$(chatId)).data;
+        }
+
+        function viewerIsParticipant() {
+          return signedIn() && (
+            request.auth.uid == parentChat().teacherId
+            || request.auth.uid == parentChat().studentId
+          );
+        }
+
+        function channelAllowsSending() {
+          return (parentChat().origin == 'booking'
+                  && get(/databases/$(database)/documents/bookingRequests/$(parentChat().bookingId)).data.status != 'rejected')
+            || parentChat().origin == 'group'
+            // (P24) خيط طلب الانضمام قائم على طلب حقيقي، فلا حاجة لشرط
+            // إعداد الرسائل (الطلب نفسه هو السند، ووجوده فُحص عند الإنشاء).
+            || parentChat().origin == 'joinRequest'
+            || (parentChat().origin == 'inquiry'
+                && get(/databases/$(database)/documents/teacherSettings/$(parentChat().teacherId)).data.allowDirectMessages == true);
+        }
+
+        allow read: if isAdmin() || viewerIsParticipant();
+
+        // (P24) الرسالة قد تكون صورة: `imageId` يسمح بنصّ فارغ (الصورة هي
+        // المحتوى)، والنص بلا صورة يجب أن يبقى غير فارغ — فلا تُكتب «رسالة
+        // صامتة» لا يراها أحد.
+        allow create: if viewerIsParticipant()
+          && channelAllowsSending()
+          && request.resource.data.keys().hasOnly(
+               ['chatId', 'senderId', 'senderName', 'senderRole', 'text',
+                'sentAt', 'imageId'])
+          && request.resource.data.chatId == chatId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.senderName.size() > 0
+          && request.resource.data.senderName.size() <= 80
+          && request.resource.data.senderRole in ['student', 'teacher']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 500
+          && (request.resource.data.text.size() > 0
+              || ('imageId' in request.resource.data.keys()))
+          && (!('imageId' in request.resource.data.keys())
+              || (request.resource.data.imageId is string
+                  && request.resource.data.imageId.size() > 0
+                  && request.resource.data.imageId.size() <= 200))
+          && request.resource.data.sentAt is timestamp;
+
+        allow update, delete: if isAdminWriter();
+      }
+
+      // ── 7-ج) صور المحادثة المؤقتة (P24) ──────────────────────────────────
+      // صورة لكل مستند بدل حقل في الرسالة: الرسالة تُقرأ دائمًا، والصورة
+      // تُقرأ عند عرضها فقط. و`expiresAt` **مفروض هنا**: بعد خمسة أيام تصبح
+      // القراءة مرفوضة على الخادم، والحذف متاح ليتحرر التخزين.
+      match /images/{imageId} {
+        function imageParentChat() {
+          return get(/databases/$(database)/documents/directChats/$(chatId)).data;
+        }
+
+        function imageViewerIsParticipant() {
+          return signedIn() && (
+            request.auth.uid == imageParentChat().teacherId
+            || request.auth.uid == imageParentChat().studentId
+          );
+        }
+
+        function imageKeys() {
+          return ['chatId', 'senderId', 'imageBase64', 'mimeType', 'createdAt',
+                  'expiresAt'];
+        }
+
+        // لا قراءة بعد الانتهاء: هذا هو «الحذف التلقائي» الذي لا يعتمد على
+        // جهاز المستخدم. الصورة تبقى مخزّنة حتى يمرّ أحد عليها فيُحذف مستندها.
+        allow read: if imageViewerIsParticipant()
+          && request.time < resource.data.expiresAt;
+
+        // المُرسِل نفسه فقط، وبموعد انتهاء في المدى المسموح: لا صورة أبدية
+        // (`<= 5 أيام + ساعة`) ولا صورة تنتهي قبل أن تُقرأ.
+        allow create: if imageViewerIsParticipant()
+          && request.resource.data.keys().hasOnly(imageKeys())
+          && request.resource.data.chatId == chatId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.imageBase64 is string
+          && request.resource.data.imageBase64.size() >= 64
+          && request.resource.data.imageBase64.size() <= 400000
+          && request.resource.data.mimeType in ['image/jpeg', 'image/png']
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time + duration.value(4, 'd')
+          && request.resource.data.expiresAt <= request.time + duration.value(5, 'd');
+
+        // الحذف بعد الانتهاء فقط (تنظيف)، أو من الإدارة. صورة سارية لا يمسحها
+        // أحد — لا المُرسِل ولا الطرف الآخر.
+        allow delete: if (imageViewerIsParticipant()
+                          && request.time >= resource.data.expiresAt)
+          || isAdminWriter();
+
+        allow update: if false;
+      }
+    }
+
+    // ── 9) notifications/{notificationId} — إشعارات داخل التطبيق (P12) ───────
+    // **لمن؟** مستند واحد لمستلم واحد. القراءة والتعليم والحذف للمستلم فقط،
+    // والإدارة.
+    //
+    // **الإنشاء:** يكتبه الطرف الذي نفّذ الفعل (`actorId == request.auth.uid`)،
+    // لأن المشروع لا يستخدم Cloud Functions (تحتاج خطة Blaze). القواعد هي
+    // الحارس: تتحقق من علاقة حقيقية بين المُحدِث والمستلم، ومن أن النوع يطابق
+    // حالة الكيان المقصود — فلا يمكن تزوير إشعار «قُبل حجزك» لحجز معلّق، ولا
+    // مراسلة شخص لا توجد بينك وبينه علاقة.
+    //
+    // **حدّ معروف:** العنوان والنص يكتبهما العميل (بالعربية، وبحدود طول)، لأن
+    // ترجمتها في الخادم تحتاج دالة سحابية. ما يهم — النوع والوجهة والمستلم —
+    // مفحوص، والنص للعرض فقط.
+    match /notifications/{notificationId} {
+      function notificationKeys() {
+        return ['recipientId', 'type', 'actorId', 'actorName', 'targetId',
+                'title', 'body', 'createdAt', 'readAt'];
+      }
+
+      function bookingOfNotification() {
+        return get(/databases/$(database)/documents/bookingRequests/$(request.resource.data.targetId)).data;
+      }
+
+      function chatOfNotification() {
+        return get(/databases/$(database)/documents/directChats/$(request.resource.data.targetId)).data;
+      }
+
+      function groupOfNotification() {
+        return get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data;
+      }
+
+      // (P25) طلب الانضمام الذي يتحدث عنه الإشعار: معرّفه حتمي
+      // (`groupId_studentId`)، والمجموعة هي `targetId`. نقرأه من الخادم فلا
+      // يمكن إرسال «طلب انضمام جديد» بلا طلب حقيقي، ولا «قُبل» قبل القبول.
+      function joinRequestOfNotification(targetId, studentId) {
+        return get(/databases/$(database)/documents/groupJoinRequests/$(targetId + '_' + studentId)).data;
+      }
+
+      function validText() {
+        return request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.actorName is string
+          && request.resource.data.actorName.size() > 0
+          && request.resource.data.actorName.size() <= 80
+          && (!('body' in request.resource.data.keys())
+              || (request.resource.data.body is string
+                  && request.resource.data.body.size() > 0
+                  && request.resource.data.body.size() <= 200));
+      }
+
+      // نوع الحجز يجب أن يطابق الحالة الفعلية، حتى لا يُزعم «قُبل» أو «رُفض»
+      // قبل حدوثه.
+      function bookingTypeMatchesStatus() {
+        return (request.resource.data.type == 'bookingRequested'
+                && bookingOfNotification().status == 'pending')
+          || (request.resource.data.type == 'bookingAccepted'
+                && bookingOfNotification().status == 'accepted')
+          || (request.resource.data.type == 'bookingRejected'
+                && bookingOfNotification().status == 'rejected')
+          || (request.resource.data.type == 'rescheduleProposed'
+                && bookingOfNotification().status == 'rescheduleProposed');
+      }
+
+      // طرفا الحجز: أحدهما المستلم والآخر المُحدِث (لا إشعار لنفسك).
+      function bookingPartiesMatch() {
+        return request.resource.data.recipientId in [
+                 bookingOfNotification().studentId,
+                 bookingOfNotification().teacherId
+               ]
+          && request.auth.uid in [
+               bookingOfNotification().studentId,
+               bookingOfNotification().teacherId
+             ];
+      }
+
+      // طرفا المحادثة: كلاهما مشارك، أحدهما المستلم والآخر المُحدِث.
+      function chatPartiesMatch() {
+        return request.resource.data.recipientId in [
+                 chatOfNotification().studentId,
+                 chatOfNotification().teacherId
+               ]
+          && request.auth.uid in [
+               chatOfNotification().studentId,
+               chatOfNotification().teacherId
+             ];
+      }
+
+      allow read: if isAdmin() || (signedIn() && isSelf(resource.data.recipientId));
+
+      allow create: if signedIn()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && request.resource.data.createdAt is timestamp
+        && !('readAt' in request.resource.data.keys())
+        && request.resource.data.keys().hasOnly(notificationKeys())
+        && validText()
+        && (
+             // (أ) إشعارات الحجز: النوع يطابق الحالة، والطرفان هما المستلم
+             // والمُحدِث.
+             (request.resource.data.type in ['bookingRequested', 'bookingAccepted',
+                                             'bookingRejected', 'rescheduleProposed']
+              && bookingTypeMatchesStatus()
+              && bookingPartiesMatch())
+             // (ب) رسالة مباشرة: المُحدِث مرسل داخل المحادثة، والمستلم طرفها
+             // الآخر.
+             || (request.resource.data.type == 'directMessage'
+                 && chatPartiesMatch())
+             // (ج) ترقية من قائمة الانتظار: المالك يُشعر عضوًا صار له مقعد.
+             || (request.resource.data.type == 'waitlistPromoted'
+                 && groupOfNotification().teacherId == request.auth.uid
+                 && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)/members/$(request.resource.data.recipientId)))
+             // (د) طلب انضمام جديد (P25): الطالب يُشعر **مدرس المجموعة**، والطلب
+             // موجود فعلًا بحالة `pending` ويخصّ هذا الطالب وهذا المدرس.
+             || (request.resource.data.type == 'joinRequested'
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).studentId == request.auth.uid
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).teacherId == request.resource.data.recipientId
+                 && joinRequestOfNotification(request.resource.data.targetId, request.auth.uid).status == 'pending')
+             // (هـ) قرار الانضمام (P25): المدرس يُشعر **الطالب** صاحب الطلب،
+             // ونوع الإشعار يطابق الحالة الفعلية للطلب.
+             || (request.resource.data.type in ['joinAccepted', 'joinRejected']
+                 && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).teacherId == request.auth.uid
+                 && ((request.resource.data.type == 'joinAccepted'
+                      && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).status == 'accepted')
+                  || (request.resource.data.type == 'joinRejected'
+                      && joinRequestOfNotification(request.resource.data.targetId, request.resource.data.recipientId).status == 'rejected')))
+           );
+
+      // تعليم مقروء: المستلم وحده، وحقل واحد فقط. `size() > 0` تمنع كتابة
+      // القيمة نفسها (فروق فارغة).
+      allow update: if signedIn()
+        && isSelf(resource.data.recipientId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().size() > 0
+        && request.resource.data.readAt is timestamp;
+
+      allow delete: if isAdminWriter() || (signedIn() && isSelf(resource.data.recipientId));
+    }
+
+    // ── 10) reviews/{reviewId} — تقييم بعد حصة منفّذة (P13) ──────────────────
+    // **معرّف التقييم = معرّف الحجز** (A-84): به يمنع التكرار بنيويًا، وتقرأ
+    // القواعد الحجز نفسه لتتحقق من بوابة الأهلية G7 بلا استعلام.
+    //
+    // **لماذا لا تعديل ولا حذف؟** لأن التقييم شهادة على حصة عُقدت. ومنع التعديل
+    // يمنع أيضًا «تبديل» تقييم سيئ بآخر بعد ضغط من المدرس.
+    match /reviews/{reviewId} {
+      function bookingOfReview() {
+        return get(/databases/$(database)/documents/bookingRequests/$(reviewId)).data;
+      }
+
+      function reviewKeys() {
+        return ['bookingId', 'teacherId', 'studentId', 'studentName', 'rating',
+                'comment', 'createdAt'];
+      }
+
+      // التقييمات عامة للمسجّلين: ملف المدرس يعرضها لكل من يفكر في الحجز.
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.bookingId == reviewId
+        && request.resource.data.keys().hasOnly(reviewKeys())
+        && request.resource.data.teacherId is string
+        && request.resource.data.teacherId.size() > 0
+        && request.resource.data.teacherId.size() <= 128
+        && request.resource.data.studentName is string
+        && request.resource.data.studentName.size() > 0
+        && request.resource.data.studentName.size() <= 80
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && (!('comment' in request.resource.data.keys())
+            || (request.resource.data.comment is string
+                && request.resource.data.comment.size() > 0
+                && request.resource.data.comment.size() <= 400))
+        && request.resource.data.createdAt is timestamp
+        // G7: الحجز منفّذ، لصاحب التقييم، وبنفس المدرس، وباسم منسوخ منه.
+        && bookingOfReview().status == 'completed'
+        && bookingOfReview().studentId == request.auth.uid
+        && bookingOfReview().teacherId == request.resource.data.teacherId
+        && bookingOfReview().studentName == request.resource.data.studentName;
+
+      allow update: if false;
+
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 11) teacherRatings/{teacherId} — المتوسط التراكمي (P13) ──────────────
+    // **مجموع + عدد، لا متوسط عشري** (A-85): الحساب العشري لا يُتحقق منه بدقة
+    // في القواعد، والصحيح يُتحقق منه بالمساواة. و`getAfter()` تقرأ التقييم
+    // المنشأ في نفس الدفعة/المعاملة، فتُقارن الزيادة بتقييمه بالضبط.
+    match /teacherRatings/{teacherId} {
+      function reviewOfAggregate() {
+        return getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data;
+      }
+
+      function ratingKeys() {
+        return ['teacherId', 'totalReviews', 'ratingSum', 'lastReviewId',
+                'updatedAt'];
+      }
+
+      allow read: if signedIn();
+
+      // أول تقييم: مستند جديد يبدأ من 1 ومجموعه هو تقييم التقييم نفسه.
+      allow create: if signedIn()
+        && request.resource.data.teacherId == teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.totalReviews == 1
+        && request.resource.data.ratingSum is int
+        && request.resource.data.lastReviewId is string
+        && request.resource.data.updatedAt is timestamp
+        && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+        && reviewOfAggregate().teacherId == teacherId
+        && reviewOfAggregate().studentId == request.auth.uid
+        && reviewOfAggregate().rating == request.resource.data.ratingSum;
+
+      // تقييم لاحق: زيادة **واحدة**، ومجموعها القديم + تقييم التقييم الجديد
+      // وحده. و`!exists()` تمنع إعادة استخدام تقييم قديم لزيادة جديدة.
+      allow update: if signedIn()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.totalReviews == resource.data.totalReviews + 1
+        && request.resource.data.ratingSum
+             == resource.data.ratingSum + reviewOfAggregate().rating
+        && request.resource.data.lastReviewId != resource.data.lastReviewId
+        && !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId))
+        && reviewOfAggregate().teacherId == teacherId
+        && reviewOfAggregate().studentId == request.auth.uid;
+
+      // حذف إداري لتقييم مخالف (P14): **نقصان فقط**، بمقدار بين 1 و5، وبعدد
+      // تقييمات ينقص واحدًا بالضبط. المسؤول لا يستطيع نفخ المتوسط ولا حذف
+      // تقييمين بحذف واحد، والقرار يُسجَّل في `contentReports`.
+      allow update: if isAdminWriter()
+        && request.resource.data.teacherId == resource.data.teacherId
+        && request.resource.data.keys().hasOnly(ratingKeys())
+        && request.resource.data.totalReviews == resource.data.totalReviews - 1
+        && resource.data.ratingSum - request.resource.data.ratingSum >= 1
+        && resource.data.ratingSum - request.resource.data.ratingSum <= 5;
+
+      // لا تقييمات متبقية ⇒ المستند يُحذف (لا يبقى صفر مضلّل).
+      allow delete: if isAdminWriter();
+    }
+
+    // ── 12) favorites/{favoriteId} — مفضلة الطالب (P13) ──────────────────────
+    // المعرّف مشتق: `{studentId}_{kind}_{targetId}` (A-86)، فلا تكرار، وحذف
+    // بلا بحث. والهدف يجب أن يكون **قائمًا** بالفعل: مدرس معتمد أو مجموعة نشطة.
+    match /favorites/{favoriteId} {
+      function favoriteKeys() {
+        return ['studentId', 'kind', 'targetId', 'createdAt'];
+      }
+
+      // `resource == null` = المستند غير موجود، وهي الحالة التي يسأل عنها
+      // العميل قبل أول إضافة إلى المفضلة.
+      allow read: if isAdmin()
+        || (signedIn() && (resource == null || isSelf(resource.data.studentId)));
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.keys().hasOnly(favoriteKeys())
+        && request.resource.data.kind in ['teacher', 'group']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && request.resource.data.createdAt is timestamp
+        && favoriteId == request.resource.data.studentId + '_' + request.resource.data.kind + '_' + request.resource.data.targetId
+        && (
+             (request.resource.data.kind == 'teacher'
+              && get(/databases/$(database)/documents/teacherProfiles/$(request.resource.data.targetId)).data.status == 'verified')
+             || (request.resource.data.kind == 'group'
+                 && get(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)).data.isActive == true)
+           );
+
+      allow delete: if isAdminWriter() || (signedIn() && isSelf(resource.data.studentId));
+    }
+
+    // ── 14) contentReports/{reportId} — بلاغات المحتوى (P14) ─────────────────
+    // المستخدم يُبلغ عن محتوى قائم، والإدارة تحسم البلاغ. **لا يُحذف البلاغ**:
+    // سجل «استُبعد» و«حُسم» جزء من المساءلة، ومن حُذف تقييمه يبقى البلاغ دليلًا.
+    match /contentReports/{reportId} {
+      function reportKeys() {
+        return ['targetType', 'targetId', 'targetLabel', 'reporterId', 'reason',
+                'details', 'status', 'createdAt', 'resolvedAt',
+                'resolutionNote', 'resolvedBy'];
+      }
+
+      // الهدف يجب أن يكون **قائمًا** فعلًا: لا بلاغ عن معرّف مخترع.
+      function targetExists(type, id) {
+        return (type == 'review'
+                 && exists(/databases/$(database)/documents/reviews/$(id)))
+          || (type == 'teacher'
+                 && exists(/databases/$(database)/documents/teacherProfiles/$(id)))
+          || (type == 'group'
+                 && exists(/databases/$(database)/documents/studyGroups/$(id)));
+      }
+
+      // البلاغ يقرأه صاحبه والإدارة فقط: لا يرى الطلاب بلاغات بعضهم.
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == resource.data.reporterId)
+        || isAdminDoc();
+
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'open'
+        && request.resource.data.targetType in ['review', 'teacher', 'group']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 128
+        && targetExists(
+             request.resource.data.targetType,
+             request.resource.data.targetId
+           )
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 80
+        && (!('details' in request.resource.data.keys())
+            || (request.resource.data.details is string
+                && request.resource.data.details.size() <= 400))
+        && (!('targetLabel' in request.resource.data.keys())
+            || (request.resource.data.targetLabel is string
+                && request.resource.data.targetLabel.size() <= 120))
+        && request.resource.data.keys().hasOnly(reportKeys());
+
+      // الحسم إداري: من open إلى resolved/dismissed، والهدف لا يتغيّر (فلا
+      // يُعاد توجيه بلاغ حُسم إلى محتوى آخر).
+      allow update: if isAdminWriter()
+        && resource.data.status == 'open'
+        && request.resource.data.status in ['resolved', 'dismissed']
+        && request.resource.data.reporterId == resource.data.reporterId
+        && request.resource.data.targetType == resource.data.targetType
+        && request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.keys().hasOnly(reportKeys())
+        && request.resource.data.resolvedAt is timestamp
+        && (!('resolutionNote' in request.resource.data.keys())
+            || (request.resource.data.resolutionNote is string
+                && request.resource.data.resolutionNote.size() <= 200));
+
+      allow delete: if false;
+    }
+
+    // ── 15) avatars/{uid} — صور الحساب (P22) ─────────────────────────────────
+    // مستند **مستقل** عن `users/{uid}` و`teacherProfiles/{uid}` عن قصد: الأول
+    // يُقرأ في كل تسجيل دخول، والثاني في كل نتيجة بحث. وضع ~30KB من الصور في
+    // أي منهما يضخّم كل قراءة ويستهلك حصة النطاق بلا داعٍ، بينما الصورة
+    // تُقرأ فقط عند عرضها.
+    //
+    // القيود كلها على الخادم:
+    // - المالك وحده يكتب صورته (لا صورة على حساب شخص آخر).
+    // - النوع من قيمتين فقط (`image/jpeg`/`image/png`) — لا HTML/SVG في حقل
+    //   يُعرض كصورة.
+    // - سقف الحجم `200000` حرف base64 (نفس `AvatarLimits.maxBase64Length`)،
+    //   فمحاولة رفع صورة كاميرا 4MB تُرفض بدل أن تُخزَّن.
+    // - القراءة لكل مسجّل: ملف المدرس العام يعرض صورته لأي طالب مسجّل.
+    match /avatars/{uid} {
+      function validAvatarPayload() {
+        return request.resource.data.keys().hasOnly(
+                 ['ownerId', 'imageBase64', 'mimeType', 'updatedAt'])
+          && request.resource.data.ownerId == uid
+          && request.resource.data.imageBase64 is string
+          && request.resource.data.imageBase64.size() >= 64
+          && request.resource.data.imageBase64.size() <= 200000
+          && request.resource.data.mimeType in ['image/jpeg', 'image/png']
+          && request.resource.data.updatedAt is timestamp;
+      }
+
+      allow read: if signedIn();
+
+      allow create, update: if isSelf(uid) && validAvatarPayload();
+
+      // حذف الصورة = عودة إلى الصورة الافتراضية المرسومة.
+      allow delete: if isSelf(uid);
+    }
+
+    // ── 16) مزاد التمييز الأسبوعي (P30) ─────────────────────────────────────
+    // **من يكتب؟** لا أحد من العملاء إطلاقًا: كل كتابة تمرّ عبر Cloud Functions
+    // بمفتاح خدمة (Admin SDK)، وهي تتخطى القواعد. ما يلي يحكم **القراءة** فقط،
+    // وهو الحدّ الذي يحمي خصوصية المزايدات ونتائجها.
+    //
+    // لماذا لا تُقرأ `auctions/{id}` من العميل؟ لأنها تحمل `highestBid` وعدد
+    // المزايدين وأعلى مبلغ — وهي بيانات تنافسية. المدرّس يحصل على ما يخصّه فقط
+    // (حالة الأسبوع، مزايدته، أدنى مزايدة تالية، والمهلة) من دالة `myAuctionState`
+    // التي تُعيد ملفًا مُنقّحًا، فلا يحتاج قراءة المستند أصلًا.
+    //
+    // `auctionResults/{id}` مستند **عام** بقصد: أسماء الفائزين المدفوعين ومراكزهم
+    // فقط. تكتبه الدالة بعد تنقيته من المبالغ، ومنه تُبنى شاشة «المميزون».
+    match /auctions/{auctionId} {
+      allow read: if isAdmin();
+      allow write: if false;
+
+      // مزايدة المدرّس نفسه فقط — لا مبالغ المنافسين ولا منافسيهم.
+      match /bids/{teacherId} {
+        allow read: if isAdmin() || isSelf(teacherId);
+        allow write: if false;
+      }
+
+      // الفائز يرى مقعده ومهلته؛ ولا يرى مقاعد الآخرين.
+      match /winners/{teacherId} {
+        allow read: if isAdmin() || isSelf(teacherId);
+        allow write: if false;
+      }
+    }
+
+    // النتائج العامة: أسماء الفائزين المدفوعين ومراكزهم فقط — لكل مسجّل
+    // (تُبنى منها شاشة «المميزون»)، ولا كتابة لأي عميل.
+    match /auctionResults/{auctionId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // الإعدادات الإدارية (أقل مزايدة، الخطوة، عدد المقاعد، النوافذ الزمنية).
+    match /auctionConfig/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // أثر كل عملية (مزايدة، إعلان، دفع، بديل، نشر) — للإدارة فقط.
+    match /auctionAudit/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // بصمات الطلبات لمنع الازدواج: داخل معاملات الخادم فقط، لا قراءة ولا كتابة
+    // للعملاء (ولا حتى الإدارة، فلا حاجة لعرضها).
+    match /auctionIdempotency/{key} {
+      allow read, write: if false;
+    }
+
+    // ── 17) كل ما لم يُذكر: ممنوع ────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
