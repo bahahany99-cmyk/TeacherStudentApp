@@ -209,6 +209,11 @@ Future<T> _guard<T>(Future<T> Function() action) async {
   }
 }
 
+/// زوج (معرّف، بيانات) لخرائط التحويل في `firestore_mappers`.
+(String, Map<String, Object?>) _entry(
+  QueryDocumentSnapshot<Map<String, dynamic>> doc,
+) => (doc.id, doc.data());
+
 /// قراءة ملفات المدرسين من `teacherProfiles`.
 ///
 /// ⚠️ الفلترة على `status == 'verified'` مكرّرة هنا **وعلى الخادم** (قواعد
@@ -582,10 +587,8 @@ class FirestoreTeacherRepository implements TeacherRepository {
   ///
   /// لو نقص المقعد وحده لبقيت عضوية بلا مقعد، ولو حُذفت العضوية وحدها لبقي
   /// مقعد محسوبًا لغير أحد — وكلاهما يفسد فحص السعة في القبول التالي.
-
-  (String, Map<String, Object?>) _entry(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) => (doc.id, doc.data());
+  ///
+  /// (P29) حُذف تكرار `_entry` المحلي هنا: الصيغة العامة أعلى الملف تكفي.
 }
 
 /// قراءة المجموعات وأعضائها.
