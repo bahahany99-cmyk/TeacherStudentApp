@@ -159,7 +159,6 @@ class _AuctionScreenState extends State<AuctionScreen> {
         bottom: false,
         child: AsyncView<AuctionState>(
           reloadKey: _reloads,
-          keepPreviousData: true,
           load: () => AppServicesScope.of(context).auctions.loadMyState(),
           builder: (BuildContext context, AuctionState state) =>
               _body(context, state),
@@ -206,7 +205,7 @@ class _AuctionScreenState extends State<AuctionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    InfoNote(
+                    const InfoNote(
                       text:
                           'كل شيء يُحسم على الخادم: الأهلية، والوقت، وعدد '
                           'الزيادات، والترتيب، والفائز. التطبيق يعرض ويُرسل '
@@ -214,7 +213,7 @@ class _AuctionScreenState extends State<AuctionScreen> {
                       icon: Icons.shield_outlined,
                     ),
                     const SizedBox(height: AppSpacing.xs),
-                    InfoNote(
+                    const InfoNote(
                       text:
                           'لا يظهر لك أي مبلغ أو اسم لمنافسيك، ولا يظهر لهم '
                           'اسمك أو مبلغك. تُعلن الأسماء فقط بعد انتهاء العرض.',

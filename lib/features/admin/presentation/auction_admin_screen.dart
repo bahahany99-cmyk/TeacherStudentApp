@@ -111,7 +111,6 @@ class _AuctionAdminScreenState extends State<AuctionAdminScreen> {
         bottom: false,
         child: AsyncView<AuctionAdminOverview>(
           reloadKey: _reloads,
-          keepPreviousData: true,
           load: () => AppServicesScope.of(context).auctions.loadAdminOverview(),
           builder: (BuildContext context, AuctionAdminOverview overview) =>
               _body(context, overview),
