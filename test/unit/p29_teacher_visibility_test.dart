@@ -13,6 +13,47 @@ import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.
 /// (القواعد تسمح) لكنه **لا يُكتشف** (فلتر المساواة يستبعده)، فيرى الطالب
 /// مجموعته وشارة توثيقه بينما صفحة المدرسين فارغة.
 
+/// مستند خام مبسّط (معرّف + حقول) لاختبار الدمج بلا أنواع متداخلة.
+class _Doc {
+  const _Doc(this.id, this.data);
+
+  final String id;
+  final Map<String, Object?> data;
+}
+
+/// يقلّد `_visible` في المستودع: دمج الصارم مع الواسع بالمعرّف، مع إسقاط
+/// الموسوم بالإخفاء — أي أن الدمج داخل الاستعلام الأساسي نفسه لا مسارًا جانبيًا.
+Future<List<_Doc>> _mergeDocs(Map<String, Map<String, Object?>> docs) {
+  return TeacherVisibilityFallback.resolveMerged<_Doc>(
+    strict: () async => <_Doc>[
+      for (final MapEntry<String, Map<String, Object?>> entry in docs.entries)
+        if (entry.value['status'] == 'verified' &&
+            entry.value['accountHidden'] == false)
+          _Doc(entry.key, entry.value),
+    ],
+    broad: () async => <_Doc>[
+      for (final MapEntry<String, Map<String, Object?>> entry in docs.entries)
+        if (entry.value['status'] == 'verified') _Doc(entry.key, entry.value),
+    ],
+    idOf: (_Doc doc) => doc.id,
+    isHidden: (_Doc doc) => TeacherVisibilityFallback.isExplicitlyHidden(doc.data),
+  );
+}
+
+/// يبني نموذج العرض من مستند خام كما يفعل المُحوِّل.
+TeacherProfile _toProfile(_Doc doc) {
+  return TeacherProfile(
+    id: doc.id,
+    displayName: doc.data['displayName']! as String,
+    subject: doc.data['subject']! as String,
+    stage: doc.data['stage']! as String,
+    area: doc.data['area']! as String,
+    bio: doc.data['bio']! as String,
+    status: TeacherProfileStatus.verified,
+    governorate: doc.data['governorate'] as String?,
+  );
+}
+
 /// مستودع وهمي يحاكي مستندات Firestore خامًا (المفتاح موجود أو غائب).
 class _RawStore implements AccountHiddenBackfillGateway {
   _RawStore(this.docs);
@@ -207,45 +248,6 @@ void main() {
   });
 
   group('(P29) البحث النصي «sh/Shady» مع ملف بلا accountHidden', () {
-    /// يقلّد `_visible` في المستودع: دمج الصارم مع الواسع بالمعرّف، مع إسقاط
-    /// الموسوم بالإخفاء — لا فرق بين «الاستعلام الأساسي» وأي مسار آخر.
-    Future<List<MapEntry<String, Map<String, Object?>>>> merged(
-      Map<String, Map<String, Object?>> docs,
-    ) {
-      return TeacherVisibilityFallback.resolveMerged<
-        MapEntry<String, Map<String, Object?>>
-      >(
-        strict: () async => <MapEntry<String, Map<String, Object?>>>[
-          for (final MapEntry<String, Map<String, Object?>> entry
-              in docs.entries)
-            if (entry.value['status'] == 'verified' &&
-                entry.value['accountHidden'] == false)
-              entry,
-        ],
-        broad: () async => <MapEntry<String, Map<String, Object?>>>[
-          for (final MapEntry<String, Map<String, Object?>> entry
-              in docs.entries)
-            if (entry.value['status'] == 'verified') entry,
-        ],
-        idOf: (MapEntry<String, Map<String, Object?>> entry) => entry.key,
-        isHidden: (MapEntry<String, Map<String, Object?>> entry) =>
-            TeacherVisibilityFallback.isExplicitlyHidden(entry.value),
-      );
-    }
-
-    TeacherProfile toProfile(MapEntry<String, Map<String, Object?> entry) {
-      return TeacherProfile(
-        id: entry.key,
-        displayName: entry.value['displayName']! as String,
-        subject: entry.value['subject']! as String,
-        stage: entry.value['stage']! as String,
-        area: entry.value['area']! as String,
-        bio: entry.value['bio']! as String,
-        status: TeacherProfileStatus.verified,
-        governorate: entry.value['governorate'] as String?,
-      );
-    }
-
     test('ملف قديم باسم Shady يظهر مع وجود ملفات ظاهرة أخرى', () async {
       final Map<String, Map<String, Object?>> docs =
           <String, Map<String, Object?>>{
@@ -262,9 +264,9 @@ void main() {
             ),
           };
 
-      final List<TeacherProfile> teachers = (await merged(
+      final List<TeacherProfile> teachers = (await _mergeDocs(
         docs,
-      )).map(toProfile).toList();
+      )).map(_toProfile).toList();
       expect(
         teachers.map((TeacherProfile t) => t.id),
         <String>['visible-1', 'shady'],
@@ -290,9 +292,9 @@ void main() {
             'shady': _rawProfile(id: 'shady', displayName: 'Shady Ali'),
           };
 
-      final List<TeacherProfile> teachers = (await merged(
+      final List<TeacherProfile> teachers = (await _mergeDocs(
         docs,
-      )).map(toProfile).toList();
+      )).map(_toProfile).toList();
       expect(teachers, hasLength(1));
       expect(teachers.single.id, 'shady');
     });

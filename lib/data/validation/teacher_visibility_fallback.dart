@@ -70,7 +70,7 @@ abstract final class TeacherVisibilityFallback {
       if (broadErrorIsFatal) {
         rethrow;
       }
-      broadItems = const <T>[];
+      broadItems = <T>[];
     }
 
     final Set<String> seen = <String>{};
