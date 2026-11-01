@@ -30,8 +30,9 @@ import 'package:teacher_student_app/features/profile/presentation/widgets/avatar
 /// دخل بحساب لم يُحفظ اختياره). والشاشة نفسها ليست مسارًا يمكن تجاوزه: يعرضها
 /// الهيكل الرئيسي بدلًا من محتواه، فتختفي كل التبويبات حتى يتم الاختيار.
 ///
-/// ## لماذا لا تُعرض للحسابات القديمة؟
-/// الشرط في [AvatarOnboardingPolicy] لا هنا — مكان واحد للحقيقة.
+/// ## من تُعرض له؟
+/// أي حساب طالب/مدرّس بلا `avatarPreset` صالح — والشرط في
+/// [AvatarOnboardingPolicy] لا هنا: مكان واحد للحقيقة.
 class AvatarOnboardingScreen extends StatefulWidget {
   const AvatarOnboardingScreen({super.key});
 

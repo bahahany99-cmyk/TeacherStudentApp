@@ -15,14 +15,14 @@ import 'package:teacher_student_app/features/profile/domain/avatar_onboarding_po
 /// 2. الحساب الجديد بلا اختيار يُوجب شاشة الاختيار الإلزامية.
 /// 3. التأكيد يحفظ `avatarPreset` فيبقى الاختيار بعد إعادة التشغيل والدخول.
 /// 4. مغادرة التطبيق قبل التأكيد تُبقي الحساب «ناقص الاختيار».
-/// 5. الحسابات القديمة والحسابات المكتملة لا تُحجب.
+/// 5. الحسابات المكتملة لا تُحجب، وأي حساب بلا صورة يُحجب مهما كان تاريخه.
 class _FakeAuthService implements AuthService {
   _FakeAuthService({this.storedPreset, this.createdAt});
 
   /// ما «تحفظه» قاعدة البيانات للحساب (يحاكي `users/{uid}`).
   int? storedPreset;
 
-  /// تاريخ إنشاء الحساب — يفصل الجديد عن القديم في سياسة الحجب.
+  /// تاريخ إنشاء الحساب — معلومة وصفية فقط، **لا تدخل في قرار الحجب**.
   DateTime? createdAt;
 
   UserRole role = UserRole.student;
@@ -206,30 +206,42 @@ void main() {
       expect(reopened.needsAvatarSelection, isTrue);
     });
 
-    test('الحساب القديم بلا اختيار لا يُحجب ويُعرض بصورة حتمية', () async {
+    test('حساب بلا اختيار يُحجب حتى لو كان تاريخ إنشائه قديمًا', () async {
+      // أُلغي استثناء «الحساب القديم»: التطبيق تجريبي ولا حسابات قدامى حقيقية،
+      // والقاعدة البسيطة هي أن غياب `avatarPreset` = لم يكمل الاختيار.
       final _FakeAuthService auth = _FakeAuthService(
-        createdAt: AvatarOnboardingPolicy.cutover.subtract(
-          const Duration(days: 120),
-        ),
+        createdAt: DateTime.utc(2024, 3, 3),
       );
       final SessionController session = SessionController(auth);
       await session.restore();
 
       final AppUser user = session.user!;
       expect(user.avatarPreset, isNull);
-      expect(session.needsAvatarSelection, isFalse);
+      expect(session.needsAvatarSelection, isTrue);
+      // والعرض نفسه لا يكون فارغًا: الاحتياط الحتمي يظهر في ملفه فقط.
       expect(user.resolvedAvatarPreset, AvatarPresets.forId(user.id));
-      expect(
-        AvatarPresets.all[user.resolvedAvatarPreset].asset,
-        startsWith('assets/avatars/'),
-      );
+    });
+
+    test('حساب بلا تاريخ إنشاء وبلا اختيار يُحجب أيضًا', () async {
+      final _FakeAuthService auth = _FakeAuthService();
+      final SessionController session = SessionController(auth);
+      await session.restore();
+
+      expect(session.user!.createdAt, isNull);
+      expect(session.user!.avatarPreset, isNull);
+      expect(session.needsAvatarSelection, isTrue);
+    });
+
+    test('قيمة محفوظة خارج المدى تُعامَل كعدم اختيار وتُحجب', () async {
+      final _FakeAuthService auth = _FakeAuthService(storedPreset: 42);
+      final SessionController session = SessionController(auth);
+      await session.restore();
+
+      expect(session.needsAvatarSelection, isTrue);
     });
 
     test('حساب أكمل اختياره سابقًا لا يُحجب', () async {
-      final _FakeAuthService auth = _FakeAuthService(
-        storedPreset: 22,
-        createdAt: DateTime.now().toUtc(),
-      );
+      final _FakeAuthService auth = _FakeAuthService(storedPreset: 22);
       final SessionController session = SessionController(auth);
       await session.restore();
 

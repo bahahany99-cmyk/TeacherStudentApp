@@ -332,28 +332,38 @@ void main() {
       expect(_confirmButton(tester).onPressed, isNull);
     });
 
-    testWidgets('8) الحسابات القديمة والمكتملة تدخل مباشرة بلا شاشة', (
+    testWidgets('8) لا تجاوز بغياب createdAt، والحساب المكتمل يدخل مباشرة', (
       WidgetTester tester,
     ) async {
       usePhoneSurface(tester);
 
-      // (أ) حساب قديم قبل تاريخ العمل بالشاشة وبلا اختيار محفوظ.
+      // (أ) حساب بلا صورة وتاريخ إنشائه **قديم جدًا** ⇒ يُحجب. لا استثناء زمني.
       final _FakeAuth legacy = _FakeAuth(
-        createdAt: AvatarOnboardingPolicy.cutover.subtract(
-          const Duration(days: 200),
-        ),
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       final ({AppServices services, SessionController session}) oldBundle =
           _bundle(legacy);
       await oldBundle.session.restore();
       await tester.pumpWidget(_host(oldBundle.services, oldBundle.session));
       await tester.pumpAndSettle();
-      expect(find.byType(AvatarOnboardingScreen), findsNothing);
+      expect(find.byType(AvatarOnboardingScreen), findsOneWidget);
+      expect(_confirmButton(tester).onPressed, isNull);
 
-      // (ب) حساب أكمل اختياره.
+      // (ب) حساب بلا صورة و**بلا تاريخ إنشاء إطلاقًا** ⇒ يُحجب أيضًا.
+      final _FakeAuth dateless = _FakeAuth();
+      final ({AppServices services, SessionController session}) datelessBundle =
+          _bundle(dateless);
+      await datelessBundle.session.restore();
+      await tester.pumpWidget(
+        _host(datelessBundle.services, datelessBundle.session),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AvatarOnboardingScreen), findsOneWidget);
+
+      // (ج) حساب لديه صورة صالحة محفوظة ⇒ يدخل مباشرة مهما كان تاريخه.
       final _FakeAuth completed = _FakeAuth(
         preset: 12,
-        createdAt: DateTime.now().toUtc(),
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       final ({AppServices services, SessionController session}) doneBundle =
           _bundle(completed);
@@ -368,57 +378,94 @@ void main() {
   });
 
   group('(P31) سياسة الحجب', () {
-    test('الحساب بلا تاريخ إنشاء لا يُحجب أبدًا', () {
+    test('بلا صورة محفوظة ⇒ محجوب، مهما كان تاريخ الإنشاء', () {
+      // بلا تاريخ إطلاقًا.
       expect(
         AvatarOnboardingPolicy.isRequired(
           const AppUser(
-            id: 'uid-legacy',
-            displayName: 'قديم',
+            id: 'uid-no-date',
+            displayName: 'بلا تاريخ',
             role: UserRole.student,
           ),
         ),
-        isFalse,
+        isTrue,
+        reason: 'غياب createdAt لا يعفي من الاختيار',
       );
-    });
-
-    test('الجلسة التجريبية لا تُحجب', () {
+      // بتاريخ قديم جدًا.
       expect(
         AvatarOnboardingPolicy.isRequired(
           AppUser(
+            id: 'uid-old',
+            displayName: 'قديم',
+            role: UserRole.teacher,
+            createdAt: DateTime.utc(2023, 5, 1),
+          ),
+        ),
+        isTrue,
+        reason: 'القدم لا يعفي من الاختيار',
+      );
+    });
+
+    test('صورة صالحة ⇒ لا حجب، مهما كان تاريخ الإنشاء', () {
+      for (final DateTime? created in <DateTime?>[
+        null,
+        DateTime.utc(2022),
+        DateTime.now().toUtc(),
+      ]) {
+        expect(
+          AvatarOnboardingPolicy.isRequired(
+            AppUser(
+              id: 'uid-done',
+              displayName: 'مكتمل',
+              role: UserRole.student,
+              avatarPreset: 0,
+              createdAt: created,
+            ),
+          ),
+          isFalse,
+        );
+      }
+    });
+
+    test('قيمة خارج المدى تُعامَل كغير صالحة ⇒ محجوب', () {
+      for (final int invalid in <int>[-1, AvatarPresets.count, 99]) {
+        expect(AvatarOnboardingPolicy.hasValidPreset(invalid), isFalse);
+        expect(
+          AvatarOnboardingPolicy.isRequired(
+            AppUser(
+              id: 'uid-bad',
+              displayName: 'قيمة ملوّثة',
+              role: UserRole.student,
+              avatarPreset: invalid,
+            ),
+          ),
+          isTrue,
+          reason: 'القيمة $invalid ليست من الثلاثين',
+        );
+      }
+      expect(AvatarOnboardingPolicy.hasValidPreset(29), isTrue);
+      expect(AvatarOnboardingPolicy.hasValidPreset(0), isTrue);
+    });
+
+    test('الجلسة التجريبية وجلسة الإدارة لا تُحجبان', () {
+      expect(
+        AvatarOnboardingPolicy.isRequired(
+          const AppUser(
             id: 'demo-student',
             displayName: 'زائر',
             role: UserRole.student,
             isDemoAccount: true,
-            createdAt: DateTime.now().toUtc(),
           ),
         ),
         isFalse,
       );
-    });
-
-    test('الحساب الجديد بلا اختيار يُحجب', () {
       expect(
         AvatarOnboardingPolicy.isRequired(
-          AppUser(
-            id: 'uid-new',
-            displayName: 'جديد',
-            role: UserRole.teacher,
-            createdAt: DateTime.now().toUtc(),
-          ),
-        ),
-        isTrue,
-      );
-    });
-
-    test('الحساب المكتمل لا يُحجب', () {
-      expect(
-        AvatarOnboardingPolicy.isRequired(
-          AppUser(
-            id: 'uid-new',
-            displayName: 'جديد',
-            role: UserRole.student,
-            avatarPreset: 4,
-            createdAt: DateTime.now().toUtc(),
+          const AppUser(
+            id: 'uid-admin',
+            displayName: 'مسؤول',
+            role: UserRole.admin,
+            hasAdminClaim: true,
           ),
         ),
         isFalse,

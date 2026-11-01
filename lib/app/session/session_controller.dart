@@ -64,10 +64,11 @@ class SessionController extends ChangeNotifier {
   /// هل نحتاج شاشة اختيار الدور؟ (أول دخول بحساب حقيقي)
   bool get needsRoleSelection => _status == SessionStatus.needsRole;
 
-  /// هل نحتاج **شاشة اختيار الصورة الإلزامية**؟ (حساب جديد بلا اختيار)
+  /// هل نحتاج **شاشة اختيار الصورة الإلزامية**؟
   ///
-  /// الشرط في [AvatarOnboardingPolicy] لا هنا: الحساب القديم، والجلسة
-  /// التجريبية، والحساب الذي اختار صورته لا تُحجب أبدًا.
+  /// الشرط في [AvatarOnboardingPolicy] لا هنا: أي حساب طالب/مدرّس بلا
+  /// `avatarPreset` صالح يُحجب — **بلا أي استثناء زمني**. الجلسة التجريبية
+  /// وجلسة الإدارة فقط لا تُحجبان (استثناء وظيفي).
   bool get needsAvatarSelection =>
       _status == SessionStatus.signedIn &&
       AvatarOnboardingPolicy.isRequired(_user);

@@ -373,9 +373,9 @@ class FirebaseAuthService implements AuthService {
         // يُترك `null` عن قصد: الشاشة الإلزامية تظهر فورًا بعد اختيار الدور
         // لأن الحقل لم يُكتب بعد. الاختيار يصل من المستخدم لا من قرعة.
         avatarPreset: storedPreset is int ? storedPreset : null,
-        // تاريخ الإنشاء يلزم فورًا لسياسة الحجب؛ الكتابة على الخادم
-        // `serverTimestamp()` لا تُقرأ محليًا في هذا النداء، فالآن هو التقريب
-        // الصحيح (وهو دائمًا بعد تاريخ بدء العمل بالشاشة).
+        // تاريخ الإنشاء معلومة وصفية (لا يدخل في قرار الحجب). الكتابة على
+        // الخادم `serverTimestamp()` لا تُقرأ محليًا في هذا النداء، فالآن هو
+        // التقريب الصحيح عند إنشاء المستند.
         createdAt: _dateFrom(existing.data()?['createdAt']) ?? DateTime.now(),
       );
     } on FirebaseException catch (error) {
@@ -468,8 +468,8 @@ class FirebaseAuthService implements AuthService {
       phone: _clean(doc.data()?['phone'] as String?),
       stage: _clean(doc.data()?['stage'] as String?),
       avatarPreset: rawPreset is int ? rawPreset : null,
-      // تاريخ الإنشاء يفصل «الحساب الجديد» عن «الحساب القديم» في سياسة شاشة
-      // اختيار الصورة الإلزامية. غيابه (مستند قديم) يعني: لا حجب.
+      // تاريخ الإنشاء للعرض فقط؛ سياسة شاشة الاختيار الإلزامية لا تعتمد عليه
+      // إطلاقًا (القرار: `avatarPreset` صالح أم لا).
       createdAt: _dateFrom(doc.data()?['createdAt']),
     );
 
