@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/core/widgets/user_avatar_view.dart';
@@ -87,6 +88,23 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
 
   void _onControllerChanged() {
     if (!mounted) {
+      return;
+    }
+    // قد يصل الإشعار من ميكرو-مهمة أثناء طور البناء/التخطيط (التحميل يبدأ من
+    // `didChangeDependencies`). استدعاء `setState` أو إبلاغ الأب حينها غير
+    // مسموح، فنؤجّله إلى أول إطار بعد اكتمال البناء.
+    final SchedulerPhase phase = SchedulerBinding.instance.schedulerPhase;
+    final bool duringBuild =
+        phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks;
+    if (duringBuild) {
+      SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {});
+        _report();
+      });
       return;
     }
     setState(() {});

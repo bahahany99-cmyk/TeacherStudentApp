@@ -69,57 +69,76 @@ class _AvatarGalleryScreenState extends State<AvatarGalleryScreen> {
               ],
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                border: Border(
-                  top: BorderSide(
-                    color: theme.colorScheme.outlineVariant.withAlpha(120),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: <Widget>[
-                  ClipOval(
-                    child: Image.asset(
-                      highlighted.asset,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                      cacheWidth: 160,
+          // شريط سفلي ثابت: معاينة + زر اعتماد بعرض كامل.
+          //
+          // **لماذا الزر بعرض كامل أسفل المعاينة لا بجانبها؟** لأن الزر داخل
+          // `Row` يأخذ عرضًا غير محدود من الأب (الأشقّاء غير المرنين يُقاسون
+          // بعرض لا نهائي)، وهذا أنتج في الاختبارات `RenderBox was not laid
+          // out` داخل `_InputPadding`. العرض الكامل = قيود محدودة دائمًا،
+          // وأكبر هدف لمس للإجراء الأساسي، وأسلم على الشاشات الضيقة.
+          Material(
+            color: theme.colorScheme.surface,
+            elevation: 8,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withAlpha(120),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
                       children: <Widget>[
-                        Text(
-                          'معاينة اختيارك',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                        ClipOval(
+                          child: Image.asset(
+                            highlighted.asset,
+                            width: 52,
+                            height: 52,
+                            fit: BoxFit.cover,
+                            cacheWidth: 160,
                           ),
                         ),
-                        Text(
-                          '${highlighted.category.label} · '
-                          '${highlighted.description}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall,
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'معاينة اختيارك',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Text(
+                                '${highlighted.category.label} · '
+                                '${highlighted.description}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  FilledButton(
-                    key: const Key('avatar-adopt'),
-                    onPressed: () => Navigator.of(context).pop(_highlighted),
-                    child: const Text('اعتماد'),
-                  ),
-                ],
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        key: const Key('avatar-adopt'),
+                        onPressed: () =>
+                            Navigator.of(context).pop(_highlighted),
+                        child: const Text('اعتماد'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -209,7 +228,11 @@ class _AvatarTile extends StatelessWidget {
         key: Key('avatar-option-${artwork.id}'),
         customBorder: const CircleBorder(),
         onTap: onTap,
+        // `StackFit.expand`: البلاطة مربّعة أصلًا في الشبكة، والتعبئة تجعل
+        // الصورة تملأ الخلية ولو لم يكتمل فكّ الترميز (بدون `expand` تُقاس
+        // الصورة على مقاسها الأصلي فتظهر دوائر صغيرة أو صفرية).
         child: Stack(
+          fit: StackFit.expand,
           alignment: Alignment.center,
           children: <Widget>[
             AnimatedContainer(

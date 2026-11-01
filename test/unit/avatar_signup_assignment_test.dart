@@ -224,7 +224,7 @@ void main() {
         for (int i = 0; i < 60; i++)
           AvatarPresets.randomIndexFor('new-user-$i', entropy: i * 7919),
       };
-      // 60 حسابًا على 24 صورة: التوقّع يغطي معظم المعرض. الحدّ هنا متحفظ حتى
+      // 60 حسابًا على 30 صورة: التوقّع يغطي معظم المعرض. الحدّ هنا متحفظ حتى
       // لا يكون الاختبار هشًّا أمام تغيير طفيف في الخلط.
       expect(seen.length, greaterThanOrEqualTo(12));
       expect(seen.every((int id) => id >= 0 && id < AvatarPresets.count), isTrue);

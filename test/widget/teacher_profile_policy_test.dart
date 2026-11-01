@@ -78,6 +78,10 @@ _teacherWith(TeacherProfileStatus status, {bool withPhoto = true}) {
         mimeType: 'image/png',
       ),
     ),
+    // شاشة القصّ الحقيقية تفكّ ترميز الصورة عبر `dart:ui` وهذا لا يكتمل في
+    // اختبار ويدجت بلا `runAsync` — فتُعلَّق على مؤشّر تحميل لا ينتهي
+    // («pumpAndSettle timed out»). المحاكاة تمرّر البايتات كما هي.
+    avatarCrop: (BuildContext context, PickedImage source) async => source,
   );
 
   return (

@@ -50,6 +50,20 @@ class _FakeCropper {
   }
 }
 
+/// اسم أصل الصورة من عنصر `Image` — يوحّد `AssetImage` و`ResizeImage`.
+///
+/// الصورة الرمزية تُقرأ بـ`cacheWidth` (ذاكرة أقل على الهاتف)، و`Image.asset`
+/// مع `cacheWidth` يُنتج `ResizeImage` يلفّ `AssetImage`. الاختبار يتحقق من
+/// الأصل نفسه لا من نوع الغلاف.
+String _assetNameOf(Image image) {
+  final ImageProvider<Object> provider = image.image;
+  if (provider is ResizeImage) {
+    final ImageProvider<Object> inner = provider.imageProvider;
+    return inner is AssetImage ? inner.assetName : '';
+  }
+  return provider is AssetImage ? provider.assetName : '';
+}
+
 void main() {
   group('(P31) UserAvatarView — أولوية العرض', () {
     testWidgets('بلا صورة: تُعرض الصورة الرمزية المضمَّنة الحتمية', (
@@ -71,9 +85,8 @@ void main() {
       expect(find.byType(UserAvatarView), findsOneWidget);
       // صورة فعلية من الـAPK — لا دائرة حرف ولا شبكة.
       final Image image = tester.widget<Image>(find.byType(Image));
-      expect(image.image, isA<AssetImage>());
       expect(
-        (image.image as AssetImage).assetName,
+        _assetNameOf(image),
         AvatarPresets.all[AvatarPresets.forId('uid-1')].asset,
       );
       expect(find.text('سا'), findsNothing);
@@ -141,7 +154,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        (tester.widget<Image>(find.byType(Image)).image as AssetImage).assetName,
+        _assetNameOf(tester.widget<Image>(find.byType(Image))),
         AvatarPresets.all[6].asset,
         reason: 'الرمزية المختارة هي البديل الصحيح عن بايتات تالفة',
       );
@@ -349,7 +362,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('avatar-gallery')), findsOneWidget);
-      // 24 صورة موزّعة على ستة أقسام.
+      // 30 صورة موزّعة على عشرة أقسام (3 لكل قسم).
       for (final AvatarCategory category in AvatarCategory.values) {
         expect(find.text(category.label), findsOneWidget);
       }
