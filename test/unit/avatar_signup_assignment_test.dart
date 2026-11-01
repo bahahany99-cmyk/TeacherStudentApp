@@ -6,7 +6,6 @@ import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
-import 'package:teacher_student_app/features/profile/domain/avatar_onboarding_policy.dart';
 
 /// (P31 — الإضافة الأخيرة) **اختيار الصورة عند التسجيل: يدوي لا عشوائي.**
 ///
