@@ -7,7 +7,6 @@ import 'package:teacher_student_app/data/models/account_status.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/teacher_profile.dart';
-import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/firebase/google_sign_in_gateway.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
