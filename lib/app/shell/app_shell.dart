@@ -23,6 +23,7 @@ import 'package:teacher_student_app/features/admin/presentation/teacher_verifica
 import 'package:teacher_student_app/features/bookings/presentation/bookings_screen.dart';
 import 'package:teacher_student_app/features/bookings/presentation/teacher_requests_screen.dart';
 import 'package:teacher_student_app/features/groups/presentation/groups_screen.dart';
+import 'package:teacher_student_app/features/profile/presentation/avatar_onboarding_screen.dart';
 import 'package:teacher_student_app/features/profile/presentation/profile_screen.dart';
 import 'package:teacher_student_app/features/student/presentation/student_home_screen.dart';
 import 'package:teacher_student_app/features/teacher/presentation/teacher_home_screen.dart';
@@ -77,6 +78,15 @@ class _AppShellState extends State<AppShell> {
         role == null ||
         (!role.isEndUser && !adminAllowed)) {
       return const _SessionRequiredScreen();
+    }
+
+    // (P31) **اختيار الصورة الإلزامي للحساب الجديد:** لا تبويبات ولا رئيسية
+    // قبل أن يختار المستخدم صورته بنفسه. الشاشة تُعرض بدل الهيكل كله (لا
+    // كحوار يمكن إغلاقه)، فتصبح هي كل ما يمكن الوصول إليه حتى التأكيد —
+    // والحالة محفوظة في `avatarPreset`، فإغلاق التطبيق قبل الاختيار يعيدها
+    // عند الدخول التالي، بينما لا يراها حساب اختار صورته أو حساب قديم.
+    if (session.needsAvatarSelection) {
+      return const AvatarOnboardingScreen();
     }
 
     final List<AppTabSpec> specs = AppTabs.forRole(role);

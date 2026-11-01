@@ -6,35 +6,40 @@ import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
+import 'package:teacher_student_app/features/profile/domain/avatar_onboarding_policy.dart';
 
-/// (P31) الصورة الرمزية عند إنشاء الحساب: عشوائية، محفوظة، وثابتة.
+/// (P31 — الإضافة الأخيرة) **اختيار الصورة عند التسجيل: يدوي لا عشوائي.**
 ///
 /// **ما يجب أن يثبته هذا الملف:**
-/// 1. الحساب الجديد (طالب أو مدرس) يحصل على صورة رمزية داخل 0..23.
-/// 2. الاختيار يُحفظ في بيانات المستخدم ويُعاد كما هو عند الدخول التالي.
-/// 3. لا يُعاد الاختيار عند فتح التطبيق أو تسجيل الخروج والدخول.
-/// 4. التوزيع يغطّي المعرض كله ولا ينحاز لصورة واحدة.
+/// 1. إنشاء الحساب (طالب أو مدرس) **لا يعيّن** صورة تلقائيًا ولا عشوائيًا.
+/// 2. الحساب الجديد بلا اختيار يُوجب شاشة الاختيار الإلزامية.
+/// 3. التأكيد يحفظ `avatarPreset` فيبقى الاختيار بعد إعادة التشغيل والدخول.
+/// 4. مغادرة التطبيق قبل التأكيد تُبقي الحساب «ناقص الاختيار».
+/// 5. الحسابات القديمة والحسابات المكتملة لا تُحجب.
 class _FakeAuthService implements AuthService {
-  _FakeAuthService({this.storedPreset});
+  _FakeAuthService({this.storedPreset, this.createdAt});
 
   /// ما «تحفظه» قاعدة البيانات للحساب (يحاكي `users/{uid}`).
   int? storedPreset;
 
-  /// آخر دور حُفظ (يستخدمه الاختبار للتحقق من تعيين الصورة حسب الدور).
+  /// تاريخ إنشاء الحساب — يفصل الجديد عن القديم في سياسة الحجب.
+  DateTime? createdAt;
+
   UserRole role = UserRole.student;
 
   int assignRoleCalls = 0;
   bool signedOut = false;
 
-  @override
-  Future<AuthResult?> restoreSession() async => AuthSignedIn(
-    AppUser(
-      id: 'uid-existing',
-      displayName: 'طالب قديم',
-      role: role,
-      avatarPreset: storedPreset,
-    ),
+  AppUser get stored => AppUser(
+    id: 'uid-existing',
+    displayName: 'مستخدم',
+    role: role,
+    avatarPreset: storedPreset,
+    createdAt: createdAt,
   );
+
+  @override
+  Future<AuthResult?> restoreSession() async => AuthSignedIn(stored);
 
   @override
   Future<void> signOut() async {
@@ -70,17 +75,15 @@ class _FakeAuthService implements AuthService {
   }) async {
     assignRoleCalls++;
     this.role = role;
-    // نفس عقد الخادم: يُكتب الاختيار مرة واحدة فقط، ولا يُعاد تعيينه.
-    storedPreset ??= AvatarPresets.randomIndexFor(
-      uid,
-      audience: AvatarPresets.audienceForRole(role),
-    );
+    // عقد الخادم الجديد: **لا كتابة لـ`avatarPreset`** عند اختيار الدور.
+    createdAt ??= DateTime.now().toUtc();
     return AppUser(
       id: uid,
       displayName: displayName,
       role: role,
       email: email,
       avatarPreset: storedPreset,
+      createdAt: createdAt,
     );
   }
 
@@ -101,8 +104,8 @@ class _FakeAuthService implements AuthService {
 }
 
 void main() {
-  group('(P31) تعيين صورة رمزية للحساب الجديد', () {
-    test('الطالب الجديد يحصل على صورة رمزية داخل المعرض', () async {
+  group('(P31) التسجيل لا يعيّن صورة تلقائيًا', () {
+    test('الطالب الجديد يصل بلا اختيار وتُطلب منه الشاشة الإلزامية', () async {
       final _FakeAuthService auth = _FakeAuthService();
       final SessionController session = SessionController(auth);
 
@@ -115,12 +118,18 @@ void main() {
 
       final AppUser user = session.user!;
       expect(user.role, UserRole.student);
-      expect(user.avatarPreset, isNotNull);
-      expect(user.avatarPreset, inInclusiveRange(0, AvatarPresets.count - 1));
-      expect(auth.storedPreset, user.avatarPreset, reason: 'حُفظت في البيانات');
+      expect(user.avatarPreset, isNull, reason: 'لا قرعة ولا تعيين تلقائي');
+      expect(auth.storedPreset, isNull, reason: 'لم يُكتب شيء للخادم');
+      expect(session.needsAvatarSelection, isTrue);
+      // لكن العرض لا يكون فارغًا أبدًا: الاحتياط الحتمي يعمل.
+      expect(
+        user.resolvedAvatarPreset,
+        AvatarPresets.forId(user.id),
+        reason: 'الخلفية تُعرض بالاحتياط الحتمي إلى أن يختار',
+      );
     });
 
-    test('المدرس الجديد أيضًا يحصل على صورة رمزية', () async {
+    test('المدرس الجديد أيضًا بلا تعيين تلقائي', () async {
       final _FakeAuthService auth = _FakeAuthService();
       final SessionController session = SessionController(auth);
 
@@ -132,13 +141,29 @@ void main() {
       await session.completeRoleSelection(UserRole.teacher);
 
       expect(session.user!.role, UserRole.teacher);
-      expect(
-        session.user!.avatarPreset,
-        inInclusiveRange(0, AvatarPresets.count - 1),
-      );
+      expect(session.user!.avatarPreset, isNull);
+      expect(session.needsAvatarSelection, isTrue);
     });
 
-    test('تسجيل الدخول مرة أخرى لا يعيد الاختيار', () async {
+    test('التأكيد يحفظ الاختيار ويُغلق الشاشة', () async {
+      final _FakeAuthService auth = _FakeAuthService();
+      final SessionController session = SessionController(auth);
+
+      await session.registerWithEmail(
+        email: 'new@example.com',
+        password: 'secret123',
+        displayName: 'طالب جديد',
+      );
+      await session.completeRoleSelection(UserRole.student);
+      expect(session.needsAvatarSelection, isTrue);
+
+      await session.completeAvatarSelection(17);
+
+      expect(session.user!.avatarPreset, 17);
+      expect(session.needsAvatarSelection, isFalse);
+    });
+
+    test('الاختيار يبقى بعد إعادة فتح التطبيق وبعد الخروج والدخول', () async {
       final _FakeAuthService auth = _FakeAuthService();
       final SessionController first = SessionController(auth);
 
@@ -148,44 +173,51 @@ void main() {
         displayName: 'طالب جديد',
       );
       await first.completeRoleSelection(UserRole.student);
-      final int assigned = first.user!.avatarPreset!;
+      await first.completeAvatarSelection(9);
+      auth.storedPreset = 9; // ما كتبه `setPreset` على الخادم
 
-      // «إعادة فتح التطبيق»: جلسة جديدة تقرأ نفس المستند.
-      final SessionController second = SessionController(auth);
-      await second.restore();
+      final SessionController reopened = SessionController(auth);
+      await reopened.restore();
+      expect(reopened.user!.avatarPreset, 9);
+      expect(reopened.needsAvatarSelection, isFalse);
 
-      expect(second.user!.avatarPreset, assigned);
-      expect(second.user!.resolvedAvatarPreset, assigned);
+      await reopened.signOut();
+      final SessionController again = SessionController(auth);
+      await again.restore();
+      expect(again.user!.avatarPreset, 9);
+      expect(again.needsAvatarSelection, isFalse);
     });
 
-    test('تسجيل الخروج ثم الدخول لا يغيّر الصورة', () async {
+    test('إغلاق التطبيق قبل التأكيد ⇒ العودة إلى الشاشة عند الدخول', () async {
       final _FakeAuthService auth = _FakeAuthService();
-      final SessionController session = SessionController(auth);
+      final SessionController first = SessionController(auth);
 
-      await session.registerWithEmail(
+      await first.registerWithEmail(
         email: 'new@example.com',
         password: 'secret123',
         displayName: 'طالب جديد',
       );
-      await session.completeRoleSelection(UserRole.student);
-      final int assigned = session.user!.avatarPreset!;
+      await first.completeRoleSelection(UserRole.student);
+      // المستخدم أغلق التطبيق بلا تأكيد: لا شيء كُتب.
 
-      await session.signOut();
-      expect(auth.signedOut, isTrue);
-      expect(session.user, isNull);
-
-      final SessionController again = SessionController(auth);
-      await again.restore();
-      expect(again.user!.avatarPreset, assigned);
+      final SessionController reopened = SessionController(auth);
+      await reopened.restore();
+      expect(reopened.user!.avatarPreset, isNull);
+      expect(reopened.needsAvatarSelection, isTrue);
     });
 
-    test('حساب قديم بلا اختيار يظهر بصورة رمزية حتمية (لا فراغ)', () async {
-      final _FakeAuthService auth = _FakeAuthService(storedPreset: null);
+    test('الحساب القديم بلا اختيار لا يُحجب ويُعرض بصورة حتمية', () async {
+      final _FakeAuthService auth = _FakeAuthService(
+        createdAt: AvatarOnboardingPolicy.cutover.subtract(
+          const Duration(days: 120),
+        ),
+      );
       final SessionController session = SessionController(auth);
       await session.restore();
 
       final AppUser user = session.user!;
       expect(user.avatarPreset, isNull);
+      expect(session.needsAvatarSelection, isFalse);
       expect(user.resolvedAvatarPreset, AvatarPresets.forId(user.id));
       expect(
         AvatarPresets.all[user.resolvedAvatarPreset].asset,
@@ -193,7 +225,34 @@ void main() {
       );
     });
 
-    test('تغيير الصورة لاحقًا يظهر في الجلسة', () async {
+    test('حساب أكمل اختياره سابقًا لا يُحجب', () async {
+      final _FakeAuthService auth = _FakeAuthService(
+        storedPreset: 22,
+        createdAt: DateTime.now().toUtc(),
+      );
+      final SessionController session = SessionController(auth);
+      await session.restore();
+
+      expect(session.user!.avatarPreset, 22);
+      expect(session.needsAvatarSelection, isFalse);
+    });
+
+    test('الجلسة التجريبية وجلسة الإدارة لا تُحجبان', () async {
+      final _FakeAuthService auth = _FakeAuthService();
+      final SessionController demo = SessionController(auth)
+        ..startDemoSession(UserRole.student);
+      expect(demo.needsAvatarSelection, isFalse);
+
+      final _FakeAuthService adminAuth = _FakeAuthService(
+        createdAt: DateTime.now().toUtc(),
+      )..role = UserRole.admin;
+      final SessionController admin = SessionController(adminAuth);
+      await admin.restore();
+      expect(admin.user!.role, UserRole.admin);
+      expect(admin.needsAvatarSelection, isFalse);
+    });
+
+    test('تغيير الصورة لاحقًا من البطاقة ما زال يعمل', () async {
       final _FakeAuthService auth = _FakeAuthService();
       final SessionController session = SessionController(auth);
       await session.registerWithEmail(
@@ -202,15 +261,18 @@ void main() {
         displayName: 'طالب جديد',
       );
       await session.completeRoleSelection(UserRole.student);
-      final int assigned = session.user!.avatarPreset!;
-      final int target = assigned == 5 ? 6 : 5;
+      await session.completeAvatarSelection(3);
 
-      await session.updateAvatarPreset(target);
-      expect(session.user!.avatarPreset, target);
+      await session.updateAvatarPreset(8);
+      expect(session.user!.avatarPreset, 8);
     });
   });
 
-  group('(P31) عشوائية التعيين وتوزيعه', () {
+  // أدوات السحب العشوائي بقيت في النموذج لأنها تُستخدم في أدوات الترحيل
+  // وحسابات العرض، **لكنها لم تعد تُستدعى عند التسجيل إطلاقًا** (الاختيار
+  // يدوي). نُثبت هنا أنها ما زالت سليمة ومقيّدة بنطاق الدور، حتى لا تُستعمل
+  // مستقبلًا استعمالًا يخالف القاعدة.
+  group('(P31) أدوات السحب العشوائي — نطاق الدور', () {
     test('البذرة نفسها ⇒ نفس الصورة (تعيين قابل للتكرار)', () {
       for (int seed = 0; seed < 20; seed++) {
         final int first = AvatarPresets.randomIndexFor('uid-$seed', entropy: seed);

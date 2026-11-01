@@ -19,6 +19,7 @@ class AppUser {
     this.phone,
     this.stage,
     this.avatarPreset,
+    this.createdAt,
   });
 
   final String id;
@@ -64,6 +65,14 @@ class AppUser {
   /// `avatars/{uid}` عند العرض فقط، حتى لا يُقرأ ~30KB في كل تسجيل دخول.
   final int? avatarPreset;
 
+  /// تاريخ إنشاء الحساب كما كتبه الخادم عند أول اختيار للدور.
+  ///
+  /// **لماذا نحتاجه في الواجهة؟** لأن شاشة اختيار الصورة الإلزامية تخصّ
+  /// **الحسابات الجديدة** فقط. الحساب القديم الذي لا يحمل `avatarPreset`
+  /// (سابق P22) يجب ألّا يُحجب، والسجل الزمني هو الفاصل الوحيد المتاح بلا
+  /// كتابة أي حقل جديد على بياناته. `null` = حساب قديم/غير معروف ⇒ لا حجب.
+  final DateTime? createdAt;
+
   /// معرّف الصورة الافتراضية المعروض الآن (يستوعب قيمة قديمة/خارجة عن المدى).
   int get resolvedAvatarPreset => AvatarPresets.normalize(avatarPreset, id);
 
@@ -91,6 +100,7 @@ class AppUser {
       phone: phone,
       stage: stage,
       avatarPreset: avatarPreset,
+      createdAt: createdAt,
     );
   }
 
@@ -116,6 +126,7 @@ class AppUser {
       phone: phone,
       stage: stage,
       avatarPreset: avatarPreset,
+      createdAt: createdAt,
     );
   }
 
@@ -133,6 +144,7 @@ class AppUser {
       phone: phone,
       stage: stage,
       avatarPreset: AvatarPresets.normalize(preset, id),
+      createdAt: createdAt,
     );
   }
 

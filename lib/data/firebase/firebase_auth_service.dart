@@ -243,146 +243,28 @@ class FirebaseAuthService implements AuthService {
       }
 
       final WriteBatch batch = _firestore.batch();
-      batch.update(doc, <String, Object?>{
-        statusField: AccountStatus.pendingDeletionWire,
-        scheduledDeletionField: scheduledAt,
-      });
 
-      // المدرس: إخفاء الملف في نفس الحزمة الذرّية. غياب الملف ليس خطأً —
-      // الحساب قد يكون طالبًا، أو مدرسًا لم يُنشأ ملفه بعد.
-      final DocumentReference<Map<String, dynamic>> teacherProfile =
-          _firestore.collection(teacherProfilesCollection).doc(uid);
-      if ((await teacherProfile.get()).exists) {
-        batch.update(teacherProfile, <String, Object?>{
-          accountHiddenField: true,
-        });
-      }
-
-      await batch.commit();
-      return scheduledAt;
-    } on FirebaseException catch (error) {
-      throw firebaseCodeToException(error.code, debugMessage: error.message);
-    }
-  }
-
-  @override
-  Future<void> restoreAccount({required String uid}) async {
-    try {
-      final WriteBatch batch = _firestore.batch();
-      batch.update(
-        _firestore.collection(usersCollection).doc(uid),
-        <String, Object?>{
-          statusField: AccountStatus.activeWire,
-          // الحذف (لا `null`) حتى يختفي الحقل: القاعدة ترفض بقاءه مع `active`.
-          scheduledDeletionField: FieldValue.delete(),
-        },
-      );
-
-      // إعادة الملف إلى الاكتشاف في نفس الحزمة (المدرس وحده له ملف).
-      final DocumentReference<Map<String, dynamic>> teacherProfile =
-          _firestore.collection(teacherProfilesCollection).doc(uid);
-      if ((await teacherProfile.get()).exists) {
-        // `false` لا حذفًا للحقل: الاستعلام يفلتر `accountHidden == false`،
-        // فمستند بلا الحقل لا يعود في نتائج الاكتشاف.
-        batch.update(teacherProfile, <String, Object?>{
-          accountHiddenField: false,
-        });
-      }
-
-      await batch.commit();
-    } on FirebaseException catch (error) {
-      throw firebaseCodeToException(error.code, debugMessage: error.message);
-    }
-  }
-
-  @override
-  Future<AppUser> assignRole({
-    required String uid,
-    required String displayName,
-    required UserRole role,
-    String? email,
-  }) async {
-    if (!role.isEndUser) {
-      // الدور الإداري لا يُمنح من التطبيق؛ يُضاف يدويًا/بأداة إدارية.
-      throw const AppException(
-        AppErrorKind.permission,
-        debugMessage: 'admin role cannot be self-assigned',
-        overrideTitle: 'الدور غير متاح',
-        overrideMessage: 'الدور الإداري لا يُختار من التطبيق.',
-      );
-    }
-
-    try {
-      final DocumentReference<Map<String, dynamic>> doc = _firestore
-          .collection(usersCollection)
-          .doc(uid);
-
-      final DocumentSnapshot<Map<String, dynamic>> existing = await doc.get();
-      final Object? existingRole = existing.data()?['role'];
-
-      if (existingRole is String && existingRole.isNotEmpty) {
-        // الدور محفوظ مسبقًا: نقرأه ولا نغيّره. تغييره يحتاج إجراءً إداريًا.
-        final UserRole? stored = _roleFrom(existingRole);
-        if (stored != null) {
-          final Object? preset = existing.data()?['avatarPreset'];
-          return AppUser(
-            id: uid,
-            displayName: displayName,
-            role: stored,
-            email: email,
-            avatarPreset: preset is int ? preset : null,
-          );
-        }
-      }
-
-      final WriteBatch batch = _firestore.batch();
-
-      // (P22) صورة افتراضية عند إنشاء الحساب: الحساب لا يُنشأ بصورة فارغة.
-      // نكتبها **مرة واحدة** فقط: لو اختار المستخدم صورة أخرى لاحقًا فلا
-      // نُعيد ضبطها عند أي نداء تالٍ لاختيار الدور.
+      // (P31 — الإضافة الأخيرة) **لا تعيين تلقائي ولا عشوائي للصورة.**
       //
-      // (P31) الصورة صارت **عشوائية من المعرض (30 صورة)** لا حتمية من المعرّف،
-      // وتُكتب في مكانين في نفس الحزمة:
-      //  1. `users/{uid}.avatarPreset` — يقرأه صاحب الحساب (الجلسة)، وهو ما
-      //     يجعل الصورة **ثابتة** بعد إعادة تشغيل التطبيق أو تسجيل الخروج
-      //     والدخول: لا تُعاد القرعة، لأن الكتابة تحدث فقط عند غياب الحقل.
-      //  2. `avatars/{uid}.presetId` — يقرأه **غير صاحب الحساب** (المحادثات،
-      //     بطاقات المجموعات، ملف المدرّس)، لأن قواعد `users` تمنع قراءة
-      //     مستند غيرك. بلا هذه الكتابة سيرى الآخرون صورة الحتمية لا المعيَّنة.
-      // الكتابتان `merge` فلا تُمسح صورة مرفوعة أو اختيار لاحق.
+      // كان الحساب الجديد يحصل على صور رمزية عشوائية عند اختيار الدور. تغيّر
+      // هذا بقرار صريح: صاحب الحساب يختار صورته بنفسه من شاشة إلزامية قبل
+      // دخول الرئيسية، فتُكتب `avatarPreset` **عند التأكيد فقط**
+      // (`SessionController.completeAvatarSelection`). لذلك:
+      //  - لا نكتب `avatarPreset` هنا إطلاقًا، ولا نُنشئ `avatars/{uid}`.
+      //  - غياب الحقل هو ما يُشغّل شاشة الاختيار عند الدخول
+      //    (`AvatarOnboardingPolicy`)، فإغلاق التطبيق قبل التأكيد يعيدها.
+      //  - الحساب القديم الذي يحمل الحقل لا يُلمس، ولا تُغيّر صورته.
       final Object? storedPreset = existing.data()?['avatarPreset'];
-      // (P31) النطاق يتبع الدور: مدرّس ⇒ بالغون/كبار سن، طالب ⇒ أطفال ومراهقون
-      // وشباب. لا نطلب عمرًا ولا جنسًا (ولا يجوز أن نشترطهما للتسجيل)؛ وعند غياب
-      // معلومة كافية نستخدم النطاق المحايد.
-      final int assignedPreset = storedPreset is int
-          ? storedPreset
-          : AvatarPresets.randomIndexFor(
-              uid,
-              audience: AvatarPresets.audienceForRole(role),
-            );
 
       batch.set(doc, <String, Object?>{
         'displayName': displayName,
         'email': email,
         'role': role.name,
-        if (storedPreset == null) 'avatarPreset': assignedPreset,
         'createdAt': existing.exists
             ? (existing.data()?['createdAt'] ?? FieldValue.serverTimestamp())
             : FieldValue.serverTimestamp(),
         'roleChosenAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-
-      if (storedPreset == null) {
-        batch.set(
-          _firestore.collection(avatarsCollection).doc(uid),
-          <String, Object?>{
-            'ownerId': uid,
-            'presetId': assignedPreset,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      }
 
       if (role == UserRole.teacher) {
         await _ensureTeacherProfile(
@@ -399,7 +281,10 @@ class FirebaseAuthService implements AuthService {
         displayName: displayName,
         role: role,
         email: email,
-        avatarPreset: assignedPreset,
+        // يُترك `null` عن قصد: الشاشة الإلزامية تظهر فورًا بعد اختيار الدور
+        // لأن الحقل لم يُكتب بعد. الاختيار يصل من المستخدم لا من قرعة.
+        avatarPreset: storedPreset is int ? storedPreset : null,
+        createdAt: _dateFrom(existing.data()?['createdAt']) ?? DateTime.now(),
       );
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);
@@ -491,6 +376,9 @@ class FirebaseAuthService implements AuthService {
       phone: _clean(doc.data()?['phone'] as String?),
       stage: _clean(doc.data()?['stage'] as String?),
       avatarPreset: rawPreset is int ? rawPreset : null,
+      // تاريخ الإنشاء يفصل «الحساب الجديد» عن «الحساب القديم» في سياسة شاشة
+      // اختيار الصورة الإلزامية. غيابه (مستند قديم) يعني: لا حجب.
+      createdAt: _dateFrom(doc.data()?['createdAt']),
     );
 
     // حساب مجدول للحذف لا يدخل التطبيق: يُوجَّه إلى شاشة الاستعادة.

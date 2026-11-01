@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
+import 'package:teacher_student_app/features/profile/presentation/widgets/avatar_gallery_grid.dart';
 
 /// معرض الصور الرمزية (P31) — 30 صورة مضمَّنة في عشرة أقسام متساوية.
 ///
@@ -60,9 +61,9 @@ class _AvatarGalleryScreenState extends State<AvatarGalleryScreen> {
               ),
               children: <Widget>[
                 for (final AvatarCategory category in AvatarCategory.values)
-                  _CategorySection(
+                  AvatarCategorySection(
                     category: category,
-                    highlighted: _highlighted,
+                    selected: _highlighted,
                     currentPreset: widget.currentPreset,
                     onTap: (int id) => setState(() => _highlighted = id),
                   ),
@@ -143,159 +144,6 @@ class _AvatarGalleryScreenState extends State<AvatarGalleryScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// قسم فئة واحدة: عنوان + شبكة صورها.
-class _CategorySection extends StatelessWidget {
-  const _CategorySection({
-    required this.category,
-    required this.highlighted,
-    required this.currentPreset,
-    required this.onTap,
-  });
-
-  final AvatarCategory category;
-  final int highlighted;
-  final int currentPreset;
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final List<AvatarArtwork> artworks = AvatarPresets.ofCategory(category);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xxs,
-              vertical: AppSpacing.xs,
-            ),
-            child: Text(category.label, style: theme.textTheme.titleSmall),
-          ),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: AppSpacing.sm,
-            crossAxisSpacing: AppSpacing.sm,
-            children: <Widget>[
-              for (final AvatarArtwork artwork in artworks)
-                _AvatarTile(
-                  artwork: artwork,
-                  selected: artwork.id == highlighted,
-                  isCurrent: artwork.id == currentPreset,
-                  onTap: () => onTap(artwork.id),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// صورة واحدة في الشبكة: إطار عند الاختيار + علامة صح + شارة «الحالية».
-class _AvatarTile extends StatelessWidget {
-  const _AvatarTile({
-    required this.artwork,
-    required this.selected,
-    required this.isCurrent,
-    required this.onTap,
-  });
-
-  final AvatarArtwork artwork;
-  final bool selected;
-  final bool isCurrent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color ring = theme.colorScheme.primary;
-
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '${artwork.category.label}: ${artwork.description}',
-      child: InkWell(
-        key: Key('avatar-option-${artwork.id}'),
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        // `StackFit.expand`: البلاطة مربّعة أصلًا في الشبكة، والتعبئة تجعل
-        // الصورة تملأ الخلية ولو لم يكتمل فكّ الترميز (بدون `expand` تُقاس
-        // الصورة على مقاسها الأصلي فتظهر دوائر صغيرة أو صفرية).
-        child: Stack(
-          fit: StackFit.expand,
-          alignment: Alignment.center,
-          children: <Widget>[
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected ? ring : Colors.transparent,
-                  width: 2.5,
-                ),
-                color: selected ? ring.withAlpha(20) : Colors.transparent,
-              ),
-              child: ClipOval(
-                child: Image.asset(
-                  artwork.asset,
-                  fit: BoxFit.cover,
-                  // 56dp على شاشة 3× = 168px: نقرأ بهذا الحجم فقط.
-                  cacheWidth: 192,
-                  errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-                      Container(color: Color(artwork.tint)),
-                ),
-              ),
-            ),
-            if (selected)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: ring,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: theme.colorScheme.surface,
-                      width: 2,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(2),
-                  child: Icon(
-                    Icons.check,
-                    size: 14,
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                ),
-              ),
-            if (isCurrent && !selected)
-              Positioned(
-                top: 0,
-                left: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  ),
-                  child: Text(
-                    'الحالية',
-                    style: theme.textTheme.labelSmall?.copyWith(fontSize: 9),
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

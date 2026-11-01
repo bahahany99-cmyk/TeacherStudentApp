@@ -9,6 +9,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/auth_service.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
+import 'package:teacher_student_app/features/profile/domain/avatar_onboarding_policy.dart';
 
 /// حالة الجلسة.
 enum SessionStatus {
@@ -62,6 +63,14 @@ class SessionController extends ChangeNotifier {
 
   /// هل نحتاج شاشة اختيار الدور؟ (أول دخول بحساب حقيقي)
   bool get needsRoleSelection => _status == SessionStatus.needsRole;
+
+  /// هل نحتاج **شاشة اختيار الصورة الإلزامية**؟ (حساب جديد بلا اختيار)
+  ///
+  /// الشرط في [AvatarOnboardingPolicy] لا هنا: الحساب القديم، والجلسة
+  /// التجريبية، والحساب الذي اختار صورته لا تُحجب أبدًا.
+  bool get needsAvatarSelection =>
+      _status == SessionStatus.signedIn &&
+      AvatarOnboardingPolicy.isRequired(_user);
 
   /// الاسم المعروض في شاشة اختيار الدور (قبل تحديد الدور).
   String? get pendingDisplayName => _pendingRole?.displayName;
@@ -194,6 +203,27 @@ class SessionController extends ChangeNotifier {
     _user = current.withAvatarPreset(preset);
     notifyListeners();
     await _avatars.setPreset(uid: current.id, preset: preset);
+  }
+
+  /// تثبيت الصورة المختارة من شاشة الاختيار الإلزامية (الحساب الجديد).
+  ///
+  /// **الترتيب مقصود: الكتابة أولًا ثم الحالة** (بخلاف [updateAvatarPreset]
+  /// الذي يبدأ بالتحديث المحلي لأن المستخدم يراه فورًا في بطاقته). هنا
+  /// الشاشة تُغلق ويُسمح بالدخول عند نجاح الحفظ فقط: لو عرضنا الحالة أولًا
+  /// ثم فشلت الكتابة لدخل المستخدم الرئيسية باختيار لن يبقى بعد إعادة
+  /// التشغيل، ولعادت الشاشة مرة أخرى بلا تفسير.
+  ///
+  /// `avatarPreset` هو **الحقل الوحيد** المطلوب: وجوده يعني أن المستخدم اختار
+  /// بنفسه، وغيابه يعني «لم يكمل الاختيار» — فلا حاجة إلى أي حقل جديد ولا
+  /// ترحيل بيانات قديمة.
+  Future<void> completeAvatarSelection(int preset) async {
+    final AppUser? current = _user;
+    if (current == null) {
+      throw StateError('لا توجد جلسة نشطة.');
+    }
+    await _avatars.setPreset(uid: current.id, preset: preset);
+    _user = current.withAvatarPreset(preset);
+    notifyListeners();
   }
 
   /// بدء جلسة معاينة محلية بدور محدد (طالب/مدرس/إدارة).
