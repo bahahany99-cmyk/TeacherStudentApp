@@ -37,7 +37,12 @@ class _StubAuthService implements AuthService {
     required String email,
     required String password,
   }) async => const AuthSignedIn(
-    AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
+    AppUser(
+      id: 'uid-1',
+      displayName: 'سارة',
+      role: UserRole.student,
+      avatarPreset: 4,
+    ),
   );
 
   @override
@@ -71,7 +76,13 @@ class _StubAuthService implements AuthService {
     required String displayName,
     required UserRole role,
     String? email,
-  }) async => AppUser(id: uid, displayName: displayName, role: role);
+  }) async => AppUser(
+    id: uid,
+    displayName: displayName,
+    role: role,
+    // حساب مكتمل الصورة: شاشة الاختيار الإلزامية (P31) لا تحجب هذه المسارات.
+    avatarPreset: 4,
+  );
 }
 
 AppServices _demoServices(AuthService auth) => AppServices(
@@ -218,7 +229,12 @@ void main() {
     ) async {
       final _StubAuthService auth = _StubAuthService(
         restoreResult: const AuthSignedIn(
-          AppUser(id: 'uid-1', displayName: 'سارة', role: UserRole.student),
+          AppUser(
+      id: 'uid-1',
+      displayName: 'سارة',
+      role: UserRole.student,
+      avatarPreset: 4,
+    ),
         ),
       );
       await _pumpApp(tester, auth);
@@ -249,6 +265,7 @@ void main() {
             id: 'uid-1',
             displayName: 'سارة',
             role: UserRole.student,
+            avatarPreset: 4,
             status: AccountStatus.pendingDeletion,
             scheduledDeletionAt: DateTime.now().add(const Duration(days: 3)),
           ),
@@ -282,6 +299,7 @@ void main() {
             id: 'uid-1',
             displayName: 'سارة',
             role: UserRole.student,
+            avatarPreset: 4,
             status: AccountStatus.pendingDeletion,
             scheduledDeletionAt: DateTime.now().subtract(
               const Duration(days: 1),
@@ -307,6 +325,7 @@ void main() {
             id: 'uid-1',
             displayName: 'سارة',
             role: UserRole.student,
+            avatarPreset: 4,
             status: AccountStatus.pendingDeletion,
             scheduledDeletionAt: DateTime.now().add(const Duration(days: 2)),
           ),

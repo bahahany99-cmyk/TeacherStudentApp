@@ -66,7 +66,14 @@ class _StubAuthService implements AuthService {
     String? email,
   }) async {
     assignedRole = role;
-    return AppUser(id: uid, displayName: displayName, role: role);
+    // حساب مكتمل: يحمل صورة رمزية صالحة، فلا تُعرض له شاشة الاختيار
+    // الإلزامية (P31) ويصل الاختبار إلى الهيكل كما هو مقصود.
+    return AppUser(
+      id: uid,
+      displayName: displayName,
+      role: role,
+      avatarPreset: 5,
+    );
   }
 }
 
