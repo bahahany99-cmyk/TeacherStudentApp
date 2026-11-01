@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 
 import 'package:teacher_student_app/data/models/user_avatar.dart';

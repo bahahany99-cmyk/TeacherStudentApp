@@ -48,14 +48,13 @@ class AppServices {
     AvatarRepository? avatars,
     AuctionRepository? auctions,
     ImagePickerGateway? imagePicker,
-    AvatarCropPresenter? avatarCrop,
+    this.avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
     ValueNotifier<int>? groupsRevision,
   }) : auctions = auctions ?? const EmptyAuctionRepository(),
        avatars = avatars ?? const EmptyAvatarRepository(),
        imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
-       avatarCrop = avatarCrop,
        chatImages = chatImages ?? const EmptyChatImageRepository(),
        imageSaver = imageSaver ?? const UnavailableChatImageSaver(),
        groupsRevision = groupsRevision ?? ValueNotifier<int>(0);
@@ -185,7 +184,7 @@ class AppServices {
   factory AppServices.demo({
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
-    AvatarCropPresenter? avatarCrop,
+    this.avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
   }) {

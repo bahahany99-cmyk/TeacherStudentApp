@@ -354,7 +354,7 @@ class FirebaseAuthService implements AuthService {
       // (P31) النطاق يتبع الدور: مدرّس ⇒ بالغون/كبار سن، طالب ⇒ أطفال ومراهقون
       // وشباب. لا نطلب عمرًا ولا جنسًا (ولا يجوز أن نشترطهما للتسجيل)؛ وعند غياب
       // معلومة كافية نستخدم النطاق المحايد.
-      final int? assignedPreset = storedPreset is int
+      final int assignedPreset = storedPreset is int
           ? storedPreset
           : AvatarPresets.randomIndexFor(
               uid,

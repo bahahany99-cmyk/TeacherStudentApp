@@ -140,6 +140,25 @@ class _AvatarSettingsSheetState extends State<AvatarSettingsSheet> {
                   ),
               ],
             ),
+            if (_changed) ...<Widget>[
+              const SizedBox(height: AppSpacing.xxs),
+              Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Text(
+                    'حُدِّثت صورتك.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpacing.sm),
             _SheetAction(
               key: const Key('avatar-pick'),

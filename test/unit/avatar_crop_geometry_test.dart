@@ -11,7 +11,7 @@ import 'package:teacher_student_app/features/profile/presentation/avatar_crop_ge
 void main() {
   group('(P31) CropMath', () {
     test('التغطية تجعل أصغر بُعد يساوي الإطار', () {
-      final Size landscape = Size(1200, 800);
+      const Size landscape = Size(1200, 800);
       final double cover = CropMath.coverScale(
         imageSize: landscape,
         cropSide: 300,
@@ -21,7 +21,7 @@ void main() {
     });
 
     test('التغطية على صورة عمودية تعتمد العرض', () {
-      final Size portrait = Size(600, 1600);
+      const Size portrait = Size(600, 1600);
       final double cover = CropMath.coverScale(
         imageSize: portrait,
         cropSide: 240,
@@ -38,7 +38,7 @@ void main() {
     });
 
     test('الأبعاد المعروضة = الصورة × (تغطية × تكبير) بلا تشويه', () {
-      final Size imageSize = Size(1000, 500);
+      const Size imageSize = Size(1000, 500);
       final Size one = CropMath.displayedSize(
         imageSize: imageSize,
         cropSide: 200,
@@ -57,7 +57,7 @@ void main() {
     });
 
     test('الإزاحة محدودة فلا يظهر فراغ داخل الإطار', () {
-      final Size displayed = Size(400, 200);
+      const Size displayed = Size(400, 200);
       // أفقيًا: 100 نقطة متاحة على كل جانب، رأسيًا لا شيء.
       final Offset clamped = CropMath.clampPan(
         const Offset(1000, 1000),

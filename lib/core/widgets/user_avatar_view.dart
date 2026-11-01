@@ -70,7 +70,7 @@ class UserAvatarView extends StatelessWidget {
                   // المستخدم، وتقديمها على البديل المرسوم هو الصحيح.
                   errorBuilder:
                       (BuildContext context, Object error, StackTrace? stack) =>
-                          _bundledOrGradient(artwork),
+                          _bundledOrGradient(context, artwork),
                 )
               // الصور المضمَّنة تُرسم من الـAPK: بلا شبكة وبلا تحميل معلّق.
               : Image.asset(
@@ -91,7 +91,7 @@ class UserAvatarView extends StatelessWidget {
   }
 
   /// الصورة الرمزية المضمَّنة، وإن تعذّر تحميل ملفها (أصل ناقص) فالتدرّج.
-  Widget _bundledOrGradient(AvatarArtwork artwork) {
+  Widget _bundledOrGradient(BuildContext context, AvatarArtwork artwork) {
     return Image.asset(
       artwork.asset,
       fit: BoxFit.cover,

@@ -82,7 +82,7 @@ void main() {
     testWidgets('مع صورة مرفوعة: تُعرض الصورة لا الرمزية', (
       WidgetTester tester,
     ) async {
-      final UserAvatar avatar = const UserAvatar(
+      const UserAvatar avatar = UserAvatar(
         ownerId: 'uid-1',
         imageBase64: kTinyPngBase64,
         mimeType: 'image/png',

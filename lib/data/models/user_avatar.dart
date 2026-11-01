@@ -606,3 +606,22 @@ class AvatarResolution {
     return AvatarResolution(presetId: preset, bytes: valid);
   }
 }
+
+/// حدود الصورة — **مصدر واحد** للواجهة والقواعد.
+///
+/// (P31) الصورة تُقصّ في التطبيق إلى 512×512 ثم تُرمَّز JPEG بسلّم جودة، فيبقى
+/// الناتج المعتاد 40–80KB؛ والسقف هنا للحالات الشاذة، وتفرضه القواعد أيضًا
+/// (`imageBase64.size() <= 200000`).
+abstract final class AvatarLimits {
+  /// أقصى طول لنص base64 المحفوظ (≈ 150KB صورة).
+  static const int maxBase64Length = 200000;
+
+  /// أقصى أبعاد يطلبها المختار من المنصّة، ودقة تصدير القصّ.
+  static const int pickMaxDimension = 512;
+
+  /// جودة الضغط المطلوبة من المنصّة (0–100).
+  static const int pickQuality = 80;
+
+  /// أنواع الصور المقبولة (القواعد تتحقق من نفس القيمتين).
+  static const List<String> mimeTypes = <String>['image/jpeg', 'image/png'];
+}

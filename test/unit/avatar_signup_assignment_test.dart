@@ -15,11 +15,13 @@ import 'package:teacher_student_app/data/services/auth_service.dart';
 /// 3. لا يُعاد الاختيار عند فتح التطبيق أو تسجيل الخروج والدخول.
 /// 4. التوزيع يغطّي المعرض كله ولا ينحاز لصورة واحدة.
 class _FakeAuthService implements AuthService {
-  _FakeAuthService({this.storedPreset, this.role = UserRole.student});
+  _FakeAuthService({this.storedPreset});
 
   /// ما «تحفظه» قاعدة البيانات للحساب (يحاكي `users/{uid}`).
   int? storedPreset;
-  UserRole role;
+
+  /// آخر دور حُفظ (يستخدمه الاختبار للتحقق من تعيين الصورة حسب الدور).
+  UserRole role = UserRole.student;
 
   int assignRoleCalls = 0;
   bool signedOut = false;
@@ -50,7 +52,7 @@ class _FakeAuthService implements AuthService {
   Future<AuthResult> signInWithEmail({
     required String email,
     required String password,
-  }) async => AuthNeedsRole(uid: 'uid-google', displayName: 'مستخدم');
+  }) async => const AuthNeedsRole(uid: 'uid-google', displayName: 'مستخدم');
 
   @override
   Future<AuthResult> registerWithEmail({
