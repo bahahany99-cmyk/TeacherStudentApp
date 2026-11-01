@@ -59,6 +59,10 @@ class FirebaseAuthService implements AuthService {
 
   static const String usersCollection = 'users';
 
+  /// مستند صورة الحساب (P22) — يُكتب بعده `presetId` المعيَّن عند الإنشاء
+  /// (P31) ليقرأه من يعرض صورة المستخدم من غير أصحاب الحساب.
+  static const String avatarsCollection = 'avatars';
+
   /// حقل حالة الحساب (P17) — `active` أو `pending_deletion`.
   static const String statusField = 'status';
 
@@ -336,18 +340,43 @@ class FirebaseAuthService implements AuthService {
       // (P22) صورة افتراضية عند إنشاء الحساب: الحساب لا يُنشأ بصورة فارغة.
       // نكتبها **مرة واحدة** فقط: لو اختار المستخدم صورة أخرى لاحقًا فلا
       // نُعيد ضبطها عند أي نداء تالٍ لاختيار الدور.
+      //
+      // (P31) الصورة صارت **عشوائية من المعرض (24 صورة)** لا حتمية من المعرّف،
+      // وتُكتب في مكانين في نفس الحزمة:
+      //  1. `users/{uid}.avatarPreset` — يقرأه صاحب الحساب (الجلسة)، وهو ما
+      //     يجعل الصورة **ثابتة** بعد إعادة تشغيل التطبيق أو تسجيل الخروج
+      //     والدخول: لا تُعاد القرعة، لأن الكتابة تحدث فقط عند غياب الحقل.
+      //  2. `avatars/{uid}.presetId` — يقرأه **غير صاحب الحساب** (المحادثات،
+      //     بطاقات المجموعات، ملف المدرّس)، لأن قواعد `users` تمنع قراءة
+      //     مستند غيرك. بلا هذه الكتابة سيرى الآخرون صورة الحتمية لا المعيَّنة.
+      // الكتابتان `merge` فلا تُمسح صورة مرفوعة أو اختيار لاحق.
       final Object? storedPreset = existing.data()?['avatarPreset'];
+      final int? assignedPreset = storedPreset is int
+          ? storedPreset
+          : AvatarPresets.randomIndexFor(uid);
 
       batch.set(doc, <String, Object?>{
         'displayName': displayName,
         'email': email,
         'role': role.name,
-        if (storedPreset == null) 'avatarPreset': AvatarPresets.forId(uid),
+        if (storedPreset == null) 'avatarPreset': assignedPreset,
         'createdAt': existing.exists
             ? (existing.data()?['createdAt'] ?? FieldValue.serverTimestamp())
             : FieldValue.serverTimestamp(),
         'roleChosenAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+
+      if (storedPreset == null) {
+        batch.set(
+          _firestore.collection(avatarsCollection).doc(uid),
+          <String, Object?>{
+            'ownerId': uid,
+            'presetId': assignedPreset,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
 
       if (role == UserRole.teacher) {
         await _ensureTeacherProfile(
@@ -364,9 +393,7 @@ class FirebaseAuthService implements AuthService {
         displayName: displayName,
         role: role,
         email: email,
-        avatarPreset: storedPreset is int
-            ? storedPreset
-            : AvatarPresets.forId(uid),
+        avatarPreset: assignedPreset,
       );
     } on FirebaseException catch (error) {
       throw firebaseCodeToException(error.code, debugMessage: error.message);

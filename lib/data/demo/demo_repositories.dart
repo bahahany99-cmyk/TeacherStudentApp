@@ -134,8 +134,22 @@ class DemoAuthService implements AuthService {
 class DemoAvatarRepository implements AvatarRepository {
   final Map<String, UserAvatar> _images = <String, UserAvatar>{};
 
+  /// (P31) الاختيار الرمزي المحفوظ — يُخزَّن منفصلًا عن الصورة الحقيقية، كما
+  /// في Firestore (`avatars/{uid}.presetId`)، فاختبارات «الإزالة تُبقي
+  /// الرمزية» تعمل على نفس منطق الإنتاج.
+  final Map<String, int> _presets = <String, int>{};
+
   @override
-  Future<UserAvatar?> getFor(String uid) async => _images[uid];
+  Future<UserAvatar?> getFor(String uid) async {
+    final UserAvatar? image = _images[uid];
+    final int? preset = _presets[uid];
+    if (image == null && preset == null) {
+      return null;
+    }
+    return (image ?? UserAvatar(ownerId: uid)).withPreset(
+      preset ?? image!.presetId ?? AvatarPresets.forId(uid),
+    );
+  }
 
   @override
   Future<UserAvatar> upload({
@@ -165,25 +179,36 @@ class DemoAvatarRepository implements AvatarRepository {
       ownerId: uid,
       imageBase64: encoded,
       mimeType: mimeType,
+      presetId: _presets[uid],
       updatedAt: DateTime.now(),
     );
     _images[uid] = avatar;
     return avatar;
   }
 
+  /// (P31) الإزالة تحذف الصورة فقط، والاختيار الرمزي يبقى — كما في الإنتاج.
   @override
-  Future<void> remove(String uid) async {
+  Future<void> remove(String uid, {int? preset}) async {
     _images.remove(uid);
+    if (preset != null && _presets[uid] == null) {
+      _presets[uid] = AvatarPresets.normalize(preset, uid);
+    }
   }
 
   /// لا شيء ليُثبَّت: الصورة الافتراضية في الوضع التجريبي تُشتق من المعرّف.
   @override
   Future<void> ensureDefault(String uid) async {}
 
-  /// الاختيار يُحفظ في الجلسة المحلية (`SessionController`)، فالمستودع هنا
-  /// لا يملك مستندًا يُحدّثه.
+  /// (P31) يُحفظ الاختيار هنا أيضًا حتى تعرضه الشاشات التي تقرأ المستودع
+  /// (محادثات، مجموعات) لا الجلسة وحدها — نفس سلوك الإنتاج.
   @override
-  Future<void> setPreset({required String uid, required int preset}) async {}
+  Future<void> setPreset({required String uid, required int preset}) async {
+    _presets[uid] = AvatarPresets.normalize(preset, uid);
+    final UserAvatar? image = _images[uid];
+    if (image != null) {
+      _images[uid] = image.withPreset(_presets[uid]!);
+    }
+  }
 }
 
 class DemoTeacherRepository implements TeacherRepository {

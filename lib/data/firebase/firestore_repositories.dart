@@ -4174,12 +4174,18 @@ class FirestoreAvatarRepository implements AvatarRepository {
         return null;
       }
       final Map<String, dynamic> data = doc.data() ?? <String, dynamic>{};
-      // ملاحظة: التصميم الافتراضي (`avatarPreset`) في `users/{uid}` لا هنا —
-      // مستند الصورة يخصّ البايتات وحدها، وقواعده ترفض أي حقل آخر.
+      // (P31) المستند صار يحمل **الاثنين**: البايتات و`presetId` المختار.
+      // لماذا هنا لا في `users/{uid}`؟ لأن مستند المستخدم لا يقرأه إلا صاحبه
+      // (وقواعد الخصوصية تمنع غيره)، بينما كل من يعرض صورة — محادثة، مجموعة،
+      // طلب حجز — يحتاج الرمزية المختارة أيضًا. وجودها في هذا المستند يعني
+      // **قراءة واحدة** تحسم الأولوية كاملة بلا قراءة إضافية ولا صلاحية جديدة.
+      // الحقل يبقى اختياريًا: مستندات P22 القديمة تحمل البايتات فقط، فتُقرأ
+      // `null` وتُعامل كما كانت (الرمزية الحتمية من المعرّف).
       return UserAvatar(
         ownerId: uid,
         imageBase64: data['imageBase64'] as String?,
         mimeType: data['mimeType'] as String?,
+        presetId: (data['presetId'] as num?)?.toInt(),
         updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
       );
     });
@@ -4212,12 +4218,26 @@ class FirestoreAvatarRepository implements AvatarRepository {
         );
       }
 
+      // نقرأ `presetId` الحالي قبل الكتابة لنُعيده في الكائن الناتج (merge
+      // يحفظه في المستند، لكن القيمة العائدة يجب أن تُطابق الحالة المعروضة).
+      int? existingPreset;
+      try {
+        final DocumentSnapshot<Map<String, dynamic>> current = await _avatars
+            .doc(uid)
+            .get();
+        existingPreset = (current.data()?['presetId'] as num?)?.toInt();
+      } on Object {
+        // قراءة تشخيصية فقط: فشلها لا يمنع الرفع.
+      }
+
+      // `merge` لا `set`: الاختيار الرمزي المحفوظ (`presetId`) لا يُمسح عند
+      // رفع صورة، فيبقى محفوظًا ليظهر فور حذف الصورة مرة أخرى.
       await _avatars.doc(uid).set(<String, Object?>{
         'ownerId': uid,
         'imageBase64': encoded,
         'mimeType': mimeType,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
 
       // سطر تشخيصي بلا بيانات حسّاسة: الطول والحجم فقط، لا الصورة ولا مقطعًا
       // منها ولا معرّف المستخدم.
@@ -4230,14 +4250,43 @@ class FirestoreAvatarRepository implements AvatarRepository {
         ownerId: uid,
         imageBase64: encoded,
         mimeType: mimeType,
+        presetId: existingPreset,
         updatedAt: DateTime.now(),
       );
     });
   }
 
+  /// إزالة الصورة المرفوعة **دون** فقدان الاختيار الرمزي (P31).
+  ///
+  /// قبل P31 كان الحذف يمسح المستند كاملًا، ولو صار فيه `presetId` لضاع
+  /// الاختيار وعاد المستخدم إلى الرمزية الحتمية بدل التي اختارها. الآن:
+  /// - يوجد اختيار رمزي ⇒ نحذف حقلي الصورة فقط ونبقي المستند.
+  /// - لا يوجد ⇒ نحذف المستند (نفس سلوك P22).
   @override
-  Future<void> remove(String uid) {
-    return _guardAvatar(() => _avatars.doc(uid).delete());
+  Future<void> remove(String uid, {int? preset}) {
+    return _guardAvatar(() async {
+      final DocumentReference<Map<String, dynamic>> ref = _avatars.doc(uid);
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
+      if (!snapshot.exists) {
+        return;
+      }
+      final int? stored = (snapshot.data()?['presetId'] as num?)?.toInt();
+      final int? known = stored ?? preset;
+
+      if (known != null) {
+        // اختيار رمزي معروف ⇒ نحذف الصورة فقط ونُثبِّت الاختيار، حتى يرى
+        // الجميع نفس الصورة (صاحب الحساب والآخرون).
+        await ref.set(<String, Object?>{
+          'ownerId': uid,
+          'presetId': AvatarPresets.normalize(known, uid),
+          'imageBase64': FieldValue.delete(),
+          'mimeType': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return;
+      }
+      await ref.delete();
+    });
   }
 
   @override
@@ -4259,12 +4308,29 @@ class FirestoreAvatarRepository implements AvatarRepository {
     });
   }
 
+  /// حفظ الاختيار الرمزي (P22، موسَّع في P31).
+  ///
+  /// **كتابة مزدوجة مقصودة:**
+  /// - `users/{uid}.avatarPreset` — المكان القديم، تقرأه الجلسة عند الدخول،
+  ///   فيبقى التوافق مع كل ما بُني في P22 بلا تغيير.
+  /// - `avatars/{uid}.presetId` — المكان الجديد، يقرأه **أي مستخدم مسجّل** عند
+  ///   عرض الصورة. لا يمكن الاستغناء عنه لأن قواعد `users` تمنع قراءة مستند
+  ///   غيرك، فبدونه لا تعرف المحادثات ولا بطاقات المجموعات رمزيتك المختارة.
+  ///
+  /// الكتابة الثانية `merge` فتبني مستندًا بلا صورة عند الحاجة (رمزية فقط)،
+  /// وهو ما تسمح به القاعدة `validAvatarDoc`.
   @override
   Future<void> setPreset({required String uid, required int preset}) {
     return _guardAvatar(() async {
+      final int normalized = AvatarPresets.normalize(preset, uid);
       await _firestore.collection('users').doc(uid).update(
-        <String, Object?>{'avatarPreset': AvatarPresets.normalize(preset, uid)},
+        <String, Object?>{'avatarPreset': normalized},
       );
+      await _avatars.doc(uid).set(<String, Object?>{
+        'ownerId': uid,
+        'presetId': normalized,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 

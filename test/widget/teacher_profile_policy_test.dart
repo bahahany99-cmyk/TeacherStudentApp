@@ -387,6 +387,9 @@ void main() {
         admin: demo.admin,
         avatars: demo.avatars,
         imagePicker: picker,
+        // (P31) شاشة القصّ الحقيقية تفكّ ترميز الصورة عبر `dart:ui` (لا يكتمل
+        // داخل اختبار ويدجت)؛ هنا نمرّر الصورة كما هي ونختبر التدفّق.
+        avatarCrop: (BuildContext context, PickedImage source) async => source,
       );
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);
@@ -508,6 +511,9 @@ void main() {
         admin: demo.admin,
         avatars: demo.avatars,
         imagePicker: picker,
+        // (P31) شاشة القصّ الحقيقية تفكّ ترميز الصورة عبر `dart:ui` (لا يكتمل
+        // داخل اختبار ويدجت)؛ هنا نمرّر الصورة كما هي ونختبر التدفّق.
+        avatarCrop: (BuildContext context, PickedImage source) async => source,
       );
       final SessionController session = SessionController(services.auth)
         ..startDemoSession(UserRole.teacher);

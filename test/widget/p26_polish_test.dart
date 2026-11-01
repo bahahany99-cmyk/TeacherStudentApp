@@ -238,7 +238,9 @@ void main() {
 
       // المفاتيح التي تعتمدها اختبارات أخرى تبقى في مكانها.
       expect(find.byKey(const Key('profile-avatar-image')), findsOneWidget);
-      expect(find.byKey(const Key('profile-avatar-editor')), findsOneWidget);
+      // (P31) الصورة صارت داخل البطاقة وحدها: لا قسم صورة منفصل مكرّر.
+      expect(find.byKey(const Key('profile-avatar-editor')), findsNothing);
+      expect(find.byKey(const Key('profile-avatar-settings')), findsOneWidget);
       expect(find.byKey(const Key('profile-my-data')), findsOneWidget);
       expect(find.byKey(const Key('profile-sign-out')), findsOneWidget);
       expect(find.byKey(const Key('profile-delete-account')), findsOneWidget);

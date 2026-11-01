@@ -23,8 +23,13 @@ abstract interface class AvatarRepository {
     required String mimeType,
   });
 
-  /// حذف الصورة المخصّصة والعودة إلى الافتراضية.
-  Future<void> remove(String uid);
+  /// حذف الصورة المخصّصة والعودة إلى الرمزية.
+  ///
+  /// (P31) [preset] الاختيار الرمزي المعروض الآن. يُكتب مع الحذف عندما لا يكون
+  /// محفوظًا في مستند الصورة (حسابات P22 القديمة)، وإلا رأى صاحب الحساب
+  /// رمزيته المختارة بينما يرى الآخرون رمزية حتمية مختلفة. اختياري: `null`
+  /// يعني «لا تعرف» فلا نكتب شيئًا.
+  Future<void> remove(String uid, {int? preset});
 
   /// تثبيت صورة افتراضية على مستند المستخدم (تُكتب عند أول دخول).
   Future<void> ensureDefault(String uid);
@@ -66,7 +71,7 @@ class EmptyAvatarRepository implements AvatarRepository {
   }
 
   @override
-  Future<void> remove(String uid) async {}
+  Future<void> remove(String uid, {int? preset}) async {}
 
   @override
   Future<void> ensureDefault(String uid) async {}

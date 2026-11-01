@@ -155,16 +155,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final Finder pick = find.byKey(const Key('avatar-pick'));
-      expect(pick, findsOneWidget);
+      // (P31) المحرّر المضمَّن انتقل إلى نموذج ملف المدرس؛ زر الصورة في بطاقة
+      // الحساب صار أيقونة صغيرة على الصورة نفسها، وقياسها هنا يثبت ذلك.
+      final Finder settings = find.byKey(const Key('profile-avatar-settings'));
+      expect(settings, findsOneWidget);
       expect(
-        tester.getSize(pick).height,
+        tester.getSize(settings).height,
         lessThanOrEqualTo(44),
-        reason: 'الزر يجب أن يبقى صغيرًا داخل بطاقة الصورة',
+        reason: 'زر الإعدادات صغير ولا يزاحم البطاقة',
       );
 
-      // المعاينة نفسها 72 لا 88.
-      expect(tester.getSize(find.byKey(const Key('avatar-preview'))).width, 72);
+      // الصورة في البطاقة 80 (avatarLg) لا 88.
+      expect(
+        tester.getSize(find.byKey(const Key('profile-avatar-image'))).width,
+        AppSpacing.avatarLg,
+      );
       expect(tester.takeException(), isNull);
     });
   });

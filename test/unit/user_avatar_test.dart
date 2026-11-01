@@ -36,9 +36,11 @@ void main() {
       expect(AvatarPresets.normalize(3, 'uid'), 3);
     });
 
-    test('كل تصميم له تدرّج بلونين مختلفين', () {
-      expect(AvatarPresets.gradients.length, AvatarPresets.count);
-      for (final (int, int) pair in AvatarPresets.gradients) {
+    // (P31) الألوان البديلة صارت للطوارئ فقط (ملف أصل ناقص)، والمعرض نفسه
+    // له ملفاته المضمَّنة — تفاصيله في `test/unit/avatar_gallery_test.dart`.
+    test('كل صورة رمزية لها تدرّج بديل بلونين مختلفين', () {
+      expect(AvatarPresets.fallbackGradients, isNotEmpty);
+      for (final (int, int) pair in AvatarPresets.fallbackGradients) {
         expect(pair.$1, isNot(pair.$2));
         expect(pair.$1, inInclusiveRange(0, 0xFFFFFFFF));
         expect(pair.$2, inInclusiveRange(0, 0xFFFFFFFF));

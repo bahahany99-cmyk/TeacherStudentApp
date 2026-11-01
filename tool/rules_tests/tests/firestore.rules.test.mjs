@@ -5488,15 +5488,20 @@ describe('P22 — سياسة التعديل: القفل وإعادة التحق�
   });
 });
 
-describe('P22 — users: الصورة الافتراضية', () => {
-  it('المستخدم يثبّت تصميمًا افتراضيًا في حدود 0..5', async () => {
+describe('P22/P31 — users: الصورة الافتراضية', () => {
+  it('المستخدم يثبّت صورة رمزية في حدود 0..23 (المعرض الموسَّع)', async () => {
     await seed([{ path: 'users/student-1', data: userDoc('student-1') }]);
 
+    // قيم P22 القديمة (0..5) تبقى مقبولة — لا ترحيل.
     await assertSucceeds(
       updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 3 }),
     );
+    // (P31) القيم الجديدة حتى 23 مقبولة.
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 23 }),
+    );
     await assertFails(
-      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 6 }),
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 24 }),
     );
     await assertFails(
       updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 'x' }),
@@ -5508,6 +5513,117 @@ describe('P22 — users: الصورة الافتراضية', () => {
 
     await assertFails(
       updateDoc(doc(asOther(), 'users/student-1'), { avatarPreset: 2 }),
+    );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P31 — الصور الرمزية: مستند الصورة يحمل الاختيار، والاختيار وحده مستند مشروع
+//
+// القاعدة الجديدة تسمح بحالتين: (أ) صورة مرفوعة كما في P22، (ب) اختيار رمزي
+// بلا صورة (لأن كل من يعرض الصورة يقرأ هذا المستند، ولا يقرأ `users/{uid}`).
+// والأهم: حالة (ب) **لا** تُعدّ «صورة» عند الإرسال للمراجعة.
+describe('P31 — avatars/{uid}: الاختيار الرمزي مستقل عن الصورة', () => {
+  const presetOnly = (uid, preset = 7) => ({
+    ownerId: uid,
+    presetId: preset,
+    updatedAt: now(),
+  });
+
+  it('مستند اختيار رمزي بلا صورة مسموح لصاحبه فقط', async () => {
+    await assertSucceeds(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1')),
+    );
+    await assertFails(
+      setDoc(doc(asOther(), avatarPath('student-1')), presetOnly('student-1')),
+    );
+  });
+
+  it('قيمة رمزية خارج 0..23 أو غير رقمية مرفوضة', async () => {
+    await assertFails(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 24)),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', -1)),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 'x')),
+    );
+    await assertSucceeds(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 0)),
+    );
+    await assertSucceeds(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 23)),
+    );
+  });
+
+  it('نوع صورة بلا بايتات (أو العكس) مرفوض', async () => {
+    await assertFails(
+      setDoc(doc(asStudent(), avatarPath('student-1')), {
+        ownerId: 'student-1',
+        mimeType: 'image/jpeg',
+        updatedAt: now(),
+      }),
+    );
+    await assertFails(
+      setDoc(doc(asStudent(), avatarPath('student-1')), {
+        ownerId: 'student-1',
+        imageBase64: 'A'.repeat(128),
+        updatedAt: now(),
+      }),
+    );
+  });
+
+  it('حذف حقلي الصورة مع بقاء الاختيار مسموح (الإزالة لا تُفقد الرمزية)', async () => {
+    await seed([
+      {
+        path: avatarPath('student-1'),
+        data: { ...avatarDoc('student-1'), presetId: 11 },
+      },
+    ]);
+
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), avatarPath('student-1')), {
+        imageBase64: deleteField(),
+        mimeType: deleteField(),
+      }),
+    );
+  });
+
+  it('الصورة المرفوعة تبقى مقبولة ومعها اختيار رمزي', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), avatarPath('student-1')),
+        avatarDoc('student-1', { presetId: 5 }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(asStudent(), avatarPath('student-1')),
+        avatarDoc('student-1', { presetId: 99 }),
+      ),
+    );
+  });
+
+  it('اختيار رمزية وحدها لا يستوفي شرط الصورة عند الإرسال للمراجعة', async () => {
+    await seed([{ path: avatarPath('teacher-1'), data: presetOnly('teacher-1') }]);
+
+    await assertFails(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-1'),
+      }),
+    );
+
+    // ومع صورة فعلية يمرّ.
+    await seed([
+      { path: avatarPath('teacher-1'), data: avatarDoc('teacher-1') },
+    ]);
+    await assertSucceeds(
+      updateDoc(doc(asTeacher(), 'teacherProfiles/teacher-1'), {
+        status: 'pendingReview',
+        photoPath: avatarPath('teacher-1'),
+      }),
     );
   });
 });

@@ -22,7 +22,7 @@ import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/account_deletion_rules.dart';
 import 'package:teacher_student_app/features/account/presentation/account_deletion_dialog.dart';
-import 'package:teacher_student_app/features/profile/presentation/widgets/account_avatar_editor.dart';
+import 'package:teacher_student_app/features/profile/presentation/widgets/avatar_settings_sheet.dart';
 
 /// صفحة الحساب والملف الشخصي — **مشتركة** بين الطالب والمدرس (تبويب «حسابي»).
 ///
@@ -57,6 +57,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// عملية حسابية جارية (خروج/حذف). نُقفل الأزرار أثناءها حتى لا يُرسل
   /// المستخدم الطلب مرتين، وحتى لا يُغادر الشاشة قبل اكتمال الكتابة.
   bool _busy = false;
+
+  /// (P31) رقم يزيد بعد كل تغيير للصورة، فيُعاد تحميلها في البطاقة فورًا.
+  int _avatarRevision = 0;
 
   void _switchRole(UserRole role) {
     SessionScope.read(context).switchDemoRole(role);
@@ -175,37 +178,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // 1) الهوية: صورة + اسم + نوع الحساب + البريد، والضغط يفتح
-              //    «بياناتي» — أقصر طريق إلى أهم فعل في الصفحة.
-              _IdentityCard(
+              // 1) **بطاقة الملف الشخصي** (P31): الصورة والاسم ونوع الحساب
+              //    وحالة التوثيق وزر معاينة الملف، وإعدادات الصورة من زر صغير
+              //    على الصورة نفسها. لا يوجد قسم صورة منفصل بعدها — الصورة
+              //    تظهر مرة واحدة في الصفحة.
+              _ProfileCard(
                 user: user,
-                onTap: () => _open(RoutePaths.myData),
+                onOpenAvatarSettings: user == null
+                    ? null
+                    : () async {
+                        final bool changed = await AvatarSettingsSheet.show(
+                          context,
+                          userId: user.id,
+                        );
+                        if (changed && mounted) {
+                          // إعادة بناء البطاقة تُعيد تحميل الصورة من المصدر
+                          // (نفس المستند)، فلا تبقى نسخة قديمة على الشاشة.
+                          setState(() => _avatarRevision++);
+                        }
+                      },
+                avatarRevision: _avatarRevision,
                 onOpenPublicProfile: user?.role == UserRole.teacher
                     ? () => _open(RoutePaths.myTeacherProfile)
                     : null,
               ),
               const SizedBox(height: AppSpacing.md),
 
-              // 2) الصورة الشخصية: محرّر واحد، متاح للطالب والمدرس معًا —
-              //    الحساب ليس بلا صورة أبدًا (P22).
-              if (user != null)
-                SettingsGroup(
-                  title: 'الصورة الشخصية',
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: AccountAvatarEditor(
-                        key: const Key('profile-avatar-editor'),
-                        userId: user.id,
-                        initialPreset: user.resolvedAvatarPreset,
-                        initials: user.initials,
-                        helperText: 'تظهر بجانب اسمك في المحادثات وملفك.',
-                      ),
-                    ),
-                  ],
-                ),
-
-              // 3) الحساب: بياناتي + (المدرس) ملفه التعريفي + (الطالب) مفضلته.
+              // 2) الحساب: بياناتي + (المدرس) ملفه التعريفي + (الطالب) مفضلته.
               SettingsGroup(
                 title: 'الحساب',
                 children: <Widget>[
@@ -387,20 +386,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-/// بطاقة الهوية أعلى «حسابي»: صورة + اسم + نوع الحساب + البريد.
+/// بطاقة الملف الشخصي أعلى «حسابي» (نسخة P31) — بطاقة واحدة مختصرة.
 ///
-/// **لماذا بطاقة لا مجرد صف؟** لأن هذه هي المعلومات التي يحتاج المستخدم
-/// التأكد منها فورًا (بأي حساب أنا داخل؟ وما بريدي؟)، ثم ضغطة واحدة تنقله إلى
-/// تعديلها. الاسم والبريد هنا للقراءة فقط، والقرار في «بياناتي».
-class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({
+/// **ما تحمله:** الصورة، الاسم، نوع الحساب، حالة توثيق المدرس، زر «معاينة ملفي
+/// كما يراه الطلاب»، وزر صغير لإعدادات الصورة على الصورة نفسها.
+///
+/// **ما أُزيل ولماذا:** كان تحت هذه البطاقة قسم كامل عنوانه «الصورة الشخصية»
+/// يعيد عرض الصورة نفسها بثلاثة أزرار عريضة، ثم صف بريد لا يلزم هنا. النتيجة
+/// كانت صفحة «حسابي» تعرض الصورة مرتين وتستهلك نصف الشاشة الأولى في شرح
+/// الصورة. الآن الصورة في مكان واحد، وإعداداتها على بعد ضغطة واحدة منها.
+///
+/// **لماذا ليست البطاقة كلها قابلة للنقر؟** لأن فيها زرين فعليين (الإعدادات
+/// والمعاينة)؛ جعلها كلها هدفًا للنقر يجعل الضغط «بجانب» الزر يفتح شيئًا آخر.
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({
     required this.user,
-    required this.onTap,
+    required this.onOpenAvatarSettings,
+    required this.avatarRevision,
     this.onOpenPublicProfile,
   });
 
   final AppUser? user;
-  final VoidCallback onTap;
+
+  /// فتح ورقة إعدادات الصورة (`null` ⇒ الجلسة لم تُهيَّأ بعد).
+  final Future<void> Function()? onOpenAvatarSettings;
+
+  /// يزيد بعد كل تغيير للصورة فيُعاد التحميل.
+  final int avatarRevision;
 
   /// فتح الملف العام كما يراه الطلاب (للمدرس فقط).
   final VoidCallback? onOpenPublicProfile;
@@ -409,93 +421,113 @@ class _IdentityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String name = user?.displayName ?? 'مستخدم غير معروف';
+    final bool isTeacher = user?.role == UserRole.teacher;
 
     return AppCard(
+      key: const Key('profile-card'),
       padding: AppSpacing.cardPaddingRoomy,
-      onTap: onTap,
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // (P22) الصورة الفعلية للحساب: صورة مخصّصة إن وُجدت، وإلا التصميم
-          // الافتراضي — لا دائرة بحرف فقط.
-          UserAvatarLoader(
-            key: const Key('profile-avatar-image'),
-            userId: user?.id ?? '',
-            presetId: user?.resolvedAvatarPreset,
-            initials: user?.initials,
-            size: AppSpacing.avatarMd,
-            semanticLabel: 'صورة الحساب',
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Row(
-                  children: <Widget>[
-                    StatusChip(
-                      label: user?.role.label ?? '—',
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        user?.email ?? 'لا يوجد بريد مرتبط بعد',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // الصورة + زر الإعدادات الصغير عليها.
+              Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  UserAvatarLoader(
+                    key: const Key('profile-avatar-image'),
+                    userId: user?.id ?? '',
+                    presetId: user?.resolvedAvatarPreset,
+                    initials: user?.initials,
+                    size: AppSpacing.avatarLg,
+                    semanticLabel: 'صورة الحساب',
+                    reloadToken: avatarRevision,
+                  ),
+                  Positioned(
+                    bottom: -2,
+                    left: -2,
+                    child: Material(
+                      color: theme.colorScheme.surface,
+                      shape: const CircleBorder(),
+                      elevation: 2,
+                      child: InkWell(
+                        key: const Key('profile-avatar-settings'),
+                        customBorder: const CircleBorder(),
+                        onTap: onOpenAvatarSettings == null
+                            ? null
+                            : () => onOpenAvatarSettings!(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.photo_camera_outlined,
+                            size: 16,
+                            color: theme.colorScheme.primary,
+                          ),
                         ),
                       ),
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    // نوع الحساب + حالة التوثيق في سطر واحد يلتفّ عند الضيق.
+                    Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xxs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        StatusChip(
+                          label: user?.role.label ?? '—',
+                          color: theme.colorScheme.primary,
+                        ),
+                        if (isTeacher && user != null)
+                          _TeacherVerificationChip(teacherId: user!.id),
+                      ],
+                    ),
                   ],
                 ),
-                // (P28) حالة الملف العام كما يراها الطالب — داخل الهوية لا في
-                // صفحة منفصلة، لأنها جزء من «من أنا في هذا التطبيق».
-                if (user?.role == UserRole.teacher && user != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xxs + 2),
-                    child: _TeacherProfileState(
-                      teacherId: user!.id,
-                      onTap: onOpenPublicProfile,
-                    ),
-                  ),
-              ],
+              ),
+            ],
+          ),
+          if (isTeacher && user != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              key: const Key('profile-public-profile'),
+              onPressed: onOpenPublicProfile,
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: const Text('معاينة ملفي كما يراه الطلاب'),
             ),
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-          Icon(
-            Icons.chevron_left,
-            size: 20,
-            color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
-
-/// حالة الملف التعريفي للمدرس: مكتمل/ناقص + حالة التوثيق + مدخل للملف العام.
+/// حالة توثيق المدرس كشريحة واحدة (نفس ألوان الحالات المعتمدة في P28).
 ///
-/// **لماذا هنا؟** لأن المدرس يحتاج أن يعرف بلحظة واحدة: هل ملفي جاهز ومقبول،
-/// وما الذي يراه الطالب الآن؟ وضعها في بطاقة الهوية يمنع تكرارها في مكانين.
-class _TeacherProfileState extends StatelessWidget {
-  const _TeacherProfileState({required this.teacherId, this.onTap});
+/// **لماذا شريحة لا صف كامل؟** لأن البطاقة الآن مختصرة؛ حالة التوثيق معلومة
+/// واحدة، ولونها يخبر بها قبل قراءتها.
+class _TeacherVerificationChip extends StatelessWidget {
+  const _TeacherVerificationChip({required this.teacherId});
 
   final String teacherId;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
     return AsyncView<TeacherProfile?>(
       load: () => AppServicesScope.of(context).teachers.findMine(teacherId),
       builder: (BuildContext context, TeacherProfile? profile) {
@@ -506,27 +538,7 @@ class _TeacherProfileState extends StatelessWidget {
           TeacherProfileStatus.draft => ('مسودة غير مكتملة', AppColors.statusPending),
           null => ('لا يوجد ملف تعريفي بعد', AppColors.statusNeutral),
         };
-
-        return Row(
-          children: <Widget>[
-            StatusChip(label: state.$1, color: state.$2),
-            const SizedBox(width: AppSpacing.xs),
-            if (onTap != null)
-              Flexible(
-                child: TextButton(
-                  key: const Key('profile-public-profile'),
-                  onPressed: onTap,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    textStyle: theme.textTheme.labelSmall,
-                  ),
-                  child: const Text('ما يراه الطلاب'),
-                ),
-              ),
-          ],
-        );
+        return StatusChip(label: state.$1, color: state.$2);
       },
     );
   }

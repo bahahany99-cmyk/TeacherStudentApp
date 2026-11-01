@@ -9,6 +9,7 @@ import 'package:teacher_student_app/data/firebase/firebase_auth_service.dart';
 import 'package:teacher_student_app/data/firebase/firestore_repositories.dart';
 import 'package:teacher_student_app/data/services/admin_repository.dart';
 import 'package:teacher_student_app/data/services/auction_repository.dart';
+import 'package:teacher_student_app/data/services/avatar_cropper.dart';
 import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/services/chat_image_repository.dart';
 import 'package:teacher_student_app/data/services/chat_image_saver.dart';
@@ -47,12 +48,14 @@ class AppServices {
     AvatarRepository? avatars,
     AuctionRepository? auctions,
     ImagePickerGateway? imagePicker,
+    AvatarCropPresenter? avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
     ValueNotifier<int>? groupsRevision,
   }) : auctions = auctions ?? const EmptyAuctionRepository(),
        avatars = avatars ?? const EmptyAvatarRepository(),
        imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
+       avatarCrop = avatarCrop,
        chatImages = chatImages ?? const EmptyChatImageRepository(),
        imageSaver = imageSaver ?? const UnavailableChatImageSaver(),
        groupsRevision = groupsRevision ?? ValueNotifier<int>(0);
@@ -112,6 +115,13 @@ class AppServices {
   /// عقد لا حزمة: الشاشات لا تستورد `image_picker`، والاختبارات تحقن منتقيًا
   /// وهميًا يعيد بايتات جاهزة.
   final ImagePickerGateway imagePicker;
+
+  /// (P31) شاشة قصّ الصورة. `null` ⇒ الشاشة الحقيقية.
+  ///
+  /// **لماذا حقل في الحاوية؟** لأن فكّ ترميز الصورة في اختبار ويدجت يحتاج
+  /// `runAsync` وإلا عُلِّق الاختبار؛ الحقن يسمح باختبار التدفّق كاملًا
+  /// (اختيار ← قصّ ← رفع) بحتمية، بلا تغيير سلوك الإنتاج.
+  final AvatarCropPresenter? avatarCrop;
 
   /// (P24) صور المحادثة المؤقتة: رفع وقراءة وحذف بعد انتهاء صلاحيتها.
   ///
@@ -175,6 +185,7 @@ class AppServices {
   factory AppServices.demo({
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
+    AvatarCropPresenter? avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
   }) {
@@ -227,6 +238,7 @@ class AppServices {
       // نفس مسار الصور في الجولة: اختيار ومعاينة، لكن في الذاكرة فقط.
       avatars: avatars ?? DemoAvatarRepository(),
       imagePicker: imagePicker ?? PlatformImagePickerGateway(),
+      avatarCrop: avatarCrop,
       chatImages: chatImages ?? DemoChatImageRepository(),
       imageSaver: imageSaver ?? const PlatformChatImageSaver(),
     );

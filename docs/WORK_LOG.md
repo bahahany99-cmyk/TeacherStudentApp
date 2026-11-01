@@ -3815,3 +3815,58 @@ placedAt ASC → teacherId`؛ `requestId` داخل المعاملة؛ الدفع
 
 **لم يُنفَّذ بعد:** النشر الفعلي (يحتاج خطة Blaze وقرارك)، محاكي دوال في CI،
 إشعار تذكير قبل انتهاء المهلة، صفحة أرشيف نتائج.
+
+## §39 — P31: بطاقة الملف الشخصي، قصّ الصورة، ومعرض 24 صورة رمزية
+
+**المشكلة الحقيقية:** صفحة «حسابي» كانت تعرض الصورة **مرتين** (بطاقة الهوية،
+ثم قسم «الصورة الشخصية» بثلاثة أزرار عريضة)، واختيار الصورة من الجهاز كان
+يرفعها **كما هي** بلا قصّ، والرمزية المختارة كانت تُعرض في بطاقة الحساب فقط
+لأن بقية الشاشات تقرأ `avatars/{uid}` وحده (وهو لا يحمل الاختيار).
+
+**ما نُفِّذ:**
+
+| الملف | التغيير |
+|---|---|
+| `lib/data/models/user_avatar.dart` | كتالوج `AvatarPresets` ب24 صورة مضمَّنة + فئات + `AvatarResolution` (أولوية موحّدة) + `withPreset` |
+| `lib/core/widgets/user_avatar_view.dart` | يعرض الصورة المضمَّنة (`Image.asset`) بدل التدرّج، ويطبّق الأولوية، و`reloadToken` للتحديث الفوري |
+| `lib/features/profile/presentation/profile_screen.dart` | بطاقة ملف واحدة (صورة/اسم/نوع/توثيق/زر معاينة/زر إعدادات)؛ **حُذف قسم الصورة المنفصل** |
+| `lib/features/profile/presentation/widgets/avatar_settings_sheet.dart` | ورقة الإعدادات: تغيير الصورة · اختيار رمزية · إزالة |
+| `lib/features/profile/presentation/avatar_crop_screen.dart` | شاشة القصّ: إطار ثابت، سحب، قرصة، تأكيد/إلغاء |
+| `lib/features/profile/presentation/avatar_crop_geometry.dart` | دوال القصّ النقية (تغطية/تكبير/حدود الإزاحة) — قابلة للاختبار بلا صور |
+| `lib/features/profile/presentation/avatar_crop_encoder.dart` | تصدير JPEG 512px بسلّم جودة/أبعاد يحترم سقف القواعد |
+| `lib/features/profile/presentation/widgets/avatar_editor_controller.dart` | منطق الحالة والحفظ (رفع/إزالة/اختيار) بلا `BuildContext` |
+| `lib/features/profile/presentation/widgets/avatar_actions.dart` | تسلسل: اختيار ← قصّ ← رفع، مع رسائل عربية |
+| `lib/features/profile/presentation/avatar_gallery_screen.dart` | معرض 24 صورة في 6 أقسام + معاينة + «اعتماد» |
+| `lib/features/profile/presentation/widgets/account_avatar_editor.dart` | صار يستخدم المتحكّم والأفعال نفسها (نموذج ملف المدرّس) |
+| `lib/data/firebase/firestore_repositories.dart` | `presetId` في مستند الصورة، `merge` عند الرفع، إزالة تُبقي الاختيار، كتابة مزدوجة للاختيار |
+| `lib/data/demo/demo_repositories.dart` | نفس السلوك في الجولة التجريبية (اختيار مستقل عن الصورة) |
+| `lib/data/services/app_services.dart` + `avatar_cropper.dart` | حقن شاشة القصّ في الاختبارات (`AvatarCropPresenter`) |
+| `firestore.rules` | `avatars`: مستند اختيار رمزي مشروع + `presetId` 0..23؛ `users`: المدى 0..23؛ `hasProfilePhoto` يطلب بايتات فعلية |
+| `pubspec.yaml` | `image` (ترميز JPEG)، أصول `assets/avatars/`، الإصدار `0.1.0+33` |
+| `assets/avatars/*` + `NOTICE.md` | 24 صورة 256×256 JPEG (‎≈10–25KB) أصلية للمشروع |
+| الاختبارات | `test/unit/avatar_gallery_test.dart`، `avatar_crop_geometry_test.dart`، `avatar_editor_controller_test.dart`، وتحديث اختبارات الصورة والبطاقة والقواعد |
+
+**قرارات معمارية:**
+1. **قرار العرض في مكان واحد** (`AvatarResolution`) لا في كل شاشة.
+2. **الاختيار يُحفظ قرب الصورة** (`avatars/{uid}.presetId`) مع كتابة مزدوجة إلى
+   `users/{uid}.avatarPreset` — لأن قواعد `users` تمنع قراءة مستند غيرك.
+3. **الإزالة لا تُفقد الاختيار** ولا تحذف أي بيانات حساب.
+4. **القصّ في محرّك Flutter** ثم ترميز JPEG بحزمة Dart خالصة (السبب موثّق في
+   `pubspec.yaml` و`docs/P31_AVATARS.md`).
+5. **لا ترحيل بيانات**: المدى الجديد 0..23 يشمل القديم 0..5.
+
+**إضافة لاحقة في نفس الطور — الصورة الرمزية عند التسجيل:**
+- عند اختيار الدور تُعيَّن **صورة عشوائية من 24** (`AvatarPresets.randomIndexFor`)
+  وتُكتب `users/{uid}.avatarPreset` + `avatars/{uid}.presetId` في نفس الحزمة،
+  مرة واحدة فقط ⇒لا تتغيّر عند إعادة التشغيل أو تسجيل الدخول مجددًا.
+- تدفّق التسجيل (Google/بريد ثم اختيار الدور) **لم يتغيّر**، ولا شاشة إكمال
+  ملف، والطالب والمدرس سواء.
+- الحسابات القديمة: عرض حتمي بلا كتابة + سكربت ترحيل اختياري
+  `tool/migrations/backfill_avatar_preset.js` (معاينة افتراضية، لا تنفيذ بلا
+  موافقة).
+- اختبارات: `test/unit/avatar_signup_assignment_test.dart` (طالب جديد، مدرس
+  جديد، الثبات بعد إعادة الفتح وبعد الخروج/الدخول، التوزيع، الحساب القديم).
+
+**الأثر على P22:** شرط «صورة المدرّس إلزامية» بقي كما هو، بل صار أدقّ
+(`hasProfilePhoto` يطلب بايتات لا وجود مستند) لأن مستند الاختيار الرمزي كان
+سيستوفيه بلا صورة.

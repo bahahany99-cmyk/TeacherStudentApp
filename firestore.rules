@@ -180,14 +180,16 @@ service cloud.firestore {
                   && request.resource.data.stage.size() <= 40));
       }
 
-      // (P22) الصورة الافتراضية: رقم تصميم ثابت 0..5 يُكتب مرة واحدة عند
-      // إنشاء الحساب، فيرى الطالب صورة شخصية من أول لحظة بدل دائرة فارغة.
-      // الرقم للعرض فقط؛ التطبيق يرسم التصميم محليًا بلا أي تحميل.
+      // (P22، موسَّعة في P31) الصورة الرمزية: رقم ثابت يُكتب مرة واحدة عند
+      // إنشاء الحساب، فيرى المستخدم صورة من أول لحظة بدل دائرة فارغة.
+      // المدى صار 0..23 بعد توسيع المعرض من 6 إلى 24 صورة (P31)، وهو **مدى
+      // واسع** يشمل كل قيمة قديمة (0..5)، فلا حاجة إلى ترحيل أي حساب قديم.
+      // الرقم للعرض فقط؛ التطبيق يعرض الصورة المضمَّنة محليًا بلا تحميل.
       function validAvatarPreset() {
         return (!('avatarPreset' in request.resource.data.keys())
               || (request.resource.data.avatarPreset is int
                   && request.resource.data.avatarPreset >= 0
-                  && request.resource.data.avatarPreset < 6));
+                  && request.resource.data.avatarPreset < 24));
       }
 
       allow create: if isSelf(uid)
@@ -301,9 +303,15 @@ service cloud.firestore {
       // «مدرس» قبل أن يرفع أي صورة، فاشتراطها على كل كتابة كان سيُفشل تسجيل
       // الدور نفسه. أما لحظة الإرسال للمراجعة فهي اللحظة التي تُعرض فيها
       // الصورة للطلاب، ومنها تُفرض.
+      // (P31) وجود المستند وحده لم يعد كافيًا: صار مستند `avatars/{uid}` يحمل
+      // **الاختيار الرمزي** أيضًا (بلا صورة). لذلك نطلب صورة مرفوعة فعلًا:
+      // بايتات base64 بطول الحد الأدنى. بدون هذا التعديل كان بإمكان مدرّس أن
+      // «يستوفي شرط الصورة» باختيار رمزية، فيسقط شرط P22 الأساسي.
       function hasProfilePhoto(ownerUid) {
         return request.resource.data.get('photoPath', '') == canonicalPhotoPath(ownerUid)
-          && exists(/databases/$(database)/documents/avatars/$(ownerUid));
+          && exists(/databases/$(database)/documents/avatars/$(ownerUid))
+          && get(/databases/$(database)/documents/avatars/$(ownerUid))
+               .data.get('imageBase64', '').size() >= 64;
       }
 
       // (P22) سياسة التعديل والمراجعة — تُفرض على الخادم لا في الواجهة:
@@ -1799,22 +1807,39 @@ service cloud.firestore {
     //   فمحاولة رفع صورة كاميرا 4MB تُرفض بدل أن تُخزَّن.
     // - القراءة لكل مسجّل: ملف المدرس العام يعرض صورته لأي طالب مسجّل.
     match /avatars/{uid} {
-      function validAvatarPayload() {
+      // (P31) المستند صار يحمل حالتين مشروعتين:
+      //  (أ) صورة مرفوعة (مع اختيار رمزي اختياري) — نفس قيود P22 حرفيًا.
+      //  (ب) مستند **اختيار رمزي فقط**: بلا `imageBase64` ولا `mimeType`.
+      //      لماذا؟ لأن الرمزية المختارة يجب أن يراها كل من يعرض الصورة
+      //      (محادثات، مجموعات، ملف المدرّس)، ومستند `users/{uid}` لا يقرأه
+      //      إلا صاحبه. والحقلان يُحذفان فعلًا عند الإزالة، فلا يُترك أثر.
+      function validAvatarDoc() {
         return request.resource.data.keys().hasOnly(
-                 ['ownerId', 'imageBase64', 'mimeType', 'updatedAt'])
+                 ['ownerId', 'imageBase64', 'mimeType', 'presetId', 'updatedAt'])
           && request.resource.data.ownerId == uid
-          && request.resource.data.imageBase64 is string
-          && request.resource.data.imageBase64.size() >= 64
-          && request.resource.data.imageBase64.size() <= 200000
-          && request.resource.data.mimeType in ['image/jpeg', 'image/png']
-          && request.resource.data.updatedAt is timestamp;
+          && request.resource.data.updatedAt is timestamp
+          // (أ) صورة: النوع من قيمتين فقط، والسقف 200000 حرف base64.
+          && (
+               (request.resource.data.imageBase64 is string
+                && request.resource.data.imageBase64.size() >= 64
+                && request.resource.data.imageBase64.size() <= 200000
+                && request.resource.data.mimeType in ['image/jpeg', 'image/png'])
+               // (ب) بلا صورة: لا يُسمح بترك نوع بلا بايتات ولا العكس.
+               || (!('imageBase64' in request.resource.data.keys())
+                   && !('mimeType' in request.resource.data.keys()))
+             )
+          // (P31) الاختيار الرمزي: 0..23 (24 صورة مضمَّنة).
+          && (!('presetId' in request.resource.data.keys())
+              || (request.resource.data.presetId is int
+                  && request.resource.data.presetId >= 0
+                  && request.resource.data.presetId < 24));
       }
 
       allow read: if signedIn();
 
-      allow create, update: if isSelf(uid) && validAvatarPayload();
+      allow create, update: if isSelf(uid) && validAvatarDoc();
 
-      // حذف الصورة = عودة إلى الصورة الافتراضية المرسومة.
+      // حذف المستند = عودة كاملة إلى الصورة الافتراضية الحتمية.
       allow delete: if isSelf(uid);
     }
 
