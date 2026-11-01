@@ -48,7 +48,7 @@ class AppServices {
     AvatarRepository? avatars,
     AuctionRepository? auctions,
     ImagePickerGateway? imagePicker,
-    this.avatarCrop,
+    AvatarCropPresenter? avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
     ValueNotifier<int>? groupsRevision,
@@ -184,7 +184,7 @@ class AppServices {
   factory AppServices.demo({
     AvatarRepository? avatars,
     ImagePickerGateway? imagePicker,
-    this.avatarCrop,
+    AvatarCropPresenter? avatarCrop,
     ChatImageRepository? chatImages,
     ChatImageSaver? imageSaver,
   }) {

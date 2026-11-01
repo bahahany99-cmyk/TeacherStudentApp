@@ -5,6 +5,7 @@ import 'package:teacher_student_app/app/session/session_scope.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/core/widgets/app_snack_bar.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
+import 'package:teacher_student_app/data/services/avatar_cropper.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/image_picker_gateway.dart';
 import 'package:teacher_student_app/features/profile/presentation/avatar_crop_screen.dart';
