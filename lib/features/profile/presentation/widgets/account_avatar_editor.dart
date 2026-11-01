@@ -76,7 +76,11 @@ class _AccountAvatarEditorState extends State<AccountAvatarEditor> {
         userId: widget.userId,
         initialPreset: widget.initialPreset,
       )..addListener(_onControllerChanged);
-      _report();
+      // **لا `_report()` هنا:** هذه الدالة تُستدعى أثناء بناء الأب، والإبلاغ
+      // الفوري كان يستدعي `setState` على الأب في منتصف البناء (خطأ حقيقي ظهر
+      // في `edit_teacher_profile_screen`: «setState() called during build»).
+      // التحميل غير متزامن، فيصل الإبلاغ الأول بعد انتهاء البناء من
+      // `_onControllerChanged`.
       _controller!.load(AppServicesScope.of(context).avatars);
     }
   }
