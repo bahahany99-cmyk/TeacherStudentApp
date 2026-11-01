@@ -111,4 +111,17 @@ abstract final class AppColors {
 
   /// خلفيات الحالات (شرائح، تنبيهات) — فاتحة جدًا مع النص الغامق نفسه.
   static Color statusTint(Color status) => status.withAlpha(20);
+
+  // ── خلفيات الصور الرمزية (P31) ─────────────────────────────────────────────
+  //
+  // ألوان دائرية هادئة من عائلة الهوية نفسها تُرسم خلف كل صورة رمزية مضمَّنة.
+  // مكانها هنا — لا داخل كتالوج الصور — لأن قاعدة المشروع أن تُعرَّف القيم
+  // اللونية في ملف واحد، وقد كشف اختبار `design_v3_test` سابقًا تجاوزها.
+  // تُخزَّن كقيم `int` لأن الكتالوج يخزّن `tint` كعدد صحيح يُمرَّر إلى
+  // `Color(...)`، ولا حاجة لبناء كائنات لون في طبقة البيانات.
+  static const int avatarMint = 0xFFBFE0CB;
+  static const int avatarLilac = 0xFFD8D2EE;
+  static const int avatarSand = 0xFFF3D7BF;
+  static const int avatarSky = 0xFFCFE3F3;
+  static const int avatarCream = 0xFFEDE0C8;
 }

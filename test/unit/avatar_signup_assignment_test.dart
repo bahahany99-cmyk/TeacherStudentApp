@@ -219,15 +219,31 @@ void main() {
       }
     });
 
-    test('البذور المختلفة تعطي أكثر من صورة على الحسابات الجديدة', () {
+    test('البذور المختلفة توزّع الحسابات الجديدة على صور متعدّدة', () {
+      // بلا دور معروف يكون النطاق **محايدًا** (بالغون فقط)، فلا يصحّ انتظار
+      // تغطية المعرض كله؛ الصحيح أن يتوزّع الحساب على أكثر من صورة داخل
+      // النطاق المسموح، وألّا يخرج عنه أبدًا.
+      final List<int> pool = AvatarPresets.assignmentPool(
+        AvatarAudience.unspecified,
+      );
       final Set<int> seen = <int>{
         for (int i = 0; i < 60; i++)
           AvatarPresets.randomIndexFor('new-user-$i', entropy: i * 7919),
       };
-      // 60 حسابًا على 30 صورة: التوقّع يغطي معظم المعرض. الحدّ هنا متحفظ حتى
-      // لا يكون الاختبار هشًّا أمام تغيير طفيف في الخلط.
-      expect(seen.length, greaterThanOrEqualTo(12));
-      expect(seen.every((int id) => id >= 0 && id < AvatarPresets.count), isTrue);
+      expect(
+        seen.length,
+        greaterThanOrEqualTo(3),
+        reason: 'التوزيع يجب ألا يحصر الحسابات على صورة واحدة',
+      );
+      expect(
+        seen.every(pool.contains),
+        isTrue,
+        reason: 'كل اختيار تلقائي يبقى داخل النطاق المحايد',
+      );
+      expect(
+        seen.every((int id) => id >= 0 && id < AvatarPresets.count),
+        isTrue,
+      );
     });
 
     test('السحب التلقائي يحترم جمهور الدور ولا يختار فئة غير مناسبة', () {

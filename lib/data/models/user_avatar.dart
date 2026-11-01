@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:teacher_student_app/data/models/user_role.dart';
 
+import 'package:teacher_student_app/core/theme/app_colors.dart';
+
 /// صور الحساب (P22): صورة مخصّصة رفعها المستخدم، أو صورة افتراضية مرسومة.
 ///
 /// ## لماذا تخزين في Firestore لا في Storage؟
@@ -211,28 +213,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_01.jpg',
       description: 'ولد بشعر أسود مجعّد وقميص أصفر',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 1,
       category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_02.jpg',
       description: 'ولد بشعر بني فاتح وقميص أزرق',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     AvatarArtwork(
       id: 2,
       category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_03.jpg',
       description: 'ولد ببشرة داكنة وقميص مخطط أخضر',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 3,
       category: AvatarCategory.boyTeen,
       asset: 'assets/avatars/boy_04.jpg',
       description: 'مراهق بنظارة وهودي أحمر',
-      tint: 0xFFCFE3F3,
+      tint: AppColors.avatarSky,
     ),
     // ── بنات أطفال (4..6) ────────────────────────────────────────────────────
     AvatarArtwork(
@@ -240,28 +242,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_01.jpg',
       description: 'بنت بشعر مموّج طويل ومشبك وردي',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 5,
       category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_02.jpg',
       description: 'بنت بضفيرتين كرويتين وقميص بنفسجي',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 6,
       category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_03.jpg',
       description: 'بنت بذيل حصان وسويتر فيروزي',
-      tint: 0xFFEDE0C8,
+      tint: AppColors.avatarCream,
     ),
     AvatarArtwork(
       id: 7,
       category: AvatarCategory.girlTeen,
       asset: 'assets/avatars/girl_04.jpg',
       description: 'مراهقة بشعر كاريه كستنائي وفستان أصفر',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     // ── شباب (8..10) ─────────────────────────────────────────────────────────
     AvatarArtwork(
@@ -269,28 +271,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.youngMan,
       asset: 'assets/avatars/man_01.jpg',
       description: 'شاب بشعر قصير وقميص كحلي',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 9,
       category: AvatarCategory.youngMan,
       asset: 'assets/avatars/man_02.jpg',
       description: 'شاب بشعر مجعّد ولحية قصيرة وسويتر رمادي',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 10,
       category: AvatarCategory.youngMan,
       asset: 'assets/avatars/man_03.jpg',
       description: 'شاب بشعر مموّج مربوط ونظارة رقيقة',
-      tint: 0xFFEDE0C8,
+      tint: AppColors.avatarCream,
     ),
     AvatarArtwork(
       id: 11,
       category: AvatarCategory.adultMan,
       asset: 'assets/avatars/man_04.jpg',
       description: 'رجل بالغ بقميص قطني أخضر داكن',
-      tint: 0xFFCFE3F3,
+      tint: AppColors.avatarSky,
     ),
     // ── شابات (12..14) ───────────────────────────────────────────────────────
     AvatarArtwork(
@@ -298,28 +300,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.youngWoman,
       asset: 'assets/avatars/woman_01.jpg',
       description: 'شابة بشعر طويل مستقيم وبلوزة وردية',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 13,
       category: AvatarCategory.youngWoman,
       asset: 'assets/avatars/woman_02.jpg',
       description: 'شابة بحجاب بلون هادئ وسترة كريمية',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     AvatarArtwork(
       id: 14,
       category: AvatarCategory.youngWoman,
       asset: 'assets/avatars/woman_03.jpg',
       description: 'شابة بشعر مجعّد وقميص سماوي',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 15,
       category: AvatarCategory.adultWoman,
       asset: 'assets/avatars/woman_04.jpg',
       description: 'امرأة بالغة بكعكة شعر عالية وبليزر رمادي',
-      tint: 0xFFEDE0C8,
+      tint: AppColors.avatarCream,
     ),
     // ── رجال كبار السن (16..18) ──────────────────────────────────────────────
     AvatarArtwork(
@@ -327,28 +329,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_01.jpg',
       description: 'رجل كبير السن بشعر أبيض ولحية خفيفة وقميص أزرق',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 17,
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_02.jpg',
       description: 'رجل كبير السن بنظارة وشعر رمادي وقميص بيج',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 18,
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_03.jpg',
       description: 'رجل كبير السن ببشرة داكنة وسترة رمادية',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     AvatarArtwork(
       id: 19,
       category: AvatarCategory.adultMan,
       asset: 'assets/avatars/elder_man_04.jpg',
       description: 'رجل بالغ بشعر خفيف وقميص عنّابي',
-      tint: 0xFFCFE3F3,
+      tint: AppColors.avatarSky,
     ),
     // ── نساء كبيرات السن (20..22) ────────────────────────────────────────────
     AvatarArtwork(
@@ -356,28 +358,28 @@ abstract final class AvatarPresets {
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_01.jpg',
       description: 'سيدة كبيرة السن بشعر فضي قصير وسترة خضراء',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 21,
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_02.jpg',
       description: 'سيدة كبيرة السن بحجاب رمادي ونظارة',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     AvatarArtwork(
       id: 22,
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_03.jpg',
       description: 'سيدة كبيرة السن بشعر مجعّد فضي وسترة زرقاء',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 23,
       category: AvatarCategory.adultWoman,
       asset: 'assets/avatars/elder_woman_04.jpg',
       description: 'امرأة بالغة بحجاب وردي هادئ وعباءة بيج',
-      tint: 0xFFEDE0C8,
+      tint: AppColors.avatarCream,
     ),
     // ── (P31-توسيع) الصور الست الجديدة: 24..29 ───────────────────────────────
     // تُضاف **بعد** المعرّفات القديمة دائمًا، فمعرّف كل صورة قائمة لا يتغيّر
@@ -387,42 +389,42 @@ abstract final class AvatarPresets {
       category: AvatarCategory.boyTeen,
       asset: 'assets/avatars/teen_boy_01.jpg',
       description: 'مراهق بشعر أسود كثيف وهودي رمادي',
-      tint: 0xFFBFE0CB,
+      tint: AppColors.avatarMint,
     ),
     AvatarArtwork(
       id: 25,
       category: AvatarCategory.boyTeen,
       asset: 'assets/avatars/teen_boy_02.jpg',
       description: 'مراهق بشعر بني مموّج ونظارة وقميص زيتي',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
     AvatarArtwork(
       id: 26,
       category: AvatarCategory.girlTeen,
       asset: 'assets/avatars/teen_girl_01.jpg',
       description: 'مراهقة بشعر أسود مستقيم وبلوزة نعناعية',
-      tint: 0xFFF3D7BF,
+      tint: AppColors.avatarSand,
     ),
     AvatarArtwork(
       id: 27,
       category: AvatarCategory.girlTeen,
       asset: 'assets/avatars/teen_girl_02.jpg',
       description: 'مراهقة بضفيرة بنية وجاكيت جينز',
-      tint: 0xFFEDE0C8,
+      tint: AppColors.avatarCream,
     ),
     AvatarArtwork(
       id: 28,
       category: AvatarCategory.adultMan,
       asset: 'assets/avatars/adult_man_01.jpg',
       description: 'رجل بالغ بلحية قصيرة وبليزر كحلي',
-      tint: 0xFFCFE3F3,
+      tint: AppColors.avatarSky,
     ),
     AvatarArtwork(
       id: 29,
       category: AvatarCategory.adultWoman,
       asset: 'assets/avatars/adult_woman_01.jpg',
       description: 'امرأة بالغة بشعر مموّج وبلوزة فيروزية',
-      tint: 0xFFD8D2EE,
+      tint: AppColors.avatarLilac,
     ),
   ];
 
