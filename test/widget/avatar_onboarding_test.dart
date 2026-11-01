@@ -35,16 +35,15 @@ import '../helpers/test_app.dart';
 
 /// خدمة مصادقة مزيّفة تمثّل مستندًا واحدًا في `users/{uid}`.
 class _FakeAuth implements AuthService {
-  _FakeAuth({this.preset, this.createdAt, this.role = UserRole.student});
+  _FakeAuth({this.preset, this.createdAt});
 
   int? preset;
   DateTime? createdAt;
-  UserRole role;
 
   AppUser get _user => AppUser(
     id: 'uid-new',
     displayName: 'طالب جديد',
-    role: role,
+    role: UserRole.student,
     email: 'new@example.com',
     avatarPreset: preset,
     createdAt: createdAt,
