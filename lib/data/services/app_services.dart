@@ -55,6 +55,7 @@ class AppServices {
   }) : auctions = auctions ?? const EmptyAuctionRepository(),
        avatars = avatars ?? const EmptyAvatarRepository(),
        imagePicker = imagePicker ?? const UnavailableImagePickerGateway(),
+       avatarCrop = avatarCrop,
        chatImages = chatImages ?? const EmptyChatImageRepository(),
        imageSaver = imageSaver ?? const UnavailableChatImageSaver(),
        groupsRevision = groupsRevision ?? ValueNotifier<int>(0);
