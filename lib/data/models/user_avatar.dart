@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:teacher_student_app/data/models/user_role.dart';
+
 /// صور الحساب (P22): صورة مخصّصة رفعها المستخدم، أو صورة افتراضية مرسومة.
 ///
 /// ## لماذا تخزين في Firestore لا في Storage؟
@@ -100,16 +102,42 @@ class UserAvatar {
 
 /// فئة الصورة الرمزية — توزيع المعرض بالتساوي (P31): أربع صور لكل فئة.
 enum AvatarCategory {
-  boy('أولاد صغار'),
-  girl('بنات صغيرات'),
+  boyChild('أولاد أطفال'),
+  girlChild('بنات أطفال'),
+  boyTeen('أولاد مراهقون'),
+  girlTeen('بنات مراهقات'),
   youngMan('شباب'),
   youngWoman('شابات'),
-  olderMan('رجال أكبر سنًا'),
-  olderWoman('سيدات أكبر سنًا');
+  adultMan('رجال بالغون'),
+  adultWoman('نساء بالغات'),
+  olderMan('رجال كبار السن'),
+  olderWoman('نساء كبيرات السن');
 
   const AvatarCategory(this.label);
 
   /// عنوان القسم في المعرض (عربي، بلا رموز تقنية).
+  final String label;
+}
+
+/// لمن تُخصَّص الحصيلة التلقائية عند التسجيل (P31).
+///
+/// **لماذا هذا التصنيف؟** لأن التطبيق يعرف **الدور** فقط عند إنشاء الحساب (ولا
+/// يعرف العمر ولا الجنس، ولا يجوز أن يسألهما). لذلك لا يجوز سحب صورة عشوائية
+/// من المعرض كله: طفل/طفلة لمدرّس غير مناسب، ومظهر مسنّ لطالب في العاشرة غير
+/// مناسب أيضًا. هذا التصنيف يحصر الاختيار في نطاق **مناسب للمعلومة المتاحة**،
+/// وعند غياب المعلومة تُستخدم فئة محايدة (بالغون).
+enum AvatarAudience {
+  /// طالب: أطفال ومراهقون وشباب — لا كبار سن.
+  student('طالب'),
+
+  /// مدرّس: بالغون وكبار سن — لا أطفال ولا مراهقون.
+  teacher('مدرّس'),
+
+  /// معلومة غير كافية: صور محايدة من فئة البالغين.
+  unspecified('غير محدّد');
+
+  const AvatarAudience(this.label);
+
   final String label;
 }
 
@@ -123,7 +151,7 @@ class AvatarArtwork {
     required this.tint,
   });
 
-  /// المعرّف المحفوظ في `avatarPreset` (0..23) — لا يتغيّر بعد النشر.
+  /// المعرّف المحفوظ في `avatarPreset` (0..29) — لا يتغيّر بعد النشر.
   final int id;
 
   final AvatarCategory category;
@@ -141,85 +169,101 @@ class AvatarArtwork {
 /// كتالوج الصور الرمزية المضمَّنة (P31).
 ///
 /// **ما تغيّر عن P22؟** كانت الصور الافتراضية ستة **تدرّجات مرسومة** بداخلها
-/// حرفان. الآن هي **24 صورة كرتونية فعلية** مضمَّنة في `assets/avatars/`،
-/// موزّعة بالتساوي على ست فئات (أولاد/بنات/شباب/شابات/رجال أكبر/سيدات أكبر)،
-/// بأسلوب بصري واحد وخلفيات هادئة.
+/// حرفان. الآن هي **30 صورة كرتونية فعلية** مضمَّنة في `assets/avatars/`،
+/// موزّعة بالتساوي على عشر فئات (أطفال، مراهقون، شباب، بالغون، كبار سن ×
+/// ذكور/إناث)، بأسلوب بصري واحد وخلفيات دائرية هادئة.
 ///
 /// **لماذا أصول مضمَّنة لا شبكة؟** ليبقى اختيار الصورة متاحًا بلا اتصال، ولأن
 /// طلب «الصورة الافتراضية ليست فارغة أبدًا» يجب أن يظل صحيحًا على جهاز بلا
-/// شبكة. الملفات مضغوطة (‎256×256 JPEG‎ ≈ 15–25KB) فمجموعها أقل من 0.6MB.
+/// شبكة. الملفات مضغوطة (‎256×256 JPEG‎ ≈ 9–13KB) فمجموعها ≈0.38MB.
+///
+/// **ثبات المعرّفات (قرار ملزم):** `all[i].id == i`، والصور الجديدة تُضاف في
+/// **نهاية** القائمة دائمًا. المعرّفات 0..23 لم تتغيّر عند توسيع المعرض من 24
+/// إلى 30، فلا تتغيّر صورة أي مستخدم اختار رمزية سابقًا. **لا يُعاد ترتيب
+/// القائمة ولا تُحذف صورة** بعد النشر.
 ///
 /// **التوافق مع الحسابات القديمة:** المعرّف المخزَّن يظل رقمًا في `avatarPreset`
-/// (0..23). القيم القديمة 0..5 تبقى صالحة وتُعرض الآن بالرسم الجديد نفسه
-/// (المعرّف لم يتغيّر، تغيّر شكل الصورة) — لا ترحيل بيانات ولا كتابة إجبارية.
+/// (0..29). القيم القديمة 0..5 تبقى صالحة وتُعرض بالرسم الجديد نفسه (المعرّف
+/// لم يتغيّر، تغيّر شكل الصورة) — لا ترحيل بيانات ولا كتابة إجبارية.
 abstract final class AvatarPresets {
-  /// عدد الصور المتاحة (6 فئات × 4).
-  static const int count = 24;
+  /// عدد الصور المتاحة (10 فئات × 3).
+  static const int count = 30;
 
-  /// صور كل فئة — أربع لكل فئة، بالتساوي.
-  static const int perCategory = 4;
+  /// صور كل فئة — ثلاث لكل فئة، بالتساوي.
+  static const int perCategory = 3;
+
+  /// عدد الصور **القديمة** التي كانت موجودة قبل توسيع المعرض إلى 30 (P31).
+  ///
+  /// **لماذا ثابت مستقل؟** لأن `forId` هي الاحتياط الحتمي للحسابات التي لا تحمل
+  /// `avatarPreset` إطلاقًا. لو غيّرنا باقي القسمة من 24 إلى 30 لتغيّرت صورة
+  /// **كل** حساب قديم من هذه الفئة بلا أن يطلب — وهو ما نرفضه. فالسقف هنا
+  /// يبقى 24، وأي صورة جديدة لا تدخل في الاحتياط الحتمي.
+  static const int legacyDeterministicCount = 24;
 
   /// الكتالوج كاملًا، مرتّبًا بترتيب الفئات أعلاه ثم بترتيب الصور داخلها.
   ///
   /// **الترتيب هو العقد**: `id` يساوي موضع الصورة في هذه القائمة، فلا يُعاد
   /// ترتيب القائمة بعد النشر وإلا تغيّرت صورة كل مستخدم اختار رمزية.
   static const List<AvatarArtwork> all = <AvatarArtwork>[
+    // ── أولاد أطفال (0..2) ───────────────────────────────────────────────────
     AvatarArtwork(
       id: 0,
-      category: AvatarCategory.boy,
+      category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_01.jpg',
       description: 'ولد بشعر أسود مجعّد وقميص أصفر',
       tint: 0xFFBFE0CB,
     ),
     AvatarArtwork(
       id: 1,
-      category: AvatarCategory.boy,
+      category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_02.jpg',
       description: 'ولد بشعر بني فاتح وقميص أزرق',
       tint: 0xFFD8D2EE,
     ),
     AvatarArtwork(
       id: 2,
-      category: AvatarCategory.boy,
+      category: AvatarCategory.boyChild,
       asset: 'assets/avatars/boy_03.jpg',
       description: 'ولد ببشرة داكنة وقميص مخطط أخضر',
       tint: 0xFFF3D7BF,
     ),
     AvatarArtwork(
       id: 3,
-      category: AvatarCategory.boy,
+      category: AvatarCategory.boyTeen,
       asset: 'assets/avatars/boy_04.jpg',
-      description: 'ولد بنظارة وهودي أحمر',
+      description: 'مراهق بنظارة وهودي أحمر',
       tint: 0xFFCFE3F3,
     ),
+    // ── بنات أطفال (4..6) ────────────────────────────────────────────────────
     AvatarArtwork(
       id: 4,
-      category: AvatarCategory.girl,
+      category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_01.jpg',
       description: 'بنت بشعر مموّج طويل ومشبك وردي',
       tint: 0xFFBFE0CB,
     ),
     AvatarArtwork(
       id: 5,
-      category: AvatarCategory.girl,
+      category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_02.jpg',
       description: 'بنت بضفيرتين كرويتين وقميص بنفسجي',
       tint: 0xFFF3D7BF,
     ),
     AvatarArtwork(
       id: 6,
-      category: AvatarCategory.girl,
+      category: AvatarCategory.girlChild,
       asset: 'assets/avatars/girl_03.jpg',
       description: 'بنت بذيل حصان وسويتر فيروزي',
       tint: 0xFFEDE0C8,
     ),
     AvatarArtwork(
       id: 7,
-      category: AvatarCategory.girl,
+      category: AvatarCategory.girlTeen,
       asset: 'assets/avatars/girl_04.jpg',
-      description: 'بنت بشعر كاريه كستنائي وفستان أصفر',
+      description: 'مراهقة بشعر كاريه كستنائي وفستان أصفر',
       tint: 0xFFD8D2EE,
     ),
+    // ── شباب (8..10) ─────────────────────────────────────────────────────────
     AvatarArtwork(
       id: 8,
       category: AvatarCategory.youngMan,
@@ -243,11 +287,12 @@ abstract final class AvatarPresets {
     ),
     AvatarArtwork(
       id: 11,
-      category: AvatarCategory.youngMan,
+      category: AvatarCategory.adultMan,
       asset: 'assets/avatars/man_04.jpg',
-      description: 'شاب بقميص قطني أخضر داكن',
+      description: 'رجل بالغ بقميص قطني أخضر داكن',
       tint: 0xFFCFE3F3,
     ),
+    // ── شابات (12..14) ───────────────────────────────────────────────────────
     AvatarArtwork(
       id: 12,
       category: AvatarCategory.youngWoman,
@@ -271,66 +316,113 @@ abstract final class AvatarPresets {
     ),
     AvatarArtwork(
       id: 15,
-      category: AvatarCategory.youngWoman,
+      category: AvatarCategory.adultWoman,
       asset: 'assets/avatars/woman_04.jpg',
-      description: 'شابة بكعكة شعر عالية وبليزر رمادي',
+      description: 'امرأة بالغة بكعكة شعر عالية وبليزر رمادي',
       tint: 0xFFEDE0C8,
     ),
+    // ── رجال كبار السن (16..18) ──────────────────────────────────────────────
     AvatarArtwork(
       id: 16,
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_01.jpg',
-      description: 'رجل أكبر سنًا بشعر أبيض ولحية خفيفة وقميص أزرق',
+      description: 'رجل كبير السن بشعر أبيض ولحية خفيفة وقميص أزرق',
       tint: 0xFFBFE0CB,
     ),
     AvatarArtwork(
       id: 17,
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_02.jpg',
-      description: 'رجل أكبر سنًا بنظارة وشعر رمادي وقميص بيج',
+      description: 'رجل كبير السن بنظارة وشعر رمادي وقميص بيج',
       tint: 0xFFF3D7BF,
     ),
     AvatarArtwork(
       id: 18,
       category: AvatarCategory.olderMan,
       asset: 'assets/avatars/elder_man_03.jpg',
-      description: 'رجل أكبر سنًا ببشرة داكنة وسترة رمادية',
+      description: 'رجل كبير السن ببشرة داكنة وسترة رمادية',
       tint: 0xFFD8D2EE,
     ),
     AvatarArtwork(
       id: 19,
-      category: AvatarCategory.olderMan,
+      category: AvatarCategory.adultMan,
       asset: 'assets/avatars/elder_man_04.jpg',
-      description: 'رجل أكبر سنًا بشعر أصلع جزئيًا وقميص عنّابي',
+      description: 'رجل بالغ بشعر خفيف وقميص عنّابي',
       tint: 0xFFCFE3F3,
     ),
+    // ── نساء كبيرات السن (20..22) ────────────────────────────────────────────
     AvatarArtwork(
       id: 20,
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_01.jpg',
-      description: 'سيدة أكبر سنًا بشعر فضي قصير وسترة خضراء',
+      description: 'سيدة كبيرة السن بشعر فضي قصير وسترة خضراء',
       tint: 0xFFBFE0CB,
     ),
     AvatarArtwork(
       id: 21,
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_02.jpg',
-      description: 'سيدة أكبر سنًا بحجاب رمادي ونظارة',
+      description: 'سيدة كبيرة السن بحجاب رمادي ونظارة',
       tint: 0xFFD8D2EE,
     ),
     AvatarArtwork(
       id: 22,
       category: AvatarCategory.olderWoman,
       asset: 'assets/avatars/elder_woman_03.jpg',
-      description: 'سيدة أكبر سنًا بشعر مجعّد فضي وسترة زرقاء',
+      description: 'سيدة كبيرة السن بشعر مجعّد فضي وسترة زرقاء',
       tint: 0xFFF3D7BF,
     ),
     AvatarArtwork(
       id: 23,
-      category: AvatarCategory.olderWoman,
+      category: AvatarCategory.adultWoman,
       asset: 'assets/avatars/elder_woman_04.jpg',
-      description: 'سيدة أكبر سنًا بحجاب وردي هادئ وعباءة بيج',
+      description: 'امرأة بالغة بحجاب وردي هادئ وعباءة بيج',
       tint: 0xFFEDE0C8,
+    ),
+    // ── (P31-توسيع) الصور الست الجديدة: 24..29 ───────────────────────────────
+    // تُضاف **بعد** المعرّفات القديمة دائمًا، فمعرّف كل صورة قائمة لا يتغيّر
+    // ولا تتغيّر صورة أي مستخدم اختارها سابقًا.
+    AvatarArtwork(
+      id: 24,
+      category: AvatarCategory.boyTeen,
+      asset: 'assets/avatars/teen_boy_01.jpg',
+      description: 'مراهق بشعر أسود كثيف وهودي رمادي',
+      tint: 0xFFBFE0CB,
+    ),
+    AvatarArtwork(
+      id: 25,
+      category: AvatarCategory.boyTeen,
+      asset: 'assets/avatars/teen_boy_02.jpg',
+      description: 'مراهق بشعر بني مموّج ونظارة وقميص زيتي',
+      tint: 0xFFD8D2EE,
+    ),
+    AvatarArtwork(
+      id: 26,
+      category: AvatarCategory.girlTeen,
+      asset: 'assets/avatars/teen_girl_01.jpg',
+      description: 'مراهقة بشعر أسود مستقيم وبلوزة نعناعية',
+      tint: 0xFFF3D7BF,
+    ),
+    AvatarArtwork(
+      id: 27,
+      category: AvatarCategory.girlTeen,
+      asset: 'assets/avatars/teen_girl_02.jpg',
+      description: 'مراهقة بضفيرة بنية وجاكيت جينز',
+      tint: 0xFFEDE0C8,
+    ),
+    AvatarArtwork(
+      id: 28,
+      category: AvatarCategory.adultMan,
+      asset: 'assets/avatars/adult_man_01.jpg',
+      description: 'رجل بالغ بلحية قصيرة وبليزر كحلي',
+      tint: 0xFFCFE3F3,
+    ),
+    AvatarArtwork(
+      id: 29,
+      category: AvatarCategory.adultWoman,
+      asset: 'assets/avatars/adult_woman_01.jpg',
+      description: 'امرأة بالغة بشعر مموّج وبلوزة فيروزية',
+      tint: 0xFFD8D2EE,
     ),
   ];
 
@@ -367,15 +459,22 @@ abstract final class AvatarPresets {
   /// بيانات المستخدم فتبقى كما هي.
   ///
   /// **التوزيع:** البذرة تخلط `uid` مع [entropy] (قيمة عشوائية تُقرأ مرة واحدة
-  /// عند الإنشاء)، فالنتيجة شبه عشوائية ومتوزّعة على 24 صورة بأقرب ما يمكن:
-  /// خوارزمية `Random` موحّدة، ولا مجموعة عالمية تُدار ولا عدّاد مركزي.
-  /// تكرار الصورة بين حسابين أمر متوقع (طلبا صراحةً ألّا نفرض ضمانًا عالميًا
+  /// عند الإنشاء)، فالنتيجة شبه عشوائية ومتوزّعة على حصيلة [audience] بأقرب ما
+  /// يمكن: خوارزمية `Random` موحّدة، ولا مجموعة عالمية تُدار ولا عدّاد مركزي.
+  /// تكرار الصورة بين حسابين أمر متوقع (طلب صريح بألّا نفرض ضمانًا عالميًا
   /// لعدم التكرار)، ولا أثر لذلك على أي منطق.
+  ///
+  /// **[audience]** يمنع سحب صورة من فئة غير مناسبة (طفل لمدرّس مثلًا).
   ///
   /// **لماذا تُمرَّر [entropy]؟** لتكون الدالة **قابلة للاختبار** بحتمية كاملة:
   /// نفس البذرة ⇒ نفس النتيجة، ومدى مختلف من البذور ⇒ تغطية كل الصور.
-  static int randomIndexFor(String uid, {int? entropy}) {
-    if (all.isEmpty) {
+  static int randomIndexFor(
+    String uid, {
+    int? entropy,
+    AvatarAudience audience = AvatarAudience.unspecified,
+  }) {
+    final List<int> pool = assignmentPool(audience);
+    if (pool.isEmpty) {
       return 0;
     }
     int mixed = 0x811c9dc5; // FNV-1a 32-bit
@@ -385,13 +484,67 @@ abstract final class AvatarPresets {
     }
     final int salt = entropy ?? Random.secure().nextInt(1 << 31);
     mixed = (mixed ^ salt) & 0x7fffffff;
-    return Random(mixed).nextInt(all.length);
+    return pool[Random(mixed).nextInt(pool.length)];
+  }
+
+  /// الفئات التي يجوز السحب منها تلقائيًا لكل جمهور.
+  ///
+  /// **قاعدة صريحة:** لا تُسحب صورة طفل/مراهق لمدرّس، ولا صورة مسنّ لطالب.
+  /// الدور هو المعلومة الوحيدة المتاحة عند التسجيل، وهي كافية لاستبعاد ما لا
+  /// يناسب. وعند غياب الدور ([AvatarAudience.unspecified]) النطاق **محايد**:
+  /// بالغون فقط، فهم صالحون لأي معلومة ناقصة.
+  static const Map<AvatarAudience, List<AvatarCategory>> assignmentCategories =
+      <AvatarAudience, List<AvatarCategory>>{
+        AvatarAudience.student: <AvatarCategory>[
+          AvatarCategory.boyChild,
+          AvatarCategory.girlChild,
+          AvatarCategory.boyTeen,
+          AvatarCategory.girlTeen,
+          AvatarCategory.youngMan,
+          AvatarCategory.youngWoman,
+        ],
+        AvatarAudience.teacher: <AvatarCategory>[
+          AvatarCategory.adultMan,
+          AvatarCategory.adultWoman,
+          AvatarCategory.olderMan,
+          AvatarCategory.olderWoman,
+        ],
+        AvatarAudience.unspecified: <AvatarCategory>[
+          AvatarCategory.adultMan,
+          AvatarCategory.adultWoman,
+        ],
+      };
+
+  /// يترجم دور المستخدم إلى جمهور التعيين.
+  ///
+  /// **مكانه هنا** لا في الخدمة: قاعدة «من يستحق أي صور» قاعدة بيانات عرض،
+  /// ووجودها في الكيان يجعلها قابلة للاختبار مباشرة بلا Firebase. ولا تُسأل عن
+  /// العمر ولا الجنس — الدور المعلوم وحده يكفي.
+  static AvatarAudience audienceForRole(UserRole? role) {
+    return switch (role) {
+      UserRole.teacher => AvatarAudience.teacher,
+      UserRole.student => AvatarAudience.student,
+      _ => AvatarAudience.unspecified,
+    };
+  }
+
+  /// كل معرّفات الصور المسموح بها لجمهور بعينه (بترتيب الكتالوج).
+  static List<int> assignmentPool(AvatarAudience audience) {
+    final List<AvatarCategory> categories =
+        assignmentCategories[audience] ?? const <AvatarCategory>[];
+    return <int>[
+      for (final AvatarArtwork artwork in all)
+        if (categories.contains(artwork.category)) artwork.id,
+    ];
   }
 
   /// معرّف الصورة الافتراضية **الحتمي** من معرّف المستخدم.
   ///
   /// الحتمية مقصودة: نفس المستخدم يرى نفس الصورة على كل جهاز وقبل أن يُكتب
   /// أي مستند، فلا «تتغيّر صورته» عند إعادة تثبيت أو تسجيل دخول.
+  ///
+  /// **الباقي ثابت على [legacyDeterministicCount] (24) وليس [count]:** توسيع
+  /// المعرض إلى 30 يجب ألّا يغيّر صورة أي حساب قديم بلا `avatarPreset`.
   static int forId(String id) {
     if (id.isEmpty) {
       return 0;
@@ -400,7 +553,7 @@ abstract final class AvatarPresets {
     for (final int unit in id.codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    return hash % count;
+    return hash % legacyDeterministicCount;
   }
 
   /// تطبيع معرّف قادم من الخادم (قد يكون `null` أو خارج المدى).

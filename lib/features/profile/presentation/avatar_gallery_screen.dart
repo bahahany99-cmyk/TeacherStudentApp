@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:teacher_student_app/core/theme/app_spacing.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
 
-/// معرض الصور الرمزية (P31) — 24 صورة مضمَّنة في ستة أقسام متساوية.
+/// معرض الصور الرمزية (P31) — 30 صورة مضمَّنة في عشرة أقسام متساوية.
 ///
 /// ## القرارات التصميمية
-/// - **شبكة 4 أعمدة** على الهاتف: 24 صورة تُرى بتمريرة واحدة تقريبًا، ودائرة
-///   56dp قابلة للنقر بلا خطأ (هدف اللمس ≥ 48dp).
-/// - **أقسام معنونة** (أولاد/بنات/شباب/شابات/رجال أكبر/سيدات أكبر) بدل شبكة
+/// - **شبكة 3 أعمدة** على الهاتف: 30 صورة في عشرة أقسام (3 لكل قسم)، فالقسم
+///   الواحد يُرى كاملًا في صف واحد، والدائرة كبيرة بما يكفي للنقر الصحيح.
+/// - **أقسام معنونة** (أطفال/مراهقون/شباب/بالغون/كبار سن × ذكور وإناث) بدل شبكة
 ///   مسطّحة، لأن المستخدم يبحث عن «صورة تشبهني» فالتقسيم يقلّص البحث.
 /// - **معاينة قبل الاعتماد**: النقر يختار ويعاين في شريط ثابت أسفل الشاشة، ولا
 ///   يُحفظ إلا بزر «اعتماد». هذا يمنع تغييرًا غير مقصود بضغطة عابرة.
@@ -161,7 +161,7 @@ class _CategorySection extends StatelessWidget {
             child: Text(category.label, style: theme.textTheme.titleSmall),
           ),
           GridView.count(
-            crossAxisCount: 4,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: AppSpacing.sm,

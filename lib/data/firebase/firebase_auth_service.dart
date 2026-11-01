@@ -341,7 +341,7 @@ class FirebaseAuthService implements AuthService {
       // نكتبها **مرة واحدة** فقط: لو اختار المستخدم صورة أخرى لاحقًا فلا
       // نُعيد ضبطها عند أي نداء تالٍ لاختيار الدور.
       //
-      // (P31) الصورة صارت **عشوائية من المعرض (24 صورة)** لا حتمية من المعرّف،
+      // (P31) الصورة صارت **عشوائية من المعرض (30 صورة)** لا حتمية من المعرّف،
       // وتُكتب في مكانين في نفس الحزمة:
       //  1. `users/{uid}.avatarPreset` — يقرأه صاحب الحساب (الجلسة)، وهو ما
       //     يجعل الصورة **ثابتة** بعد إعادة تشغيل التطبيق أو تسجيل الخروج
@@ -351,9 +351,15 @@ class FirebaseAuthService implements AuthService {
       //     مستند غيرك. بلا هذه الكتابة سيرى الآخرون صورة الحتمية لا المعيَّنة.
       // الكتابتان `merge` فلا تُمسح صورة مرفوعة أو اختيار لاحق.
       final Object? storedPreset = existing.data()?['avatarPreset'];
+      // (P31) النطاق يتبع الدور: مدرّس ⇒ بالغون/كبار سن، طالب ⇒ أطفال ومراهقون
+      // وشباب. لا نطلب عمرًا ولا جنسًا (ولا يجوز أن نشترطهما للتسجيل)؛ وعند غياب
+      // معلومة كافية نستخدم النطاق المحايد.
       final int? assignedPreset = storedPreset is int
           ? storedPreset
-          : AvatarPresets.randomIndexFor(uid);
+          : AvatarPresets.randomIndexFor(
+              uid,
+              audience: AvatarPresets.audienceForRole(role),
+            );
 
       batch.set(doc, <String, Object?>{
         'displayName': displayName,

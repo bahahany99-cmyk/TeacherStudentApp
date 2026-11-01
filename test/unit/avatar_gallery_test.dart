@@ -14,33 +14,79 @@ import 'package:teacher_student_app/data/models/user_avatar.dart';
 /// قبل البناء.
 void main() {
   group('(P31) كتالوج الصور الرمزية', () {
-    test('24 صورة على الأقل، وأربع لكل فئة بالتساوي', () {
-      expect(AvatarPresets.count, greaterThanOrEqualTo(24));
-      expect(AvatarPresets.all.length, AvatarPresets.count);
-      expect(AvatarPresets.perCategory * AvatarCategory.values.length,
-          AvatarPresets.count);
+    test('30 صورة بالضبط: عشر فئات × ثلاث صور', () {
+      expect(AvatarPresets.count, 30);
+      expect(AvatarPresets.all.length, 30);
+      expect(AvatarPresets.perCategory, 3);
+      expect(AvatarCategory.values.length, 10);
+      expect(AvatarPresets.perCategory * AvatarCategory.values.length, 30);
 
       for (final AvatarCategory category in AvatarCategory.values) {
         expect(
           AvatarPresets.ofCategory(category).length,
           AvatarPresets.perCategory,
-          reason: 'الفئة ${category.label}',
+          reason: 'الفئة ${category.label} يجب أن تحوي 3 صور',
         );
       }
     });
 
-    test('الفئات الست المطلوبة موجودة', () {
+    test('الفئات العشر المطلوبة موجودة بالترتيب المعلن', () {
       expect(
-        AvatarCategory.values.map((AvatarCategory c) => c.label),
-        containsAll(<String>[
-          'أولاد صغار',
-          'بنات صغيرات',
+        AvatarCategory.values.map((AvatarCategory c) => c.label).toList(),
+        <String>[
+          'أولاد أطفال',
+          'بنات أطفال',
+          'أولاد مراهقون',
+          'بنات مراهقات',
           'شباب',
           'شابات',
-          'رجال أكبر سنًا',
-          'سيدات أكبر سنًا',
-        ]),
+          'رجال بالغون',
+          'نساء بالغات',
+          'رجال كبار السن',
+          'نساء كبيرات السن',
+        ],
       );
+    });
+
+    test('معرّفات الصور القديمة ثابتة (لا تتغيّر بإضافة صور)', () {
+      // القائمة الحرجة: ترتيب الملفات للمعرّفات 0..23 كما نُشرت في P31.
+      // أي إعادة ترتيب هنا تعني أن مستخدمًا اختار صورة فسيَرى صورة أخرى.
+      const List<String> legacyAssets = <String>[
+        'assets/avatars/boy_01.jpg',
+        'assets/avatars/boy_02.jpg',
+        'assets/avatars/boy_03.jpg',
+        'assets/avatars/boy_04.jpg',
+        'assets/avatars/girl_01.jpg',
+        'assets/avatars/girl_02.jpg',
+        'assets/avatars/girl_03.jpg',
+        'assets/avatars/girl_04.jpg',
+        'assets/avatars/man_01.jpg',
+        'assets/avatars/man_02.jpg',
+        'assets/avatars/man_03.jpg',
+        'assets/avatars/man_04.jpg',
+        'assets/avatars/woman_01.jpg',
+        'assets/avatars/woman_02.jpg',
+        'assets/avatars/woman_03.jpg',
+        'assets/avatars/woman_04.jpg',
+        'assets/avatars/elder_man_01.jpg',
+        'assets/avatars/elder_man_02.jpg',
+        'assets/avatars/elder_man_03.jpg',
+        'assets/avatars/elder_man_04.jpg',
+        'assets/avatars/elder_woman_01.jpg',
+        'assets/avatars/elder_woman_02.jpg',
+        'assets/avatars/elder_woman_03.jpg',
+        'assets/avatars/elder_woman_04.jpg',
+      ];
+      for (int i = 0; i < legacyAssets.length; i++) {
+        expect(
+          AvatarPresets.all[i].asset,
+          legacyAssets[i],
+          reason: 'معرّف الصورة $i تغيّر',
+        );
+      }
+      // الصور الجديدة كلها بعد القديمة.
+      expect(AvatarPresets.all[24].id, 24);
+      expect(AvatarPresets.all[29].id, 29);
     });
 
     test('المعرّف يساوي الموضع، والمسارات فريدة ومضمَّنة', () {
@@ -91,6 +137,18 @@ void main() {
 
     test('المعرّف الفارغ لا ينكسر', () {
       expect(AvatarPresets.forId(''), 0);
+    });
+
+    test('الاحتياط الحتمي يبقى في نطاق الصور القديمة (24) حتى لا تتغيّر صورة أحد', () {
+      for (int i = 0; i < 200; i++) {
+        expect(
+          AvatarPresets.forId('legacy-user-$i'),
+          inInclusiveRange(0, AvatarPresets.legacyDeterministicCount - 1),
+        );
+      }
+      expect(AvatarPresets.legacyDeterministicCount, 24);
+      expect(AvatarPresets.normalize(29, 'uid'), 29);
+      expect(AvatarPresets.normalize(30, 'uid'), AvatarPresets.forId('uid'));
     });
 
     test('تطبيع قيمة قديمة/خارجة عن المدى', () {

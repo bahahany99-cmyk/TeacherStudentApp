@@ -5496,12 +5496,15 @@ describe('P22/P31 — users: الصورة الافتراضية', () => {
     await assertSucceeds(
       updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 3 }),
     );
-    // (P31) القيم الجديدة حتى 23 مقبولة.
+    // (P31) القيم الجديدة حتى 29 مقبولة (30 صورة).
     await assertSucceeds(
       updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 23 }),
     );
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 29 }),
+    );
     await assertFails(
-      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 24 }),
+      updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 30 }),
     );
     await assertFails(
       updateDoc(doc(asStudent(), 'users/student-1'), { avatarPreset: 'x' }),
@@ -5539,9 +5542,9 @@ describe('P31 — avatars/{uid}: الاختيار الرمزي مستقل عن �
     );
   });
 
-  it('قيمة رمزية خارج 0..23 أو غير رقمية مرفوضة', async () => {
+  it('قيمة رمزية خارج 0..29 أو غير رقمية مرفوضة', async () => {
     await assertFails(
-      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 24)),
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 30)),
     );
     await assertFails(
       setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', -1)),
@@ -5554,6 +5557,9 @@ describe('P31 — avatars/{uid}: الاختيار الرمزي مستقل عن �
     );
     await assertSucceeds(
       setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 23)),
+    );
+    await assertSucceeds(
+      setDoc(doc(asStudent(), avatarPath('student-1')), presetOnly('student-1', 29)),
     );
   });
 

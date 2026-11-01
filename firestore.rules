@@ -182,14 +182,15 @@ service cloud.firestore {
 
       // (P22، موسَّعة في P31) الصورة الرمزية: رقم ثابت يُكتب مرة واحدة عند
       // إنشاء الحساب، فيرى المستخدم صورة من أول لحظة بدل دائرة فارغة.
-      // المدى صار 0..23 بعد توسيع المعرض من 6 إلى 24 صورة (P31)، وهو **مدى
-      // واسع** يشمل كل قيمة قديمة (0..5)، فلا حاجة إلى ترحيل أي حساب قديم.
+      // المدى صار 0..29 بعد توسيع المعرض إلى 30 صورة (P31)، وهو **مدى واسع**
+      // يشمل كل قيمة قديمة (0..5 ثم 0..23)، فلا حاجة إلى ترحيل أي حساب قديم،
+      // ولا تتغيّر صورة أي مستخدم عند التوسيع.
       // الرقم للعرض فقط؛ التطبيق يعرض الصورة المضمَّنة محليًا بلا تحميل.
       function validAvatarPreset() {
         return (!('avatarPreset' in request.resource.data.keys())
               || (request.resource.data.avatarPreset is int
                   && request.resource.data.avatarPreset >= 0
-                  && request.resource.data.avatarPreset < 24));
+                  && request.resource.data.avatarPreset < 30));
       }
 
       allow create: if isSelf(uid)
@@ -1828,11 +1829,12 @@ service cloud.firestore {
                || (!('imageBase64' in request.resource.data.keys())
                    && !('mimeType' in request.resource.data.keys()))
              )
-          // (P31) الاختيار الرمزي: 0..23 (24 صورة مضمَّنة).
+          // (P31) الاختيار الرمزي: 0..29 (30 صورة مضمَّنة). المدى **أوسع** من
+          // السابق (0..23) فكل قيمة محفوظة قديمة تبقى صالحة.
           && (!('presetId' in request.resource.data.keys())
               || (request.resource.data.presetId is int
                   && request.resource.data.presetId >= 0
-                  && request.resource.data.presetId < 24));
+                  && request.resource.data.presetId < 30));
       }
 
       allow read: if signedIn();

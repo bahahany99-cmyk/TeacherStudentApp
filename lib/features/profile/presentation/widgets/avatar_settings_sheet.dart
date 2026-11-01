@@ -155,7 +155,7 @@ class _AvatarSettingsSheetState extends State<AvatarSettingsSheet> {
               key: const Key('avatar-presets'),
               icon: Icons.face_retouching_natural_outlined,
               title: 'اختيار صورة رمزية',
-              subtitle: '‏24 صورة جاهزة تعمل دون إنترنت',
+              subtitle: '‏30 صورة جاهزة تعمل دون إنترنت',
               enabled: !_controller.busy,
               onTap: () => _run(
                 () => AvatarActions.choosePreset(context, _controller),

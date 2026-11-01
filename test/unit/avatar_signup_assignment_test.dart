@@ -69,7 +69,10 @@ class _FakeAuthService implements AuthService {
     assignRoleCalls++;
     this.role = role;
     // نفس عقد الخادم: يُكتب الاختيار مرة واحدة فقط، ولا يُعاد تعيينه.
-    storedPreset ??= AvatarPresets.randomIndexFor(uid);
+    storedPreset ??= AvatarPresets.randomIndexFor(
+      uid,
+      audience: AvatarPresets.audienceForRole(role),
+    );
     return AppUser(
       id: uid,
       displayName: displayName,
@@ -223,6 +226,82 @@ void main() {
       // لا يكون الاختبار هشًّا أمام تغيير طفيف في الخلط.
       expect(seen.length, greaterThanOrEqualTo(12));
       expect(seen.every((int id) => id >= 0 && id < AvatarPresets.count), isTrue);
+    });
+
+    test('السحب التلقائي يحترم جمهور الدور ولا يختار فئة غير مناسبة', () {
+      // المدرّس: بالغون وكبار سن فقط (لا طفل ولا مراهق).
+      final List<int> teacherPool = AvatarPresets.assignmentPool(
+        AvatarPresets.audienceForRole(UserRole.teacher),
+      );
+      expect(teacherPool.length, 12);
+      for (int i = 0; i < 80; i++) {
+        final int id = AvatarPresets.randomIndexFor('teacher-$i', entropy: i);
+        final int picked = AvatarPresets.randomIndexFor(
+          'teacher-$i',
+          entropy: i,
+          audience: AvatarPresets.audienceForRole(UserRole.teacher),
+        );
+        final AvatarCategory category = AvatarPresets.all[picked].category;
+        expect(
+          <AvatarCategory>[
+            AvatarCategory.adultMan,
+            AvatarCategory.adultWoman,
+            AvatarCategory.olderMan,
+            AvatarCategory.olderWoman,
+          ],
+          contains(category),
+        );
+        expect(teacherPool, contains(picked));
+        // النطاق الافتراضي المحايد لا يُنتج أطفالًا إطلاقًا.
+        expect(
+          <AvatarCategory>[
+            AvatarCategory.boyChild,
+            AvatarCategory.girlChild,
+            AvatarCategory.boyTeen,
+            AvatarCategory.girlTeen,
+          ],
+          isNot(contains(AvatarPresets.all[id].category)),
+        );
+      }
+
+      // الطالب: أطفال/مراهقون/شباب — لا كبار سن ولا بالغون.
+      for (int i = 0; i < 80; i++) {
+        final int picked = AvatarPresets.randomIndexFor(
+          'student-$i',
+          entropy: i * 17,
+          audience: AvatarPresets.audienceForRole(UserRole.student),
+        );
+        expect(
+          <AvatarCategory>[
+            AvatarCategory.boyChild,
+            AvatarCategory.girlChild,
+            AvatarCategory.boyTeen,
+            AvatarCategory.girlTeen,
+            AvatarCategory.youngMan,
+            AvatarCategory.youngWoman,
+          ],
+          contains(AvatarPresets.all[picked].category),
+        );
+      }
+    });
+
+    test('الدور المجهول ⇒ نطاق محايد من البالغين', () {
+      expect(
+        AvatarPresets.audienceForRole(null),
+        AvatarAudience.unspecified,
+      );
+      expect(
+        AvatarPresets.audienceForRole(UserRole.admin),
+        AvatarAudience.unspecified,
+      );
+      for (final int id in AvatarPresets.assignmentPool(
+        AvatarAudience.unspecified,
+      )) {
+        expect(
+          AvatarPresets.all[id].category,
+          anyOf(AvatarCategory.adultMan, AvatarCategory.adultWoman),
+        );
+      }
     });
 
     test('بلا بذرة: النتيجة دائمًا صالحة (عشوائية آمنة)', () {
