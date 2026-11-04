@@ -251,10 +251,12 @@ jobs:
           channel: stable
           cache: true
 
-      # لا chromedriver: التشغيل صار `flutter test integration_test/... -d chrome`
-      # (يبني تطبيق الويب الحقيقي ويشغّله في Chrome). جُرّب قبله:
-      # `flutter drive -d web-server` + chromedriver ⇒ «All tests passed» بلا أي
-      # اختبار، و`flutter drive -d chrome` ⇒ تعليق 35 دقيقة (41825828025).
+      - name: Set up chromedriver (مطابق لمتصفح العدّاء)
+        uses: nanasess/setup-chromedriver@v2
+        # مطلوب: `flutter drive -d web-server` هو الطريق الوحيد المدعوم لاختبار
+        # التكامل على الويب. (جُرّب `flutter test -d chrome` ⇒ يرفضه Flutter:
+        # «Web devices are not supported for integration tests yet.»،
+        # و`flutter drive -d chrome` ⇒ تعليق حتى ألغت المهلة الوظيفة.)
       - name: Cache Firestore emulator
         uses: actions/cache@v4
         with:
@@ -332,6 +334,7 @@ jobs:
           name: firestore-repositories-log
           path: |
             /tmp/repos.txt
+            /tmp/chromedriver.log
             /tmp/repos_results.txt
             /tmp/results_server.log
           if-no-files-found: ignore

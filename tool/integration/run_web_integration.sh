@@ -5,46 +5,46 @@
 #   firebase emulators:exec --only firestore,auth --project demo-darsly \
 #     --config firebase.json "tool/integration/run_web_integration.sh"
 #
-# ما يفعله:
-#   1. يهيّئ البيانات + حسابات المحاكي بسكربت Node (متجاوزًا القواعد للتهيئة).
-#   2. يشغّل خادم نتائج محليًا (4445): كل اختبار يُرسل نتيجته من **داخل التطبيق**
-#      (`results_server.mjs` + `integration_test/result_reporter_web.dart`)، لأن
-#      `flutter drive` على الويب قد يطبع «All tests passed.» بعدد صفر اختبارات
-#      (flutter#94434، #150358، #151480).
-#   3. يشغّل `flutter test integration_test/... -d chrome`:
-#      * ليس `--platform chrome` (جُرّب وفشل: لا يُسجّل إضافات الويب، فيُعلَّق
-#        `Firebase.initializeApp` — التشغيلات 41793072285 … 41800407384).
-#      * وليس `flutter drive` (جُرّب بصيغتين: `-d web-server` + chromedriver
-#        انتهى بـ«All tests passed» بلا أي اختبار، و`-d chrome` عُلِّق 35 دقيقة
-#        حتى ألغت المهلة الوظيفة — التشغيل 41825828025).
-#      الصيغة `flutter test … -d chrome` تبني **تطبيق الويب الحقيقي** (فيمرّ على
-#      مُسجِّل إضافات Flutter) وتشغّله في Chrome بلا chromedriver ولا سائق منفصل.
-#   4. يفحص النتائج المُستلمة ويحكم: لم يبدأ التطبيق؟ لم تُسجَّل الاختبارات؟
-#      نُفِّذت كلها؟ — هذا هو دليل التنفيذ الفعلي، لا سطر «All tests passed».
+# **المسارات التي جُرّبت وأُغلقت:**
+#   * `flutter test --platform chrome` ⇒ لا يُسجّل إضافات الويب، فيُعلَّق
+#     `Firebase.initializeApp` (تشغيلات 41793072285 … 41800407384).
+#   * `flutter test … -d chrome` ⇒ يرفضه Flutter نفسه: «Web devices are not
+#     supported for integration tests yet.» (تشغيل 41831091503).
+#   * `flutter drive … -d chrome` ⇒ عُلِّق حتى ألغت المهلة الوظيفة (41825828025).
+#   * الباقي: `flutter drive -d web-server --browser-name=chrome` مع chromedriver
+#     — الطريق الموثّق والوحيد المدعوم لاختبار التكامل على الويب.
+#
+# **كيف نحكم؟** لا بسطر «All tests passed» (قد يُطبع بعدد صفر اختبارات)، بل
+# بتقارير كل اختبار من داخل التطبيق إلى خادم محلي (`results_server.mjs`):
+#   لا `__main` ⇒ التطبيق لم يبدأ في المتصفح.
+#   بلا `__registered` ⇒ بدأ وتعطّلت التهيئة/`setUpAll`.
+#   أقل من 11 تقريرًا ⇒ سُجّلت ولم تُنفَّذ كلها.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+CHROMEDRIVER_PORT=4444
+WEB_PORT=7357
 RESULTS_PORT=4445
 RESULTS_FILE=/tmp/repos_results.txt
 EXPECTED_TESTS=11
-# مهلة قصوى للاختبار نفسه: إن عُلِّق، نفشل بسبب مفهوم بدل أن تُلغي المهلة
-# الوظيفة كلها بلا تشخيص (كما حدث في التشغيل 41825828025).
-TEST_TIMEOUT=900
+# مهلة قصوى: إن عُلِّق السائق نفشل برسالة مفهومة بدل أن تُلغي المهلة الوظيفة.
+DRIVE_TIMEOUT=900
 
-# Flutter يحتاج مسار Chrome؛ عدّاءات GitHub تضعه في PATH عادةً.
-if [ -z "${CHROME_EXECUTABLE:-}" ]; then
-  for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
-    if command -v "${candidate}" >/dev/null 2>&1; then
-      export CHROME_EXECUTABLE="$(command -v "${candidate}")"
-      break
-    fi
-  done
+if ! command -v chromedriver >/dev/null 2>&1; then
+  echo "::error::chromedriver غير موجود في PATH — لا يمكن تشغيل flutter drive للويب."
+  exit 1
 fi
-echo "→ Chrome: ${CHROME_EXECUTABLE:-غير موجود}"
-if [ -z "${CHROME_EXECUTABLE:-}" ]; then
-  echo "::error::لا متصفح Chrome — لا يمكن تشغيل اختبار الويب."
+
+echo "→ تشغيل chromedriver على المنفذ ${CHROMEDRIVER_PORT}"
+chromedriver --port="${CHROMEDRIVER_PORT}" >/tmp/chromedriver.log 2>&1 &
+CHROMEDRIVER_PID=$!
+trap 'kill "${CHROMEDRIVER_PID}" "${RESULTS_PID:-}" 2>/dev/null || true' EXIT
+sleep 3
+if ! kill -0 "${CHROMEDRIVER_PID}" 2>/dev/null; then
+  echo "::error::chromedriver لم يبدأ:"
+  cat /tmp/chromedriver.log || true
   exit 1
 fi
 
@@ -55,7 +55,6 @@ echo "→ تشغيل خادم نتائج الاختبارات على 127.0.0.1:$
 node tool/integration/results_server.mjs serve "${RESULTS_PORT}" "${RESULTS_FILE}" \
   >/tmp/results_server.log 2>&1 &
 RESULTS_PID=$!
-trap 'kill "${RESULTS_PID}" 2>/dev/null || true' EXIT
 sleep 2
 if ! kill -0 "${RESULTS_PID}" 2>/dev/null; then
   echo "::error::خادم النتائج لم يبدأ:"
@@ -63,27 +62,30 @@ if ! kill -0 "${RESULTS_PID}" 2>/dev/null; then
   exit 1
 fi
 
-TEST_STATUS=0
-echo "→ flutter test -d chrome (بناء ويب حقيقي + Chrome، مهلة ${TEST_TIMEOUT}s)"
-timeout --signal=INT "${TEST_TIMEOUT}" \
-  flutter test integration_test/p32_firestore_repositories_test.dart \
-  -d chrome \
-  --reporter expanded \
-  || TEST_STATUS=$?
+DRIVE_STATUS=0
+echo "→ flutter drive -d web-server (بناء ويب حقيقي + Chrome، مهلة ${DRIVE_TIMEOUT}s)"
+timeout --signal=INT "${DRIVE_TIMEOUT}" \
+  flutter drive --verbose \
+  --driver=test_driver/integration_test.dart \
+  --target=integration_test/p32_firestore_repositories_test.dart \
+  -d web-server \
+  --web-port="${WEB_PORT}" \
+  --browser-name=chrome \
+  || DRIVE_STATUS=$?
 
-if [ "${TEST_STATUS}" -eq 124 ] || [ "${TEST_STATUS}" -eq 130 ]; then
-  echo "::error::انتهت المهلة (${TEST_TIMEOUT}s) قبل إنهاء الاختبار — تعليق في بناء الويب أو تشغيله."
+if [ "${DRIVE_STATUS}" -eq 124 ] || [ "${DRIVE_STATUS}" -eq 130 ]; then
+  echo "::error::انتهت المهلة (${DRIVE_TIMEOUT}s) قبل إنهاء السائق — تعليق في البناء أو تشغيل الصفحة."
 fi
 
-# الفحص الحاسم: ما وصل من داخل التطبيق، لا ما طبعه المشغّل.
+# الفحص الحاسم: ما وصل من داخل التطبيق، لا ما طبعه السائق.
 set +e
 node tool/integration/results_server.mjs verify "${RESULTS_PORT}" "${RESULTS_FILE}" "${EXPECTED_TESTS}"
 VERIFY_STATUS=$?
 set -e
 
-if [ "${TEST_STATUS}" -ne 0 ]; then
-  echo "::error::flutter test خرج بالرمز ${TEST_STATUS}."
-  exit "${TEST_STATUS}"
+if [ "${DRIVE_STATUS}" -ne 0 ]; then
+  echo "::error::flutter drive خرج بالرمز ${DRIVE_STATUS}."
+  exit "${DRIVE_STATUS}"
 fi
 if [ "${VERIFY_STATUS}" -ne 0 ]; then
   echo "::error::الاختبارات لم تُنفَّذ كلها داخل التطبيق (انظر رسائل الفحص أعلاه)."
