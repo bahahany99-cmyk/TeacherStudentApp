@@ -285,8 +285,31 @@ jobs:
             exit "$status"
           fi
 
-          grep -E "All tests passed|\+[0-9]+: All tests passed" /tmp/repos.txt | tail -1 \
-            | xargs -r -0 echo "::notice title=repositories-integration::" || true
+          # **دليل التنفيذ الفعلي:** لا نكتفي بـ«All tests passed!» لأنها قد تُطبع
+          # بعدد صفر لو انحرف الالتقاط. نستخرج العدد من سطر Flutter
+          # (`00:05 +9: All tests passed!`) ونفشل إن كان أقل من المتوقع.
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          EXPECTED = 9
+          log = pathlib.Path('/tmp/repos.txt').read_text(errors='replace')
+          matches = re.findall(r'\+(\d+): All tests passed', log)
+          count = int(matches[-1]) if matches else 0
+
+          names = sorted({
+              line.split(': ', 1)[1].strip()
+              for line in log.splitlines()
+              if re.match(r'^\d{2}:\d{2} \+\d+', line) and ': ' in line
+          })
+          summary = ' · '.join(names)[:900].replace('%', '%25')
+          print(f'::notice title=repositories-integration::عدد الاختبارات المنفَّذة: {count}')
+          print(f'::notice title=repositories-names::{summary}')
+
+          if count < EXPECTED:
+              print(f'::error::عدد الاختبارات المنفَّذة {count} أقل من المتوقع {EXPECTED} — لم يجرِ الاختبار كاملًا.')
+              raise SystemExit(1)
+          PY
           echo "✅ تنفيذ Firestore (تصفّح/تعليم/عدّاد/علامات): كل الحالات ناجحة على المحاكي."
 
       - name: Upload integration log
