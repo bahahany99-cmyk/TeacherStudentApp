@@ -7,10 +7,12 @@ import 'package:teacher_student_app/app/shell/app_shell.dart';
 import 'package:teacher_student_app/core/theme/app_theme.dart';
 import 'package:teacher_student_app/data/demo/demo_repositories.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/group_message.dart';
 import 'package:teacher_student_app/data/models/user_role.dart';
 import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/validation/notification_rules.dart';
+import 'package:teacher_student_app/features/groups/presentation/group_chat_screen.dart';
 import 'package:teacher_student_app/features/notifications/presentation/notifications_screen.dart';
 
 import '../helpers/test_app.dart';
@@ -30,7 +32,10 @@ AppNotification _item(int index) {
   );
 }
 
-AppServices _services(List<AppNotification> source) {
+AppServices _services(
+  List<AppNotification> source, {
+  DemoMessageRepository? messages,
+}) {
   final DemoNotificationRepository repo = DemoNotificationRepository(
     source: source,
   );
@@ -43,15 +48,19 @@ AppServices _services(List<AppNotification> source) {
     chats: DemoDirectChatRepository(notifications: repo),
     notifications: repo,
     schedules: DemoScheduleRepository(),
-    messages: DemoMessageRepository(),
+    messages: messages ?? DemoMessageRepository(),
     reviews: DemoReviewRepository(),
     favorites: DemoFavoriteRepository(),
   );
 }
 
-Widget _host(AppServices services, Widget child) {
+Widget _host(
+  AppServices services,
+  Widget child, {
+  UserRole role = UserRole.student,
+}) {
   final SessionController session = SessionController(services.auth)
-    ..startDemoSession(UserRole.student);
+    ..startDemoSession(role);
 
   return AppServicesScope(
     services: services,
@@ -165,6 +174,75 @@ void main() {
         await services.notifications.watchUnreadCount(_studentId).first,
         0,
       );
+    });
+  });
+
+  // ── (P32) قراءة محادثة المجموعة ───────────────────────────────────────────
+  group('P32 — قراءة محادثة المجموعة', () {
+    testWidgets('فتح محادثة المجموعة يحدّث علامة القراءة لهذا العضو وحده', (
+      WidgetTester tester,
+    ) async {
+      usePhoneSurface(tester);
+      final DateTime sentAt = DateTime(2026, 10, 27, 12);
+      final DemoMessageRepository messages = DemoMessageRepository(
+        source: <GroupMessage>[
+          GroupMessage(
+            id: 'm1',
+            groupId: 'demo-group-1',
+            senderId: 'student-x',
+            senderName: 'طالب',
+            senderRole: UserRole.student,
+            text: 'سؤال عن الواجب',
+            sentAt: sentAt,
+          ),
+        ],
+      );
+      final AppServices services = _services(
+        <AppNotification>[],
+        messages: messages,
+      );
+
+      // قبل الفتح: رسالة واحدة غير مقروءة للمدرس، وكذلك لزميل آخر.
+      expect(
+        await messages.unreadCount(
+          groupId: 'demo-group-1',
+          memberId: 'demo-teacher-1',
+        ),
+        1,
+      );
+      expect(
+        await messages.unreadCount(
+          groupId: 'demo-group-1',
+          memberId: 'student-2',
+        ),
+        1,
+      );
+
+      await tester.pumpWidget(
+        _host(
+          services,
+          const GroupChatScreen(groupId: 'demo-group-1'),
+          role: UserRole.teacher,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // بعد الفتح والقراءة: عدّاد هذا العضو صفر، وعدّاد الزميل كما هو.
+      expect(
+        await messages.unreadCount(
+          groupId: 'demo-group-1',
+          memberId: 'demo-teacher-1',
+        ),
+        0,
+      );
+      expect(
+        await messages.unreadCount(
+          groupId: 'demo-group-1',
+          memberId: 'student-2',
+        ),
+        1,
+      );
+      expect(find.text('محادثة المجموعة'), findsOneWidget);
     });
   });
 }
