@@ -113,6 +113,10 @@ List<String> _ids(List<AppNotification> items) =>
     items.map((AppNotification item) => item.id).toList(growable: false);
 
 void main() {
+  // إلزامي قبل أي استدعاء لـFirebase على الويب: `firebase_core` يمرّ على
+  // `ServicesBinding` (PlatformChannel) حتى في التنفيذ الويب، وبدون التهيئة
+  // يفشل setUpAll بـ«Binding has not yet been initialized».
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(_bootstrap);
 
   tearDown(() async {
