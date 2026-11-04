@@ -291,7 +291,7 @@ jobs:
           import pathlib
 
           lines = pathlib.Path('/tmp/repos.txt').read_text(errors='replace').splitlines()
-          tail = '\n'.join(lines[-80:]).replace('%', '%25')
+          tail = '\n'.join(lines[-120:]).replace('%', '%25').replace('\n', '%0A').replace('\r', '')
           print(f'::notice title=repositories-log-tail::{tail[:5500]}')
           PY
           # **دليل التنفيذ الفعلي:** لا نكتفي بـ«All tests passed!» لأنها قد تُطبع
