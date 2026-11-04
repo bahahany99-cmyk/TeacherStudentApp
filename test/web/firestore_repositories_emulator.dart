@@ -21,6 +21,7 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,31 +63,71 @@ new Promise(function (resolve, reject) {
   await (promise as JSPromise<JSAny?>).toDart;
 }
 
-Future<void> _bootstrap() async {
-  if (!_firebaseGlobalExists()) {
-    for (final String url in _sdkScripts) {
-      await _loadScript(url);
-    }
-  }
-  for (int attempt = 0; attempt < 50 && !_firebaseGlobalExists(); attempt++) {
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-  }
-  if (!_firebaseGlobalExists()) {
-    throw StateError('تعذّر تحميل Firebase JS SDK من gstatic (شبكة محجوبة؟)');
-  }
-
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: 'demo-api-key',
-      appId: '1:1:web:1',
-      messagingSenderId: '1',
-      projectId: 'demo-darsly',
-      authDomain: 'demo-darsly.firebaseapp.com',
-      storageBucket: 'demo-darsly.appspot.com',
-    ),
+/// ينفّذ خطوة واحدة ويطبع بدايتها/نهايتها.
+///
+/// **لماذا؟** لأن سجل المتصفح هو الوسيلة الوحيدة لتشخيص فشل `setUpAll`
+/// (سجلات Actions لا تُقرأ من بيئة التطوير)، وبلا هذه الخطوات يظهر الفشل
+/// كـ«انتهت المهلة» بلا معرفة الخطوة المتوقفة.
+Future<T> _step<T>(
+  String label,
+  Future<T> Function() action, {
+  Duration limit = const Duration(seconds: 45),
+}) async {
+  debugPrint('→ $label');
+  final T result = await action().timeout(
+    limit,
+    onTimeout: () => throw StateError('انتهت مهلة الخطوة: $label'),
   );
-  FirebaseFirestore.instance.useFirestoreEmulator(_host, _firestorePort);
-  await FirebaseAuth.instance.useAuthEmulator(_host, _authPort);
+  debugPrint('✓ $label');
+  return result;
+}
+
+Future<void> _bootstrap() async {
+  await _step('فحص وجود firebase العالمي', () async {
+    if (!_firebaseGlobalExists()) {
+      for (final String url in _sdkScripts) {
+        await _loadScript(url);
+      }
+    }
+    return true;
+  });
+
+  await _step(
+    'انتظار تحميل Firebase JS SDK',
+    () async {
+      for (int attempt = 0; attempt < 100 && !_firebaseGlobalExists(); attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (!_firebaseGlobalExists()) {
+        throw StateError('تعذّر تحميل Firebase JS SDK من gstatic (شبكة محجوبة؟)');
+      }
+      return true;
+    },
+  );
+
+  await _step('تهيئة تطبيق Firebase', () async {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'demo-api-key',
+        appId: '1:1:web:1',
+        messagingSenderId: '1',
+        projectId: 'demo-darsly',
+        authDomain: 'demo-darsly.firebaseapp.com',
+        storageBucket: 'demo-darsly.appspot.com',
+      ),
+    );
+    return true;
+  });
+
+  await _step('توجيه Firestore إلى المحاكي', () async {
+    FirebaseFirestore.instance.useFirestoreEmulator(_host, _firestorePort);
+    return true;
+  });
+
+  await _step('توجيه Auth إلى المحاكي', () async {
+    await FirebaseAuth.instance.useAuthEmulator(_host, _authPort);
+    return true;
+  });
 }
 
 /// يسجّل الدخول بحساب الاختبار ويعيد `uid` الفعلي — وهو نفسه `recipientId`
