@@ -13,7 +13,7 @@
 /// **ما يُختبر:** `FirestoreNotificationRepository` و`FirestoreMessageRepository`
 /// **نفسهما** — لا إعادة كتابة للاستعلامات — تحت قواعد المشروع (`firestore.rules`)
 /// على محاكيي Firestore وAuth. البيانات تُهيَّأ قبل التشغيل بسكربت
-/// `tool/integration/seed_emulator.mjs` (متجاوزًا القواعد للتهيئة فقط).
+/// `tool/rules_tests/seed_integration.mjs` (متجاوزًا القواعد للتهيئة فقط).
 ///
 /// **التشغيل:** `tool/integration/run_web_drive.sh` داخل `firebase emulators:exec`.
 library;

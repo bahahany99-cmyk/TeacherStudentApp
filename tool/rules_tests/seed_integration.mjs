@@ -12,7 +12,11 @@
  * البريد وكلمة المرور، سيحصل على نفس `uid`.
  *
  * يُشغَّل من جذر المستودع داخل `firebase emulators:exec`:
- *   node tool/integration/seed_emulator.mjs
+ *   node tool/rules_tests/seed_integration.mjs
+ *
+ * **لماذا داخل `tool/rules_tests`؟** لأنها الحزمة الوحيدة في المستودع التي فيها
+ * `node_modules` (فيها `@firebase/rules-unit-testing`). Node يحلّ الحزم صعودًا
+ * من موقع الملف، فوضعه خارجها يجعل الاستيراد يفشل (حدث فعلًا في CI).
  */
 
 import { readFileSync } from 'node:fs';

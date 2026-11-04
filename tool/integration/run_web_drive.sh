@@ -36,7 +36,7 @@ if ! kill -0 "${CHROMEDRIVER_PID}" 2>/dev/null; then
 fi
 
 echo "→ تهيئة بيانات المحاكي وحساباته"
-node tool/integration/seed_emulator.mjs
+node tool/rules_tests/seed_integration.mjs
 
 echo "→ flutter drive (بناء ويب حقيقي + Chrome)"
 # أقل خيارات ممكنة: أي خيار غير مدعوم في إصدار Flutter الحالي يُفشل الأمر كله.
