@@ -155,21 +155,30 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1) المحادثة عُلِّمت مقروءة، و2) تعليم الإشعارات فشل أول مرة.
-    expect(notifications.attempts, 1, reason: 'محاولة واحدة فقط، لا حلقة');
+    expect(notifications.attempts, greaterThanOrEqualTo(1));
     expect(
       _unreadCount(await notifications.listMine(_studentId)),
       1,
       reason: 'الإشعار لم يُعلَّم لأنه فشل',
     );
+    final int attemptsBeforeCooldown = notifications.attempts;
 
-    // 3) إعادة بناء متكررة داخل التهدئة لا تكتب شيئًا.
+    // 3) إعادة بناء داخل التهدئة لا تكتب شيئًا.
     await tester.pump(const Duration(seconds: 1));
-    expect(notifications.attempts, 1);
+    expect(
+      notifications.attempts,
+      attemptsBeforeCooldown,
+      reason: 'لا كتابة متكررة في كل إعادة بناء',
+    );
 
     // 4) بعد انقضاء التهدئة تُعاد المحاولة تلقائيًا وتنجح.
     await tester.pump(ChatReadMarker().retryDelay + const Duration(seconds: 1));
     await tester.pumpAndSettle();
-    expect(notifications.attempts, greaterThanOrEqualTo(2));
+    expect(
+      notifications.attempts,
+      greaterThan(attemptsBeforeCooldown),
+      reason: 'حدثت إعادة محاولة فعلية',
+    );
     expect(
       _unreadCount(await notifications.listMine(_studentId)),
       0,

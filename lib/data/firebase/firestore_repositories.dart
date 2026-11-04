@@ -3795,6 +3795,13 @@ class FirestoreNotificationRepository implements NotificationRepository {
         'title': cleanTitle,
         if (cleanBody != null && cleanBody.isNotEmpty) 'body': cleanBody,
         'createdAt': now,
+        // **`readAt: null` صريح، لا حقل غائب.** Firestore لا يُطابق «غياب
+        // الحقل» بشرط `readAt == null`، فإشعار بلا هذا الحقل لا يظهر في
+        // `watchUnreadCount` ولا يُعلَّم بـ`markChatMessagesRead`/`markAllRead`
+        // أبدًا. كتابته صريحة تجعل الإشعار «غير مقروء» مطابقًا للاستعلامات
+        // الثلاثة. القواعد تسمح بالحقل (`notificationKeys` تضمّه) ولا تشترط
+        // قيمته عند الإنشاء.
+        'readAt': null,
       };
       await ref.set(data);
 

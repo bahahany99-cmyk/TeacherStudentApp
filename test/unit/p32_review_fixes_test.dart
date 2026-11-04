@@ -125,19 +125,20 @@ void main() {
     });
 
     test('رسائلي لا تُحتسب، وقراءة المجموعة تحدّث علامتي وحدها', () async {
-      final DateTime after = DateTime.now().add(const Duration(minutes: 1));
+      // رسائل في الماضي: «الآن» الذي يكتبه التعليم يغطيها كلها.
+      final DateTime before = DateTime.now().subtract(const Duration(hours: 1));
       final DemoMessageRepository messages = DemoMessageRepository(
         source: <GroupMessage>[
-          _message(id: 'mine-1', senderId: 'student-1', sentAt: after),
+          _message(id: 'mine-1', senderId: 'student-1', sentAt: before),
           _message(
             id: 'other-1',
             senderId: 'teacher-1',
-            sentAt: after.add(const Duration(minutes: 1)),
+            sentAt: before.add(const Duration(minutes: 1)),
           ),
           _message(
             id: 'other-2',
             senderId: 'teacher-1',
-            sentAt: after.add(const Duration(minutes: 2)),
+            sentAt: before.add(const Duration(minutes: 2)),
           ),
         ],
       );
@@ -168,7 +169,6 @@ void main() {
 
   group('إصلاح 3 — إعادة محاولة تعليم إشعارات المحادثة', () {
     const Duration retryDelay = Duration(seconds: 5);
-    final DateTime t0 = DateTime(2026, 11, 4, 12);
 
     test('المحادثة تنجح، والإشعارات تفشل أول مرة، ثم تُعاد المحاولة وتنجح', () async {
       final ChatReadMarker marker = ChatReadMarker(retryDelay: retryDelay);
@@ -177,7 +177,9 @@ void main() {
       int notifySuccesses = 0;
       int notifyFailuresLeft = 1;
 
-      Future<void> markChat() async => chatCalls++;
+      Future<void> markChat() async {
+        chatCalls++;
+      }
       Future<void> clearNotifications() async {
         notifyAttempts++;
         if (notifyFailuresLeft > 0) {
@@ -191,7 +193,6 @@ void main() {
       final bool pendingAfterFirst = await marker.run(
         chatId: 'c1',
         chatUnread: true,
-        now: t0,
         markChat: markChat,
         clearNotifications: clearNotifications,
       );
@@ -200,40 +201,30 @@ void main() {
       expect(notifySuccesses, 0, reason: 'الإشعارات لم تُعلَّم فعلًا');
       expect(pendingAfterFirst, isTrue, reason: 'الحالة غير مكتملة');
 
-      // 2) داخل فترة التهدئة: لا كتابة متكررة في إعادات البناء.
-      final DateTime duringCooldown = t0.add(const Duration(seconds: 2));
+      // 2) إعادات بناء قبل الإذن بمحاولة جديدة: لا كتابة متكررة.
       expect(
-        marker.shouldAttempt(
-          chatId: 'c1',
-          chatUnread: false,
-          now: duringCooldown,
-        ),
+        marker.shouldAttempt(chatId: 'c1', chatUnread: false),
         isFalse,
+        reason: 'فشل سابق ينتظر إذنًا بمحاولة جديدة',
       );
       await marker.run(
         chatId: 'c1',
         chatUnread: false,
-        now: duringCooldown,
         markChat: markChat,
         clearNotifications: clearNotifications,
       );
-      expect(notifyAttempts, 1, reason: 'لا محاولة داخل التهدئة');
+      expect(notifyAttempts, 1, reason: 'لا محاولة قبل انقضاء التهدئة');
       expect(chatCalls, 1, reason: 'المحادثة لا تُعلَّم مرتين');
 
-      // 3) بعد التهدئة: محاولة جديدة تنجح.
-      final DateTime afterCooldown = t0.add(retryDelay);
+      // 3) بعد التهدئة: الشاشة تسمح بمحاولة جديدة فتنجح.
+      marker.allowRetry(chatId: 'c1');
       expect(
-        marker.shouldAttempt(
-          chatId: 'c1',
-          chatUnread: false,
-          now: afterCooldown,
-        ),
+        marker.shouldAttempt(chatId: 'c1', chatUnread: false),
         isTrue,
       );
       final bool pendingAfterRetry = await marker.run(
         chatId: 'c1',
         chatUnread: false,
-        now: afterCooldown,
         markChat: markChat,
         clearNotifications: clearNotifications,
       );
@@ -244,17 +235,10 @@ void main() {
 
       // 4) بعد اكتمال الحالتين: لا محاولات ولا كتابات أخرى.
       expect(
-        marker.shouldAttempt(
-          chatId: 'c1',
-          chatUnread: false,
-          now: afterCooldown.add(const Duration(minutes: 3)),
-        ),
+        marker.shouldAttempt(chatId: 'c1', chatUnread: false),
         isFalse,
       );
-      expect(
-        marker.isPending(chatId: 'c1', chatUnread: false),
-        isFalse,
-      );
+      expect(marker.isPending(chatId: 'c1', chatUnread: false), isFalse);
     });
 
     test('فشل تعليم المحادثة لا يُعلَّم، وتُعاد المحاولة', () async {
@@ -263,18 +247,21 @@ void main() {
       int chatSuccesses = 0;
       int notifySuccesses = 0;
 
+      Future<void> markChat() async {
+        if (chatFailuresLeft > 0) {
+          chatFailuresLeft--;
+          throw const AppException.network();
+        }
+        chatSuccesses++;
+      }
+
       await marker.run(
         chatId: 'c2',
         chatUnread: true,
-        now: t0,
-        markChat: () async {
-          if (chatFailuresLeft > 0) {
-            chatFailuresLeft--;
-            throw const AppException.network();
-          }
-          chatSuccesses++;
+        markChat: markChat,
+        clearNotifications: () async {
+          notifySuccesses++;
         },
-        clearNotifications: () async => notifySuccesses++,
       );
       expect(chatSuccesses, 0);
       expect(
@@ -283,12 +270,14 @@ void main() {
         reason: 'الإشعارات لا تُعلَّم قبل نجاح تعليم المحادثة',
       );
 
+      marker.allowRetry(chatId: 'c2');
       await marker.run(
         chatId: 'c2',
         chatUnread: true,
-        now: t0.add(retryDelay),
-        markChat: () async => chatSuccesses++,
-        clearNotifications: () async => notifySuccesses++,
+        markChat: markChat,
+        clearNotifications: () async {
+          notifySuccesses++;
+        },
       );
       expect(chatSuccesses, 1);
       expect(notifySuccesses, 1);
@@ -303,9 +292,12 @@ void main() {
       final bool pending = await marker.run(
         chatId: 'c3',
         chatUnread: false,
-        now: t0,
-        markChat: () async => chatCalls++,
-        clearNotifications: () async => notifySuccesses++,
+        markChat: () async {
+          chatCalls++;
+        },
+        clearNotifications: () async {
+          notifySuccesses++;
+        },
       );
 
       expect(chatCalls, 0, reason: 'لا شيء يُعلَّم في المحادثة');

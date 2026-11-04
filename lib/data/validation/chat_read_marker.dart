@@ -9,16 +9,17 @@
 ///
 /// **الحل:** حالتان منفصلتان، ولا تُعتبر أي منهما تمّت إلا بعد نجاح عمليتها هي:
 ///
-/// * `_chatMarkedFor` — نجحت كتابة علامة قراءة **المحادثة**.
-/// * `_notificationsClearedFor` — نجحت كتابة **الإشعارات** (`markChatMessagesRead`).
+/// * `_chatMarked` — نجحت كتابة علامة قراءة **المحادثة**.
+/// * `_notificationsCleared` — نجحت كتابة **الإشعارات** (`markChatMessagesRead`).
 ///
 /// فشل أي خطوة لا يُثبّت حالتها، فتُعاد المحاولة. ومحاولة واحدة لا تتكرر في كل
-/// إعادة بناء: بعد فشل تُسجَّل لحظته، ويُمنع أي محاولة جديدة قبل [retryDelay]
-/// (تهدئة)، ثم تُعاد المحاولة من تلقاء الشاشة.
+/// إعادة بناء: بعد فشل يُغلق الباب (`_awaitingRetry`) حتى **تَسمح** الشاشة
+/// بمحاولة جديدة بعد [retryDelay] عبر [allowRetry]. لذلك لا يعتمد المنطق على
+/// ساعة جهاز: التوقيت عند الشاشة (مؤقّت)، والحالة هنا حتمية وقابلة للاختبار.
 class ChatReadMarker {
   ChatReadMarker({this.retryDelay = const Duration(seconds: 5)});
 
-  /// أقصر فاصل بين محاولة فاشلة وأخرى — يمنع حلقة كتابة في كل إعادة بناء.
+  /// أقصر فاصل تنتظره الشاشة بين محاولة فاشلة وأخرى — يمنع حلقة كتابة.
   final Duration retryDelay;
 
   /// المحادثات التي نجح تعليم رسائلها.
@@ -30,9 +31,8 @@ class ChatReadMarker {
   /// المحادثة التي تجري محاولتها الآن (منع تزامن محاولتين لنفس المحادثة).
   String? _inFlightFor;
 
-  /// المحادثة التي فشلت محاولتها الأخيرة ولحظتها (للتهدئة).
-  String? _failedFor;
-  DateTime? _failedAt;
+  /// محادثة فشلت محاولتها وتنتظر إذنًا صريحًا بمحاولة جديدة.
+  String? _awaitingRetryFor;
 
   bool _chatDone(String chatId, bool chatUnread) =>
       !chatUnread || _chatMarked.contains(chatId);
@@ -44,38 +44,37 @@ class ChatReadMarker {
   bool isPending({required String chatId, required bool chatUnread}) =>
       !(_chatDone(chatId, chatUnread) && _notificationsDone(chatId));
 
-  /// هل يجوز أن نبدأ محاولة الآن؟ (لا شيء معلّق، أو محاولة جارية، أو داخل
-  /// فترة التهدئة بعد فشل ⇒ لا).
-  bool shouldAttempt({
-    required String chatId,
-    required bool chatUnread,
-    required DateTime now,
-  }) {
+  /// هل يجوز أن نبدأ محاولة الآن؟ (لا شيء معلّق، أو محاولة جارية، أو فشل سابق
+  /// لم تُسمح بعده محاولة ⇒ لا).
+  bool shouldAttempt({required String chatId, required bool chatUnread}) {
     if (!isPending(chatId: chatId, chatUnread: chatUnread)) {
       return false;
     }
     if (_inFlightFor == chatId) {
       return false;
     }
-    final DateTime? failedAt = _failedFor == chatId ? _failedAt : null;
-    if (failedAt != null && now.difference(failedAt) < retryDelay) {
-      return false;
+    return _awaitingRetryFor != chatId;
+  }
+
+  /// تسمح بمحاولة جديدة بعد فشل — تناديها الشاشة عند انقضاء [retryDelay].
+  void allowRetry({required String chatId}) {
+    if (_awaitingRetryFor == chatId) {
+      _awaitingRetryFor = null;
     }
-    return true;
   }
 
   /// ينفّذ ما تبقّى بالترتيب: المحادثة أولًا، ثم إشعاراتها — وكل خطوة في
   /// `try` مستقلة حتى لا يُلغي فشل إحداهما الأخرى.
   ///
-  /// يعيد `true` إن بقي شيء معلّق (أي: يجب إعادة المحاولة بعد [retryDelay]).
+  /// يعيد `true` إن بقي شيء معلّق (أي: على الشاشة أن تسمح بمحاولة بعد
+  /// [retryDelay]).
   Future<bool> run({
     required String chatId,
     required bool chatUnread,
-    required DateTime now,
     required Future<void> Function() markChat,
     required Future<void> Function() clearNotifications,
   }) async {
-    if (!shouldAttempt(chatId: chatId, chatUnread: chatUnread, now: now)) {
+    if (!shouldAttempt(chatId: chatId, chatUnread: chatUnread)) {
       return isPending(chatId: chatId, chatUnread: chatUnread);
     }
 
@@ -94,8 +93,7 @@ class ChatReadMarker {
 
       // الإشعارات لا تُعدّ مقروءة إلا بعد نجاح كتابتها هي، لا بنجاح تعليم
       // المحادثة.
-      if (_chatDone(chatId, chatUnread) &&
-          !_notificationsDone(chatId)) {
+      if (_chatDone(chatId, chatUnread) && !_notificationsDone(chatId)) {
         try {
           await clearNotifications();
           _notificationsCleared.add(chatId);
@@ -108,8 +106,8 @@ class ChatReadMarker {
     }
 
     final bool pending = isPending(chatId: chatId, chatUnread: chatUnread);
-    _failedFor = pending ? chatId : null;
-    _failedAt = pending ? now : null;
+    // فشل ⇒ الباب مغلق حتى تسمح الشاشة. نجاح كامل ⇒ لا شيء ينتظر.
+    _awaitingRetryFor = pending ? chatId : null;
     return pending;
   }
 }

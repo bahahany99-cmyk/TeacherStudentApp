@@ -63,6 +63,9 @@ const HOST_PORT = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').spli
 const PAGE_SIZE = 20;
 const at = (minutes) => new Date(Date.UTC(2026, 10, 4, 9, minutes, 0));
 
+/** لحظة قبل [minutes] من الآن — لاختبارات تعتمد على «قرأت الآن». */
+const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60 * 1000);
+
 let testEnv;
 
 const asStudent = () => testEnv.authenticatedContext('student-1').firestore();
@@ -86,7 +89,14 @@ async function readRaw(path) {
   return data;
 }
 
-/** إشعار كما يكتبه التطبيق (الحقول التي تعتمد عليها الاستعلامات). */
+/**
+ * إشعار كما يكتبه التطبيق (**بـ`readAt: null` صريح**).
+ *
+ * هذا مقصود: التطبيق يكتب `readAt` فارغًا عند الإنشاء، لأن Firestore لا
+ * يُطابق «غياب الحقل» بشرط `readAt == null` — وهو ما يُثبته الاختبار الأخير
+ * في هذا الملف. بدون الحقل الصريح لا يظهر الإشعار في عدّاد الجرس ولا يُعلَّم
+ * مقروءًا أبدًا.
+ */
 const notificationDoc = (recipientId, overrides = {}) => ({
   recipientId,
   type: 'bookingAccepted',
@@ -95,6 +105,7 @@ const notificationDoc = (recipientId, overrides = {}) => ({
   targetId: 'b1',
   title: 'إشعار',
   createdAt: at(0),
+  readAt: null,
   ...overrides,
 });
 
@@ -388,26 +399,55 @@ describe('P32 — markChatMessagesRead على Firestore الفعلي', () => {
     await assertFails(updateDoc(doc(db, 'notifications/dm-other-user'), { readAt: new Date() }));
     await assertFails(getDocs(unreadChatQuery(db, 'teacher-1', 'chat-1')));
   });
+
+  it('غياب حقل readAt لا يُطابق الشرط — لذلك يكتبه التطبيق null صريحًا', async () => {
+    // يوثّق سبب وجود `'readAt': null` في `FirestoreNotificationRepository.push`:
+    // لو غاب الحقل لما ظهر الإشعار في عدّاد الجرس ولا في هذا الاستعلام إطلاقًا.
+    await seed([
+      {
+        path: 'notifications/missing-field',
+        data: {
+          recipientId: 'student-1',
+          type: 'directMessage',
+          actorId: 'teacher-1',
+          actorName: 'أ. سارة الخطيب',
+          targetId: 'chat-1',
+          title: 'إشعار',
+          createdAt: at(0),
+        },
+      },
+      {
+        path: 'notifications/explicit-null',
+        data: notificationDoc('student-1', { type: 'directMessage', targetId: 'chat-1' }),
+      },
+    ]);
+
+    const db = asStudent();
+    const snap = await assertSucceeds(getDocs(unreadChatQuery(db, 'student-1', 'chat-1')));
+    assert.deepEqual(
+      snap.docs.map((d) => d.id),
+      ['explicit-null'],
+      'الحقل الصريح فقط يُطابق readAt == null',
+    );
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
 describe('P32 — unreadCount على Firestore الفعلي (إصلاح 1)', () => {
   /** نفس تجميعَي `FirestoreMessageRepository.unreadCount`. */
   const countAfterRead = async (db, readAt) => {
-    let after = query(collection(db, 'studyGroups/g1/messages'));
-    if (readAt != null) {
-      after = query(
-        collection(db, 'studyGroups/g1/messages'),
-        where('sentAt', '>', Timestamp.fromDate(readAt)),
-      );
-    }
-    const total = (await assertSucceeds(getCountFromServer(after))).data().count;
+    const filters = readAt == null ? [] : [where('sentAt', '>', Timestamp.fromDate(readAt))];
+    const total = (
+      await assertSucceeds(
+        getCountFromServer(query(collection(db, 'studyGroups/g1/messages'), ...filters)),
+      )
+    ).data().count;
     const own = (
       await assertSucceeds(
         getCountFromServer(
           query(
             collection(db, 'studyGroups/g1/messages'),
-            ...(readAt != null ? [where('sentAt', '>', Timestamp.fromDate(readAt))] : []),
+            ...filters,
             where('senderId', '==', 'student-1'),
           ),
         ),
@@ -417,15 +457,15 @@ describe('P32 — unreadCount على Firestore الفعلي (إصلاح 1)', () 
   };
 
   it('10 رسائل لي بعد آخر قراءة ثم رسالة من غيري ⇒ 1 لا صفر', async () => {
-    const readAt = at(0);
+    const readAt = minutesAgo(120);
     await seedGroup();
     await seed([
       { path: 'studyGroups/g1/reads/student-1', data: { lastReadAt: readAt } },
       ...Array.from({ length: 10 }, (_, i) => ({
         path: `studyGroups/g1/messages/mine-${i}`,
-        data: groupMessage('student-1', at(i + 1)),
+        data: groupMessage('student-1', minutesAgo(100 - i)),
       })),
-      { path: 'studyGroups/g1/messages/other-1', data: groupMessage('teacher-1', at(20)) },
+      { path: 'studyGroups/g1/messages/other-1', data: groupMessage('teacher-1', minutesAgo(30)) },
     ]);
 
     const db = asStudent();
@@ -437,24 +477,24 @@ describe('P32 — unreadCount على Firestore الفعلي (إصلاح 1)', () 
     assert.notEqual(counts.unread, 0);
 
     // العدد يبقى دقيقًا عند التجاوز أيضًا (ولا يُقتطع عند سقفٍ ما).
-    const manyOthers = await (async () => {
-      await seed(
-        Array.from({ length: 15 }, (_, i) => ({
-          path: `studyGroups/g1/messages/teacher-${i}`,
-          data: groupMessage('teacher-1', at(30 + i)),
-        })),
-      );
-      return countAfterRead(db, readAt);
-    })();
-    assert.equal(manyOthers.unread, 26, 'كل رسائل الآخرين تُعدّ كاملة لا مقتطعة');
+    await seed(
+      Array.from({ length: 15 }, (_, i) => ({
+        path: `studyGroups/g1/messages/teacher-${i}`,
+        data: groupMessage('teacher-1', minutesAgo(20 - i)),
+      })),
+    );
+    const manyOthers = await countAfterRead(db, readAt);
+    assert.equal(manyOthers.total, 26);
+    assert.equal(manyOthers.own, 10);
+    assert.equal(manyOthers.unread, 16, 'كل رسائل الآخرين تُعدّ كاملة لا مقتطعة');
   });
 
   it('رسائلي لا تُحتسب، والغياب يعني «لم يقرأ شيئًا»', async () => {
     await seedGroup();
     await seed([
-      { path: 'studyGroups/g1/messages/mine-1', data: groupMessage('student-1', at(1)) },
-      { path: 'studyGroups/g1/messages/other-1', data: groupMessage('teacher-1', at(2)) },
-      { path: 'studyGroups/g1/messages/other-2', data: groupMessage('teacher-1', at(3)) },
+      { path: 'studyGroups/g1/messages/mine-1', data: groupMessage('student-1', minutesAgo(50)) },
+      { path: 'studyGroups/g1/messages/other-1', data: groupMessage('teacher-1', minutesAgo(40)) },
+      { path: 'studyGroups/g1/messages/other-2', data: groupMessage('teacher-1', minutesAgo(30)) },
     ]);
 
     const db = asStudent();
@@ -463,7 +503,7 @@ describe('P32 — unreadCount على Firestore الفعلي (إصلاح 1)', () 
     assert.equal(before.own, 1);
     assert.equal(before.unread, 2, 'رسالتا المدرس فقط');
 
-    // بعد التعليم: صفر.
+    // بعد التعليم: صفر (كل الرسائل أقدم من «الآن»).
     await assertSucceeds(
       setDoc(doc(db, 'studyGroups/g1/reads/student-1'), { lastReadAt: new Date() }),
     );

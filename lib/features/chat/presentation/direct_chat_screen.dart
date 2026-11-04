@@ -153,8 +153,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   /// `retryDelay` (مؤقّت في الشاشة) بدل الانتظار حتى فتح الشاشة من جديد.
   ///
   /// **لا تكرار في كل بناء:** [ChatReadMarker.shouldAttempt] يمنع المحاولة إن
-  /// لم يكن هناك شيء معلّق أو كانت محاولة جارية أو مضى أقل من `retryDelay` على
-  /// الفشل.
+  /// لم يكن هناك شيء معلّق، أو كانت محاولة جارية، أو فشلت محاولة سابقة ولم
+  /// تسمح الشاشة بعد بمحاولة جديدة (بعد `retryDelay`).
   ///
   /// **ما لا يُمَس:** إشعارات الحجز والانضمام والمزاد وقرار الإدارة لغير هذه
   /// المحادثة، ولا إشعارات مستخدم آخر. الحصر في المستودع بثلاثة شروط
@@ -164,7 +164,6 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     final bool stillPending = await _readMarker.run(
       chatId: chat.id,
       chatUnread: chat.hasUnreadFor(viewerId),
-      now: DateTime.now(),
       markChat: () => services.chats.markRead(
         chatId: chat.id,
         viewerId: viewerId,
@@ -181,6 +180,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     // محاولة أخرى بعد التهدئة حتى لو لم تُعِد الشاشة بناءً من تلقاء نفسها.
     _readRetryTimer?.cancel();
     _readRetryTimer = Timer(_readMarker.retryDelay, () {
+      _readMarker.allowRetry(chatId: chat.id);
       if (mounted) {
         setState(() {});
       }
@@ -430,7 +430,6 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                   if (_readMarker.shouldAttempt(
                     chatId: chat.id,
                     chatUnread: chat.hasUnreadFor(viewerId),
-                    now: DateTime.now(),
                   )) {
                     _markRead(chat, viewerId);
                   }
