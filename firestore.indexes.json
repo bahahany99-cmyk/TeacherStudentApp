@@ -1,0 +1,38 @@
+{
+  "//": "فهارس مركّبة مطلوبة للاستعلامات المستخدمة فعليًا في الكود. لا فهارس مضافة قبل استخدامها. فهرس notifications (P32) يخدم صفحة الإشعارات: ترتيب createdAt تنازليًا ثم معرّف المستند تصاعديًا (يُضاف تلقائيًا كحقل ترتيب ثانٍ). فهرس messages (إصلاح 1، P32) يخدم **عدّ غير المقروء** في محادثة المجموعة: رسائل العضو نفسه الأحدث من آخر قراءة = مساواة على senderId + مدى على sentAt، وهو نفس شكل الاستعلام الذي يُنفَّذ لكل مجموعة تظهر في القائمة.",
+  "indexes": [
+    {
+      "collectionGroup": "teacherProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "isFeatured", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "studyGroups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "teacherId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "senderId", "order": "ASCENDING" },
+        { "fieldPath": "sentAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
