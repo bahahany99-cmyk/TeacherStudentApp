@@ -6284,6 +6284,95 @@ describe('P32 — إشعار إلغاء الحجز', () => {
       updateDoc(doc(asStudent(), notificationPath('n1')), { readAt: now() }),
     );
   });
+
+  // ── (إصلاح 2) معرّف الإشعار حتمي: `cancel-<bookingId>` ────────────────────
+  // بدون تثبيت المعرّف كان بإمكان عميل إنشاء إشعارات إلغاء **متعددة لنفس
+  // الحجز** بمعرّفات مختلفة، فتتضاعف في صندوق الطرف الآخر. القاعدة الآن
+  // ترفض أي معرّف لا يطابق الصيغة، فمسار الإلغاء له إشعار واحد لكل حجز.
+  it('إشعار الإلغاء بمعرّفه الحتمي يُقبل', async () => {
+    await seedCancelled('student-1');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('إشعار ثانٍ لنفس الحجز بمعرّف مختلف يُرفض (لا تكرار)', async () => {
+    await seedCancelled('student-1');
+
+    // الأول بالصيغة المعتمدة.
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+
+    // وأي معرّف آخر — ولو كان كل شيء آخر صحيحًا — مرفوض.
+    for (const otherId of ['cancel-b1-2', 'cancelled-b1', 'n-$b1', 'cancel_b1']) {
+      await assertFails(
+        setDoc(
+          doc(asStudent(), notificationPath(otherId)),
+          notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+        ),
+      );
+    }
+
+    // ولا يمكن «تحويل» معرّف حجز آخر إلى هذا الحجز.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b2')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('المعرّف لا يُقبل إلا بصيغة `cancel-` + معرّف الحجز نفسه', async () => {
+    await seedCancelled('student-1');
+
+    // `cancel-` كبير الحروف، أو بادئة زائدة، أو معرّف فارغ: كلها مرفوضة.
+    for (const badId of ['Cancel-b1', 'xcancel-b1', 'cancel-b1-extra', 'cancel-']) {
+      await assertFails(
+        setDoc(
+          doc(asStudent(), notificationPath(badId)),
+          notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+        ),
+      );
+    }
+  });
+
+  it('تثبيت المعرّف لا يوسّع صلاحية الإلغاء: حجز لم يُلغَ يبقى مرفوضًا', async () => {
+    await seedBooking('accepted');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('تثبيت المعرّف لا يمنح غير الطرفين حق إنشاء الإشعار', async () => {
+    await seedCancelled('student-1');
+
+    // غريب تمامًا، بمعرّف صحيح.
+    await assertFails(
+      setDoc(
+        doc(asOther(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'stranger-9', 'bookingCancelled', 'b1'),
+      ),
+    );
+    // طرف في الحجز لكنه **لم يُلغِ** — حتى بالمعرّف الحتمي الصحيح.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('cancel-b1')),
+        notificationDoc('student-1', 'teacher-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
 });
 
 describe('P32 — إشعار قرار التوثيق من الإدارة', () => {

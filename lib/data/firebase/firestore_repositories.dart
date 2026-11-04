@@ -2111,23 +2111,47 @@ class FirestoreMessageRepository implements MessageRepository {
         groupId: groupId,
         memberId: memberId,
       );
-      Query<Map<String, dynamic>> query = _messages(groupId);
+      Query<Map<String, dynamic>> afterRead = _messages(groupId);
       if (readAt != null) {
-        // شرط زمني على حقل واحد ⇒ فهرس أحاديّ تلقائي، بلا فهرس مركّب.
-        query = query.where('sentAt', isGreaterThan: Timestamp.fromDate(readAt));
+        // شرط زمني على حقل واحد ⇒ فهرس أحاديّ تلقائي.
+        afterRead = afterRead.where(
+          'sentAt',
+          isGreaterThan: Timestamp.fromDate(readAt),
+        );
       }
-      // سقف صريح: الشارة تعرض «9+» على الأكثر، فلا نقرأ تاريخًا كاملًا لأجلها.
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await query
-          .limit(GroupUnreadRules.probeLimit)
-          .get();
-      // رسائلي أنا ليست «غير مقروءة» عندي.
-      return snapshot.docs
-          .where(
-            (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-                doc.data()['senderId'] != memberId,
-          )
-          .length;
+      // (إصلاح 1) **عددان يحسبهما الخادم، لا قراءة رسائل.**
+      //
+      // كان التنفيذ السابق يقرأ 10 رسائل ثم يستبعد رسائل العضو نفسه على
+      // العميل؛ فإن كانت العشر كلها من العضو، ظهر العداد صفرًا وهناك رسائل
+      // غير مقروءة بعدها. الآن:
+      //   * `total`  = كل الرسائل الأحدث من آخر قراءة.
+      //   * `mine`   = رسائل العضو نفسه الأحدث من آخر قراءة (تجميع على نفس
+      //                الاستعلام + مساواة على `senderId`).
+      //   وغير المقروء = `total - mine` — **دقيق** ومستقل عن أي سقف.
+      //
+      // التكلفة: استعلاما تجميع بدل قراءة 10 مستندات لكل مجموعة. التجميع
+      // يُحاسب عليه بمعدل قراءة واحدة لكل 1000 مُدخَل مُطابِق، فلا يتضخّم
+      // الثمن مع مجموعات كثيرة ولا مع تاريخ طويل.
+      final int total = await _count(afterRead);
+      if (total == 0) {
+        return 0;
+      }
+      final int mine = await _count(
+        afterRead.where('senderId', isEqualTo: memberId),
+      );
+      return GroupUnreadRules.unreadFromCounts(
+        totalAfterRead: total,
+        ownAfterRead: mine,
+      );
     });
+  }
+
+  /// عدد مستندات استعلام عبر تجميع `count` (بلا تنزيل المستندات).
+  Future<int> _count(Query<Map<String, dynamic>> query) async {
+    // `count()` تجميع على الخادم: لا مستندات تُنزَّل، ويُحاسب عليه بمعدل
+    // قراءة واحدة لكل 1000 مُدخَل مُطابِق.
+    final int? count = (await query.count().get()).count;
+    return count ?? 0;
   }
 
   @override

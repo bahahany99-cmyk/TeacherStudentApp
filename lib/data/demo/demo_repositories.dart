@@ -1459,11 +1459,22 @@ class DemoMessageRepository implements MessageRepository {
   Future<int> unreadCount({
     required String groupId,
     required String memberId,
-  }) async => GroupUnreadRules.countUnread(
-    messages: await listForGroup(groupId),
-    memberId: memberId,
-    lastReadAt: _lastRead[_readKey(groupId, memberId)],
-  );
+  }) async {
+    // نفس صيغة Firestore حرفيًا (إصلاح 1): عدّان ثم فرق — لا سقف ولا استبعاد
+    // على العميل. الوضع التجريبي يرى كل الرسائل، فالنتيجة دقيقة هنا أيضًا،
+    // والاختبار عليها يثبت الصيغة التي يستخدمها تنفيذ Firestore.
+    final DateTime? readAt = _lastRead[_readKey(groupId, memberId)];
+    final List<GroupMessage> all = await listForGroup(groupId);
+    final Iterable<GroupMessage> afterRead = readAt == null
+        ? all
+        : all.where((GroupMessage m) => m.sentAt.isAfter(readAt));
+    return GroupUnreadRules.unreadFromCounts(
+      totalAfterRead: afterRead.length,
+      ownAfterRead: afterRead
+          .where((GroupMessage m) => m.senderId == memberId)
+          .length,
+    );
+  }
 
   @override
   Future<void> markRead({

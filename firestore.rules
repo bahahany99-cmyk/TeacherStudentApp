@@ -1613,7 +1613,17 @@ service cloud.firestore {
              // (ج-2) إلغاء حجز (P32): الطرف الذي ألغى فعلًا هو المُحدِث
              // (`cancelledBy` في المستند)، والمستلم هو الطرف **الآخر** — فلا
              // إشعار لنفسك، ولا تزوير إلغاء لم تحدثه، ولا إشعار لحجز لم يُلغَ.
+             //
+             // **المعرّف مثبَّت (P32/إصلاح 2):** إشعار الإلغاء له **معرّف واحد
+             // حتمي** لكل حجز (`cancel-<bookingId>`، وهو ما يبنيه
+             // `NotificationRules.cancelNotificationId`). بدون هذا الشرط كان
+             // بإمكان عميل أن يُنشئ إشعارات إلغاء متعددة **لنفس الحجز**
+             // بمعرّفات مختلفة، فتتضاعف الإشعارات في صندوق الطرف الآخر. الشرط
+             // هنا يمنع التكرار من **أي** عميل، ويجعل إعادة المحاولة على نفس
+             // المسار تُرفض (لا تُنشئ ثانيًا) — ولا يضمن وحده أن الإشعار الذي
+             // فشلت كتابته الأول سيُكتب لاحقًا.
              || (request.resource.data.type == 'bookingCancelled'
+                 && notificationId == 'cancel-' + request.resource.data.targetId
                  && bookingOfNotification().status in ['cancelled', 'cancelledLate']
                  && bookingOfNotification().cancelledBy == request.auth.uid
                  && bookingPartiesMatch()

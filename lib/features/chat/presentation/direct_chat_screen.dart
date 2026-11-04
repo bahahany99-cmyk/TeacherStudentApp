@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:teacher_student_app/app/session/current_student.dart';
@@ -22,6 +24,7 @@ import 'package:teacher_student_app/data/services/app_services.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/data/services/direct_chat_repository.dart';
 import 'package:teacher_student_app/data/services/image_picker_gateway.dart';
+import 'package:teacher_student_app/data/validation/chat_read_marker.dart';
 import 'package:teacher_student_app/data/validation/direct_chat_rules.dart';
 import 'package:teacher_student_app/data/validation/message_rules.dart';
 import 'package:teacher_student_app/data/validation/model_validators.dart';
@@ -52,8 +55,11 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   bool _accessResolved = false;
   bool _resolvingAccess = false;
 
-  /// آخر لحظة علّمنا فيها المحادثة مقروءة — يمنع حلقة كتابة/قراءة.
-  String? _markedReadFor;
+  /// (إصلاح 3) حالتا التعليم: المحادثة وإشعاراتها — انظر [ChatReadMarker].
+  final ChatReadMarker _readMarker = ChatReadMarker();
+
+  /// مؤقّت إعادة المحاولة بعد فشل تعليم الإشعارات.
+  Timer? _readRetryTimer;
 
   /// (P25 — البند 6) **تدفّقان محفوظان لا يُنشآن في كل بناء.**
   ///
@@ -87,6 +93,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
 
   @override
   void dispose() {
+    _readRetryTimer?.cancel();
     _input.dispose();
     super.dispose();
   }
@@ -134,53 +141,50 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     }
   }
 
-  /// تعليم المحادثة **وإشعاراتها** كمقروءة (P32).
+  /// تعليم المحادثة **وإشعاراتها** كمقروءة (P32، وإصلاح 3).
   ///
-  /// **الفرق عن السابق:** كان التعليم يشمل مستند المحادثة وحده، فتبقى إشعارات
-  /// الرسائل غير مقروءة في الشاشة والجرس يعدّها أبدًا: المستخدم قرأ الرسالة
-  /// ورأى الجرس يقول «1». الآن نُعلّم — **بعد** نجاح تعليم المحادثة — إشعارات
-  /// هذه المحادثة فقط (`type == directMessage` و`targetId == chat.id`).
+  /// **مشكلة كانت:** كانتا عمليتين مستقلتين، لكن الشاشة كانت تضع علامة
+  /// «عُلِّمت» **قبل** المحاولة. فإذا نجح تعليم المحادثة وفشل تعليم إشعاراتها
+  /// (شبكة/صلاحيات) لم تُعاد المحاولة إطلاقًا: `chat.hasUnreadFor` صار
+  /// `false`، فبقي الجرس يعدّ إشعار رسالة قُرئت.
+  ///
+  /// **الآن:** [ChatReadMarker] يحمل حالتين منفصلتين، ولا يُثبّت أي منهما إلا
+  /// بعد نجاح عمليتها. والفشل يُسجَّل بلحظته، فتُعاد المحاولة بعد
+  /// `retryDelay` (مؤقّت في الشاشة) بدل الانتظار حتى فتح الشاشة من جديد.
+  ///
+  /// **لا تكرار في كل بناء:** [ChatReadMarker.shouldAttempt] يمنع المحاولة إن
+  /// لم يكن هناك شيء معلّق أو كانت محاولة جارية أو مضى أقل من `retryDelay` على
+  /// الفشل.
   ///
   /// **ما لا يُمَس:** إشعارات الحجز والانضمام والمزاد وقرار الإدارة لغير هذه
-  /// المحادثة. والحصر في المستودع بثلاثة شروط، لا بتصفية في الشاشة.
-  ///
-  /// **التكرار:** [NotificationRepository.markChatMessagesRead] لا يكتب شيئًا
-  /// إن لم يكن هناك غير مقروء، والدالة هنا تُنادى عند وجود غير مقروء أو في أول
-  /// بناء لهذه المحادثة فقط (لا في كل إعادة بناء).
-  ///
-  /// **الشبكة:** كل خطوة في `try` مستقلة؛ فشلُ تعليم الإشعارات لا يُلغي تعليم
-  /// المحادثة ولا يُظهر خطأ — يُعاد تلقائيًا في البناء التالي ما دام غير مقروء.
+  /// المحادثة، ولا إشعارات مستخدم آخر. الحصر في المستودع بثلاثة شروط
+  /// (`recipientId` + `type == directMessage` + `targetId == chat.id`).
   Future<void> _markRead(DirectChat chat, String viewerId) async {
-    final bool chatUnread = chat.hasUnreadFor(viewerId);
-    final bool firstBuild = _markedReadFor != chat.id;
-    if (!chatUnread && !firstBuild) {
-      return;
-    }
-    _markedReadFor = chat.id;
-
     final AppServices services = AppServicesScope.of(context);
-    if (chatUnread) {
-      try {
-        await services.chats.markRead(
-          chatId: chat.id,
-          viewerId: viewerId,
-          at: DateTime.now(),
-        );
-      } catch (_) {
-        // أفضل جهد: علامة القراءة ليست شرطًا لعرض الرسائل، وفقدانها بسبب شبكة
-        // متعثرة لا يستحق إزعاج المستخدم برسالة خطأ.
-      }
-    }
-
-    try {
-      await services.notifications.markChatMessagesRead(
+    final bool stillPending = await _readMarker.run(
+      chatId: chat.id,
+      chatUnread: chat.hasUnreadFor(viewerId),
+      now: DateTime.now(),
+      markChat: () => services.chats.markRead(
+        chatId: chat.id,
+        viewerId: viewerId,
+        at: DateTime.now(),
+      ),
+      clearNotifications: () => services.notifications.markChatMessagesRead(
         recipientId: viewerId,
         chatId: chat.id,
-      );
-    } catch (_) {
-      // أفضل جهد كذلك: الجرس ليس أهم من المحادثة، والفشل شبكي غالبًا. لا نكتب
-      // `readAt` هنا احتياطًا لأن الكتابة على العميل لا تعرف حالة المستند.
+      ),
+    );
+    if (!stillPending || !mounted) {
+      return;
     }
+    // محاولة أخرى بعد التهدئة حتى لو لم تُعِد الشاشة بناءً من تلقاء نفسها.
+    _readRetryTimer?.cancel();
+    _readRetryTimer = Timer(_readMarker.retryDelay, () {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _send(DirectChat chat, String viewerId, String viewerName) async {
@@ -421,9 +425,13 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                     _resolveAccess(chat, viewerId);
                   }
                   // يُنادى في أول بناء (لإفراغ إشعارات محادثة قُرئت رسائلها
-                  // سابقًا والجرس ما زال يعدّها) وعند وجود رسالة غير مقروءة.
-                  if (chat.hasUnreadFor(viewerId) ||
-                      _markedReadFor != chat.id) {
+                  // سابقًا والجرس ما زال يعدّها)، وعند وجود رسالة غير مقروءة،
+                  // وبعد فشل محاولة سابقة متى انقضت التهدئة (إصلاح 3).
+                  if (_readMarker.shouldAttempt(
+                    chatId: chat.id,
+                    chatUnread: chat.hasUnreadFor(viewerId),
+                    now: DateTime.now(),
+                  )) {
                     _markRead(chat, viewerId);
                   }
 
