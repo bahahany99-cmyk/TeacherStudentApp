@@ -21,6 +21,14 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+// الإضافات الويب تُستورد مباشرةً لتسجيلها يدويًا: `flutter test --platform
+// chrome` لا يشغّل مُسجِّل إضافات الويب تلقائيًا (خلافًا لبناء التطبيق).
+// ignore: depend_on_referenced_packages
+import 'package:cloud_firestore_web/cloud_firestore_web.dart';
+// ignore: depend_on_referenced_packages
+import 'package:firebase_auth_web/firebase_auth_web.dart';
+// ignore: depend_on_referenced_packages
+import 'package:firebase_core_web/firebase_core_web.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -80,6 +88,19 @@ Future<T> _step<T>(
   );
   debugPrint('✓ $label');
   return result;
+}
+
+/// يسجّل تنفيذات الويب للإضافات **يدويًا**.
+///
+/// **لماذا؟** قنوات المنصّة (`firebase_core`, `cloud_firestore`, `firebase_auth`)
+/// في الويب تمرّ على `MethodChannel` يخدمه تسجيل الإضافة. وفي `flutter test`
+/// لا يُشغَّل `web_plugin_registrant` تلقائيًا، فتُرسل الرسالة بلا مستمع البتة:
+/// لا استثناء ولا نتيجة — تعليق إلى ما لا نهاية (رأيناه فعليًا: توقّف
+/// `Firebase.initializeApp` 45 ثانية بلا خطأ).
+void _registerWebPlugins() {
+  FirebaseCoreWeb.registerWith();
+  CloudFirestoreWeb.registerWith();
+  FirebaseAuthWeb.registerWith();
 }
 
 Future<void> _bootstrap() async {
@@ -158,6 +179,8 @@ void main() {
   // `ServicesBinding` (PlatformChannel) حتى في التنفيذ الويب، وبدون التهيئة
   // يفشل setUpAll بـ«Binding has not yet been initialized».
   TestWidgetsFlutterBinding.ensureInitialized();
+  // قبل أي تهيئة Firebase: بلا هذا التسجيل تبقى القناة بلا مستمع فتُعلَّق.
+  _registerWebPlugins();
   setUpAll(_bootstrap);
 
   tearDown(() async {
