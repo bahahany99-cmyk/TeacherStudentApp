@@ -160,9 +160,10 @@ void main() {
         await messages.lastReadAt(groupId: 'g1', memberId: 'student-2'),
         isNull,
       );
+      // زميل لم يقرأ شيئًا يرى الرسائل الثلاث كلها (رسالتي أنا ليست «رسالته»).
       expect(
         await messages.unreadCount(groupId: 'g1', memberId: 'student-2'),
-        2,
+        3,
       );
     });
   });
