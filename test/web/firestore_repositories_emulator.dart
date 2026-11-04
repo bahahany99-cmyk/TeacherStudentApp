@@ -19,6 +19,7 @@ library;
 
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:ui_web' as ui_web;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 // الإضافات الويب تُستورد مباشرةً لتسجيلها يدويًا: `flutter test --platform
@@ -90,17 +91,29 @@ Future<T> _step<T>(
   return result;
 }
 
-/// يسجّل تنفيذات الويب للإضافات **يدويًا**.
+/// يسجّل تنفيذات الويب للإضافات **يدويًا** — بنفس نمط
+/// `web_plugin_registrant.dart` الذي يولّده Flutter لبناء التطبيق.
 ///
 /// **لماذا؟** قنوات المنصّة (`firebase_core`, `cloud_firestore`, `firebase_auth`)
-/// في الويب تمرّ على `MethodChannel` يخدمه تسجيل الإضافة. وفي `flutter test`
-/// لا يُشغَّل `web_plugin_registrant` تلقائيًا، فتُرسل الرسالة بلا مستمع البتة:
-/// لا استثناء ولا نتيجة — تعليق إلى ما لا نهاية (رأيناه فعليًا: توقّف
-/// `Firebase.initializeApp` 45 ثانية بلا خطأ).
+/// في الويب يخدمها مُسجِّل الإضافات. و`flutter test --platform chrome` **لا**
+/// يشغّل ذلك المُسجِّل، فتُرسل الرسالة بلا مستمع: لا استثناء ولا نتيجة — تعليق
+/// إلى ما لا نهاية (رأيناه فعلًا: توقّف `Firebase.initializeApp` بلا خطأ).
+///
+/// `ui_web.registerPlugin` هو الباب الرسمي الذي يستخدمه المُسجِّل المولَّد،
+/// ويمرّر `Registrar` الذي تتوقعه الإضافات.
 void _registerWebPlugins() {
-  FirebaseCoreWeb.registerWith();
-  CloudFirestoreWeb.registerWith();
-  FirebaseAuthWeb.registerWith();
+  ui_web.registerPlugin(
+    FirebaseCoreWeb.new,
+    (dynamic registrar) => FirebaseCoreWeb.registerWith(registrar),
+  );
+  ui_web.registerPlugin(
+    FirestoreWeb.new,
+    (dynamic registrar) => FirestoreWeb.registerWith(registrar),
+  );
+  ui_web.registerPlugin(
+    FirebaseAuthWeb.new,
+    (dynamic registrar) => FirebaseAuthWeb.registerWith(registrar),
+  );
 }
 
 Future<void> _bootstrap() async {
