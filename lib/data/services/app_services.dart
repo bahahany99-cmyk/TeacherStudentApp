@@ -170,7 +170,8 @@ class AppServices {
       notifications: notifications,
       reviews: FirestoreReviewRepository(),
       favorites: FirestoreFavoriteRepository(),
-      admin: FirestoreAdminRepository(),
+      // (P32) الإدارة تُشعر المدرس بقرار التوثيق، فتحتاج كاتب الإشعارات نفسه.
+      admin: FirestoreAdminRepository(notifications: notifications),
       auctions: CloudAuctionRepository(),
       avatars: FirestoreAvatarRepository(),
       imagePicker: PlatformImagePickerGateway(),
@@ -232,7 +233,11 @@ class AppServices {
         source: reviews,
       ),
       favorites: DemoFavoriteRepository(),
-      admin: DemoAdminRepository(profiles: profiles, reviews: reviews),
+      admin: DemoAdminRepository(
+        profiles: profiles,
+        reviews: reviews,
+        notifications: notifications,
+      ),
       // (P30) محاكاة محلية فقط: لا مزايدة ولا دفع ولا تمييز بلا خادم.
       auctions: DemoAuctionRepository(),
       // نفس مسار الصور في الجولة: اختيار ومعاينة، لكن في الذاكرة فقط.

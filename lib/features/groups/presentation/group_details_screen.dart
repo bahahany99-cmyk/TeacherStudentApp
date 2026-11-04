@@ -29,6 +29,7 @@ import 'package:teacher_student_app/data/services/group_repository.dart';
 import 'package:teacher_student_app/data/validation/join_rules.dart';
 import 'package:teacher_student_app/data/validation/waitlist_rules.dart';
 import 'package:teacher_student_app/features/chat/presentation/chat_launcher.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_unread_badge.dart';
 
 /// تفاصيل مجموعة دراسية — الشاشة الداخلية الأهم في P8.
 ///
@@ -148,6 +149,11 @@ class _GroupDetailsBody extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final SessionController session = SessionScope.of(context);
     final bool isTeacherView = session.role == UserRole.teacher;
+    // (P32) هوية العارض لشارة غير المقروء — نفس معرّف الجلسة المستخدم في
+    // المحادثة، فلا يُقرأ عدّاد عضو آخر.
+    final String viewerId = isTeacherView
+        ? CurrentTeacher.idOf(session)
+        : CurrentStudent.idOf(session);
     final int seatsTaken = group.seatsTaken;
     final int seatsTotal = group.seatsTotal == 0 ? 1 : group.seatsTotal;
     final double fill = (seatsTaken / seatsTotal).clamp(0, 1).toDouble();
@@ -291,14 +297,9 @@ class _GroupDetailsBody extends StatelessWidget {
                 arguments: group.id,
               ),
             ),
-            _ActionTile(
-              icon: Icons.chat_bubble_outline,
-              title: 'محادثة المجموعة',
-              onTap: () => Navigator.of(context).pushNamed(
-                RoutePaths.groupChat,
-                arguments: group.id,
-              ),
-            ),
+            // (P32) مدخل المحادثة يحمل عدد الرسائل غير المقروءة لهذا العضو،
+            // ويعيد حسابه بعد العودة من المحادثة (حيث تُعلَّم مقروءة).
+            _GroupChatActionTile(groupId: group.id, viewerId: viewerId),
           ],
         ),
 
@@ -380,6 +381,45 @@ class _ActionGroup extends StatelessWidget {
 }
 
 /// صف إدارة واحد: أيقونة + عنوان + سهم، مع عنصر زائد اختياري (شارة عدّاد).
+/// مدخل «محادثة المجموعة» مع شارة غير المقروء (P32).
+///
+/// مكوّن بحالة صغيرة لأن الشارة تحتاج إعادة حساب بعد العودة من المحادثة،
+/// والشاشة الأم لا تُعاد بناؤها عند `pop`.
+class _GroupChatActionTile extends StatefulWidget {
+  const _GroupChatActionTile({required this.groupId, required this.viewerId});
+
+  final String groupId;
+  final String viewerId;
+
+  @override
+  State<_GroupChatActionTile> createState() => _GroupChatActionTileState();
+}
+
+class _GroupChatActionTileState extends State<_GroupChatActionTile> {
+  int _revision = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ActionTile(
+      icon: Icons.chat_bubble_outline,
+      title: 'محادثة المجموعة',
+      trailing: GroupUnreadBadge(
+        groupId: widget.groupId,
+        viewerId: widget.viewerId,
+        reloadKey: _revision,
+      ),
+      onTap: () async {
+        await Navigator.of(
+          context,
+        ).pushNamed(RoutePaths.groupChat, arguments: widget.groupId);
+        if (mounted) {
+          setState(() => _revision++);
+        }
+      },
+    );
+  }
+}
+
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.icon,

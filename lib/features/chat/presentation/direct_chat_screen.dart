@@ -134,20 +134,52 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     }
   }
 
+  /// تعليم المحادثة **وإشعاراتها** كمقروءة (P32).
+  ///
+  /// **الفرق عن السابق:** كان التعليم يشمل مستند المحادثة وحده، فتبقى إشعارات
+  /// الرسائل غير مقروءة في الشاشة والجرس يعدّها أبدًا: المستخدم قرأ الرسالة
+  /// ورأى الجرس يقول «1». الآن نُعلّم — **بعد** نجاح تعليم المحادثة — إشعارات
+  /// هذه المحادثة فقط (`type == directMessage` و`targetId == chat.id`).
+  ///
+  /// **ما لا يُمَس:** إشعارات الحجز والانضمام والمزاد وقرار الإدارة لغير هذه
+  /// المحادثة. والحصر في المستودع بثلاثة شروط، لا بتصفية في الشاشة.
+  ///
+  /// **التكرار:** [NotificationRepository.markChatMessagesRead] لا يكتب شيئًا
+  /// إن لم يكن هناك غير مقروء، والدالة هنا تُنادى عند وجود غير مقروء أو في أول
+  /// بناء لهذه المحادثة فقط (لا في كل إعادة بناء).
+  ///
+  /// **الشبكة:** كل خطوة في `try` مستقلة؛ فشلُ تعليم الإشعارات لا يُلغي تعليم
+  /// المحادثة ولا يُظهر خطأ — يُعاد تلقائيًا في البناء التالي ما دام غير مقروء.
   Future<void> _markRead(DirectChat chat, String viewerId) async {
-    if (!chat.hasUnreadFor(viewerId) && _markedReadFor == chat.id) {
+    final bool chatUnread = chat.hasUnreadFor(viewerId);
+    final bool firstBuild = _markedReadFor != chat.id;
+    if (!chatUnread && !firstBuild) {
       return;
     }
     _markedReadFor = chat.id;
+
+    final AppServices services = AppServicesScope.of(context);
+    if (chatUnread) {
+      try {
+        await services.chats.markRead(
+          chatId: chat.id,
+          viewerId: viewerId,
+          at: DateTime.now(),
+        );
+      } catch (_) {
+        // أفضل جهد: علامة القراءة ليست شرطًا لعرض الرسائل، وفقدانها بسبب شبكة
+        // متعثرة لا يستحق إزعاج المستخدم برسالة خطأ.
+      }
+    }
+
     try {
-      await AppServicesScope.of(context).chats.markRead(
+      await services.notifications.markChatMessagesRead(
+        recipientId: viewerId,
         chatId: chat.id,
-        viewerId: viewerId,
-        at: DateTime.now(),
       );
     } catch (_) {
-      // أفضل جهد: علامة القراءة ليست شرطًا لعرض الرسائل، وفقدانها بسبب شبكة
-      // متعثرة لا يستحق إزعاج المستخدم برسالة خطأ.
+      // أفضل جهد كذلك: الجرس ليس أهم من المحادثة، والفشل شبكي غالبًا. لا نكتب
+      // `readAt` هنا احتياطًا لأن الكتابة على العميل لا تعرف حالة المستند.
     }
   }
 
@@ -388,7 +420,10 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                   if (!_accessResolved && !_resolvingAccess) {
                     _resolveAccess(chat, viewerId);
                   }
-                  if (chat.hasUnreadFor(viewerId)) {
+                  // يُنادى في أول بناء (لإفراغ إشعارات محادثة قُرئت رسائلها
+                  // سابقًا والجرس ما زال يعدّها) وعند وجود رسالة غير مقروءة.
+                  if (chat.hasUnreadFor(viewerId) ||
+                      _markedReadFor != chat.id) {
                     _markRead(chat, viewerId);
                   }
 

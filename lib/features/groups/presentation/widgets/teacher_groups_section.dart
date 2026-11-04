@@ -11,6 +11,7 @@ import 'package:teacher_student_app/core/widgets/section_header.dart';
 import 'package:teacher_student_app/data/models/study_group.dart';
 import 'package:teacher_student_app/data/services/app_services_scope.dart';
 import 'package:teacher_student_app/features/groups/presentation/widgets/group_card.dart';
+import 'package:teacher_student_app/features/groups/presentation/widgets/group_unread_badge.dart';
 
 /// قسم «مجموعاتي» في واجهة المدرس، مع إنشاء وتعديل (P7).
 ///
@@ -136,7 +137,8 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                for (final StudyGroup group in visible) _editableCard(group),
+                for (final StudyGroup group in visible)
+                  _editableCard(group, teacherId),
               ],
             );
           },
@@ -145,9 +147,17 @@ class _TeacherGroupsSectionState extends State<TeacherGroupsSection> {
     );
   }
 
-  Widget _editableCard(StudyGroup group) {
+  Widget _editableCard(StudyGroup group, String teacherId) {
     return GroupCard(
       group: group,
+      // (P32) «مجموعاتي» هي قائمة المجموعات التي يراها المدرس، وفيها تظهر
+      // رسائل المجموعة غير المقروءة — لكل مجموعة على حدة. `reloadKey` يعيد
+      // الحساب بعد العودة من المحادثة أو التفاصيل.
+      unreadBadge: GroupUnreadBadge(
+        groupId: group.id,
+        viewerId: teacherId,
+        reloadKey: _revision,
+      ),
       onTap: () async {
         await Navigator.of(
           context,

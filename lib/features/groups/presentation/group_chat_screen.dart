@@ -91,6 +91,22 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ? await services.messages.listForGroup(group.id)
         : const <GroupMessage>[];
 
+    // (P32) فتح المحادثة = قراءة ما فيها: تُثبَّت علامة القراءة **لهذا العضو
+    // وحده** في مستند عضويته، فينخفض عدّاده ولا يتأثر عدّاد غيره.
+    //
+    // أفضل جهد: فشل الكتابة (شبكة/غير عضو) لا يمنع عرض الرسائل ولا يُظهر خطأ؛
+    // تبقى الشارة مرتفعة (صادقة) حتى تنجح محاولة تالية.
+    if (canParticipate) {
+      try {
+        await services.messages.markRead(
+          groupId: group.id,
+          memberId: viewerId,
+        );
+      } on Object {
+        // لا شيء: القراءة للعرض لم تتأثر.
+      }
+    }
+
     return _ChatData(
       group: group,
       messages: messages,

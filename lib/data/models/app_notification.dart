@@ -13,6 +13,14 @@ enum NotificationType {
   /// المدرس رفض الطلب ⇒ الطالب.
   bookingRejected('رُفض طلب الحجز', NotificationTarget.booking),
 
+  // ── (P32) إلغاء الحجز: كان الطرف الآخر لا يعلم أبدًا ─────────────────────
+  // الثغرة السابقة: `cancelRequest` يغيّر الحالة ويحرّر الوقت ثم ينتهي؛ فالمدرس
+  // يرى حصة اختفت من تقويمه بلا سبب، والطالب لا يعلم أن مدرسه ألغى. النوع هنا
+  // يحمل `targetId` = معرّف الحجز، فتفتح الضغطة تفاصيله حيث السبب والحالة.
+
+  /// أحد الطرفين ألغى الحجز ⇒ الطرف الآخر.
+  bookingCancelled('أُلغي الحجز', NotificationTarget.booking),
+
   /// اقتراح وقت بديل من أي طرف ⇒ الطرف الآخر.
   rescheduleProposed('وقت بديل مقترح', NotificationTarget.booking),
 
@@ -74,6 +82,9 @@ enum NotificationType {
     NotificationType.auctionWon => 'auctionWon',
     NotificationType.auctionReplacement => 'auctionReplacement',
     NotificationType.auctionPaymentExpired => 'auctionPaymentExpired',
+    NotificationType.bookingCancelled => 'bookingCancelled',
+    NotificationType.teacherApproved => 'teacherApproved',
+    NotificationType.teacherRejected => 'teacherRejected',
   };
 
   static NotificationType parse(Object? raw) {
@@ -90,6 +101,9 @@ enum NotificationType {
       'auctionWon' => NotificationType.auctionWon,
       'auctionReplacement' => NotificationType.auctionReplacement,
       'auctionPaymentExpired' => NotificationType.auctionPaymentExpired,
+      'bookingCancelled' => NotificationType.bookingCancelled,
+      'teacherApproved' => NotificationType.teacherApproved,
+      'teacherRejected' => NotificationType.teacherRejected,
       // نوع غير معروف: نعرضه كإشعار بلا وجهة بدل إسقاطه بصمت.
       _ => NotificationType.bookingRequested,
     };
@@ -103,12 +117,16 @@ enum NotificationTarget {
   group,
 
   /// (P30) شاشة مزاد التمييز — مقعد الفائز ومهلته.
-  auction;
+  auction,
+
+  /// (P32) ملف المدرس نفسه — قرار التوثيق يُعرض في «ملفي التعريفي».
+  teacherProfile;
 
   static NotificationTarget parse(Object? raw) => switch (raw) {
     'chat' => NotificationTarget.chat,
     'group' => NotificationTarget.group,
     'auction' => NotificationTarget.auction,
+    'teacherProfile' => NotificationTarget.teacherProfile,
     _ => NotificationTarget.booking,
   };
 }

@@ -1,4 +1,5 @@
 import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/notification_page.dart';
 
 /// عقد الإشعارات داخل التطبيق (P12).
 ///
@@ -25,6 +26,41 @@ abstract interface class NotificationRepository {
   /// (شرط واحد + ترتيب في العميل)، والقواعد تمنع أي مستند لغيره.
   Stream<List<AppNotification>> watchMine(String recipientId);
 
+  /// صفحة من الإشعارات **الأقدم** بعد [before] (P32).
+  ///
+  /// **لماذا صفحة لا قائمة كاملة؟** لأن `listMine` كانت تقرأ حتى 50 إشعارًا
+  /// وتتوقف: ما قبلها غير قابل للوصول إطلاقًا. هنا نقرأ صفحة واحدة بحدّ صريح
+  /// ونعيد `hasMore`، فتتحمّل الشاشة الأقدم عند طلب المستخدم فقط.
+  ///
+  /// **المؤشر مركّب:** الترتيب `createdAt` تنازليًا ثم المعرّف تصاعديًا (نفس
+  /// ترتيب [NotificationRules.newestFirst])، والمتابعة تبدأ **بعد** الزوج
+  /// (`before`, `beforeId`) لا بعد الوقت وحده. هذا يمنع حالتين معًا: تكرار
+  /// عنصر بين صفحتين، و**ضياع** إشعارين تشتركا في نفس المللي ثانية (وقع ممكن
+  /// حين يُنشئ طرفان إشعارين في اللحظة نفسها).
+  ///
+  /// **العدّاد مستقل تمامًا:** هذه الدالة لا تُعلّم شيئًا مقروءًا ولا تُغيّر
+  /// `readAt`، فقراءة صفحة قديمة لا تصفّر جرس الإشعارات.
+  Future<NotificationPage> listPage({
+    required String recipientId,
+    int limit,
+    DateTime? before,
+    String? beforeId,
+  });
+
+  /// علّم إشعارات **محادثة واحدة** من نوع `directMessage` كمقروءة (P32).
+  ///
+  /// **المشكلة التي يحلّها:** قراءة الرسائل داخل المحادثة كانت تُحدّث حالة
+  /// المحادثة وحدها، فتبقى إشعارات الرسائل غير مقروءة والجرس يعدّها أبدًا.
+  ///
+  /// **حدوده:** النوع `directMessage` فقط، و`targetId` مساوٍ لمعرّف المحادثة،
+  /// والمستلم هو صاحب الشاشة. لا يمسّ إشعارات الحجز أو الانضمام أو المزاد،
+  /// ولا يكتب شيئًا إن لم يكن هناك غير مقروء (فلا كتابات لا أثر لها).
+  /// يعيد عدد ما عُدِّل فعلًا، ويرمي الأخطاء لتقرّر الشاشة: أفضل جهد.
+  Future<int> markChatMessagesRead({
+    required String recipientId,
+    required String chatId,
+  });
+
   /// عدّاد غير المقروء حيًّا (لجرس شريط التطبيق).
   ///
   /// تدفّق صغير: استعلام واحد على `recipientId` + `readAt == null`، والقيمة
@@ -48,6 +84,11 @@ abstract interface class NotificationRepository {
   ///
   /// يُستدعى من المستودعات بعد نجاح الفعل الأصلي، وبأسلوب «أفضل جهد»: فشل
   /// الإشعار لا يُفشل العملية التي أنشأته.
+  /// [dedupeId] (P32): مفتاح حتمي للمستند يجعل الإشعار **قابلًا للتكرار
+  /// بأمان**. إعادة تنفيذ العملية نفسها (نقر مزدوج، إعادة محاولة بعد خطأ شبكة،
+  /// طلب مكرر) تحاول الكتابة على **نفس المعرّف**، فتُرفض الثانية (لأن القواعد
+  /// تمنع على المُحدِث تعديل إشعار مستلمه) ولا يُنشأ إشعار ثانٍ. `null` = معرّف
+  /// عشوائي كما كان (كل حدث إشعار مستقل، مثل رسالة جديدة).
   Future<AppNotification> push({
     required NotificationType type,
     required String recipientId,
@@ -56,5 +97,6 @@ abstract interface class NotificationRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   });
 }

@@ -653,6 +653,42 @@ service cloud.firestore {
         allow delete: if isAdminWriter() || (signedIn() && request.auth.uid == parentTeacherId());
       }
 
+      // ── P32: علامة قراءة محادثة المجموعة — مستند لكل عضو (بما فيهم المالك)
+      // **لماذا مجموعة فرعية مستقلة لا حقل في مستند العضوية؟** لأن صاحب
+      // المجموعة ليس له مستند عضوية (المقاعد تُحسب من `seatsTaken`)، فحقل هناك
+      // كان سيترك المالك بلا علامة، أو يدفع إلى إنشاء «عضوية» للمالك تُفسد
+      // حصرية المقعد الواحد لكل عضو.
+      //
+      // **الأمان:** كل عضو يقرأ ويكتب **مستنده هو** فقط، وحقل `lastReadAt`
+      // وحده، وبشرط أن يكون مشاركًا فعلًا (مالكًا أو عضوًا مقبولًا). لا يستطيع
+      // عضو أن يُعلّم رسائل غيره مقروءة، ولا غير المشارك أن يدّعي قراءة.
+      //
+      // **التوافق:** غياب المستند = «لم يقرأ شيئًا» — لا هجرة ولا كتابة لازمة
+      // للأعضاء الحاليين.
+      match /reads/{userId} {
+        function readsGroupOwnerId() {
+          return get(/databases/$(database)/documents/studyGroups/$(groupId)).data.teacherId;
+        }
+
+        function readsParticipant() {
+          return signedIn() && (
+            request.auth.uid == readsGroupOwnerId()
+            || exists(/databases/$(database)/documents/studyGroups/$(groupId)/members/$(request.auth.uid))
+          );
+        }
+
+        allow read: if isAdmin()
+          || (signedIn() && request.auth.uid == userId && readsParticipant());
+
+        allow create, update: if signedIn()
+          && request.auth.uid == userId
+          && readsParticipant()
+          && request.resource.data.keys().hasOnly(['lastReadAt'])
+          && request.resource.data.lastReadAt is timestamp;
+
+        allow delete: if isAdminWriter();
+      }
+
       // ── P9: الجدول الأسبوعي ──────────────────────────────────────────────
       // القراءة: صاحب المجموعة وكل عضو مقبول. الكتابة: صاحب المجموعة فقط.
       match /sessions/{sessionId} {
@@ -1485,6 +1521,13 @@ service cloud.firestore {
       // (P25) طلب الانضمام الذي يتحدث عنه الإشعار: معرّفه حتمي
       // (`groupId_studentId`)، والمجموعة هي `targetId`. نقرأه من الخادم فلا
       // يمكن إرسال «طلب انضمام جديد» بلا طلب حقيقي، ولا «قُبل» قبل القبول.
+      // (P32) ملف المدرس الذي يتحدث عنه قرار الإدارة: `recipientId` هو المدرس
+      // نفسه، و`targetId` مساوٍ له. نقرأ الحالة من الخادم، فلا يمكن ادّعاء
+      // «اعتُمد ملفك» لملف لم يُعتمد فعلًا.
+      function teacherProfileOfNotification() {
+        return get(/databases/$(database)/documents/teacherProfiles/$(request.resource.data.recipientId)).data;
+      }
+
       function joinRequestOfNotification(targetId, studentId) {
         return get(/databases/$(database)/documents/groupJoinRequests/$(targetId + '_' + studentId)).data;
       }
@@ -1567,6 +1610,25 @@ service cloud.firestore {
              || (request.resource.data.type == 'waitlistPromoted'
                  && groupOfNotification().teacherId == request.auth.uid
                  && exists(/databases/$(database)/documents/studyGroups/$(request.resource.data.targetId)/members/$(request.resource.data.recipientId)))
+             // (ج-2) إلغاء حجز (P32): الطرف الذي ألغى فعلًا هو المُحدِث
+             // (`cancelledBy` في المستند)، والمستلم هو الطرف **الآخر** — فلا
+             // إشعار لنفسك، ولا تزوير إلغاء لم تحدثه، ولا إشعار لحجز لم يُلغَ.
+             || (request.resource.data.type == 'bookingCancelled'
+                 && bookingOfNotification().status in ['cancelled', 'cancelledLate']
+                 && bookingOfNotification().cancelledBy == request.auth.uid
+                 && bookingPartiesMatch()
+                 && request.resource.data.recipientId != request.auth.uid
+                 && request.resource.data.recipientId != bookingOfNotification().cancelledBy)
+             // (ج-3) قرار الإدارة على ملف مدرس (P32): **الإدارة وحدها** تُنشئه،
+             // والنوع يطابق الحالة المكتوبة فعلًا في الملف. قرارٌ لم يُتخذ لا
+             // يمكن الإشعار به، ومستخدم عادي لا يستطيع انتحال إشعار إدارة.
+             || (request.resource.data.type in ['teacherApproved', 'teacherRejected']
+                 && isAdminWriter()
+                 && request.resource.data.targetId == request.resource.data.recipientId
+                 && ((request.resource.data.type == 'teacherApproved'
+                      && teacherProfileOfNotification().status == 'verified')
+                  || (request.resource.data.type == 'teacherRejected'
+                      && teacherProfileOfNotification().status == 'rejected')))
              // (د) طلب انضمام جديد (P25): الطالب يُشعر **مدرس المجموعة**، والطلب
              // موجود فعلًا بحالة `pending` ويخصّ هذا الطالب وهذا المدرس.
              || (request.resource.data.type == 'joinRequested'

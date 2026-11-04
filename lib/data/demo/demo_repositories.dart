@@ -4,10 +4,12 @@ import 'dart:developer';
 import 'dart:typed_data';
 
 import 'package:teacher_student_app/data/demo/demo_data.dart';
+import 'package:teacher_student_app/data/validation/group_unread_rules.dart';
 import 'package:teacher_student_app/core/errors/app_exception.dart';
 import 'package:teacher_student_app/data/models/app_user.dart';
 import 'package:teacher_student_app/data/models/auth_result.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/notification_page.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
 import 'package:teacher_student_app/data/models/chat_image.dart';
@@ -1405,6 +1407,7 @@ class DemoGroupRepository implements GroupRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -1419,6 +1422,7 @@ class DemoGroupRepository implements GroupRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
@@ -1437,6 +1441,37 @@ class DemoMessageRepository implements MessageRepository {
   final List<GroupMessage> _messages;
 
   int _nextId = 1;
+
+  /// (P32) `lastReadAt` لكل (مجموعة، مشارك) — يعاكس موضعه في Firestore
+  /// (`studyGroups/{id}/reads/{uid}`) بنفس الدلالة: علامة منفصلة لكل عضو،
+  /// وغيابها = «لم يقرأ شيئًا».
+  final Map<String, DateTime> _lastRead = <String, DateTime>{};
+
+  String _readKey(String groupId, String memberId) => '$groupId|$memberId';
+
+  @override
+  Future<DateTime?> lastReadAt({
+    required String groupId,
+    required String memberId,
+  }) async => _lastRead[_readKey(groupId, memberId)];
+
+  @override
+  Future<int> unreadCount({
+    required String groupId,
+    required String memberId,
+  }) async => GroupUnreadRules.countUnread(
+    messages: await listForGroup(groupId),
+    memberId: memberId,
+    lastReadAt: _lastRead[_readKey(groupId, memberId)],
+  );
+
+  @override
+  Future<void> markRead({
+    required String groupId,
+    required String memberId,
+  }) async {
+    _lastRead[_readKey(groupId, memberId)] = DateTime.now();
+  }
 
   @override
   Future<List<GroupMessage>> listForGroup(String groupId) async {
@@ -1810,6 +1845,26 @@ class DemoBookingRepository implements BookingRepository {
         cancelledBy: actorId,
       );
       _replace(cancelled);
+      // (P32) نفس سلوك Firestore: إشعار الطرف الآخر بعد نجاح الإلغاء فقط،
+      // بمعرّف حتمي يمنع التكرار عند إعادة المحاولة.
+      final String recipientId =
+          (byTeacher ? cancelled.studentId : cancelled.teacherId) ?? '';
+      final String actorName = byTeacher
+          ? cancelled.teacherName
+          : cancelled.studentName;
+      await _notify(
+        type: NotificationType.bookingCancelled,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: cancelled.id,
+        dedupeId: NotificationRules.cancelNotificationId(cancelled.id),
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingCancelled,
+          actorName: actorName,
+          slotLabel: BookingRules.slotLabel(cancelled),
+        ),
+      );
       return cancelled;
     });
   }
@@ -1999,6 +2054,7 @@ class DemoBookingRepository implements BookingRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -2013,6 +2069,7 @@ class DemoBookingRepository implements BookingRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
@@ -2560,6 +2617,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -2574,6 +2632,7 @@ class DemoDirectChatRepository implements DirectChatRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       // الإشعار إضافة: لا نُسقط نجاح الحجز/الرسالة بسببه.
@@ -2631,7 +2690,7 @@ class DemoNotificationRepository implements NotificationRepository {
           _items
               .where((AppNotification item) => item.recipientId == recipientId)
               .toList(growable: false),
-        ),
+        ).take(NotificationRules.pageSize).toList(growable: false),
       );
     }
   }
@@ -2646,12 +2705,68 @@ class DemoNotificationRepository implements NotificationRepository {
   }
 
   @override
-  Stream<List<AppNotification>> watchMine(String recipientId) async* {
-    yield NotificationRules.newestFirst(
+  Future<NotificationPage> listPage({
+    required String recipientId,
+    int limit = NotificationRules.pageSize,
+    DateTime? before,
+    String? beforeId,
+  }) async {
+    final int size = limit.clamp(1, NotificationRules.maxPerLoad);
+    List<AppNotification> all = NotificationRules.newestFirst(
       _items
           .where((AppNotification item) => item.recipientId == recipientId)
           .toList(growable: false),
     );
+    if (before != null) {
+      // نفس دلالة المؤشر المركّب في Firestore: أقدم وقتًا، أو نفس الوقت ومعرّف
+      // أكبر (الترتيب الثانوي معرّف تصاعدي).
+      all = all
+          .where((AppNotification item) {
+            if (item.createdAt.isBefore(before)) {
+              return true;
+            }
+            return item.createdAt.isAtSameMomentAs(before) &&
+                item.id.compareTo(beforeId ?? '') > 0;
+          })
+          .toList(growable: false);
+    }
+    return NotificationPage(
+      items: all.take(size).toList(growable: false),
+      hasMore: all.length > size,
+    );
+  }
+
+  @override
+  Future<int> markChatMessagesRead({
+    required String recipientId,
+    required String chatId,
+  }) async {
+    final DateTime now = DateTime.now();
+    int changed = 0;
+    for (int i = 0; i < _items.length; i++) {
+      final AppNotification item = _items[i];
+      if (item.recipientId == recipientId &&
+          item.type == NotificationType.directMessage &&
+          item.targetId == chatId &&
+          !item.isRead) {
+        _items[i] = item.copyWith(readAt: now);
+        changed++;
+      }
+    }
+    if (changed > 0) {
+      _publish(recipientId);
+    }
+    return changed;
+  }
+
+  @override
+  Stream<List<AppNotification>> watchMine(String recipientId) async* {
+    // (P32) نفس دلالة Firestore: أحدث صفحة فقط، والأقدم يُقرأ بـ`listPage`.
+    yield NotificationRules.newestFirst(
+      _items
+          .where((AppNotification item) => item.recipientId == recipientId)
+          .toList(growable: false),
+    ).take(NotificationRules.pageSize).toList(growable: false);
     yield* _listStreamFor(recipientId).stream;
   }
 
@@ -2726,6 +2841,7 @@ class DemoNotificationRepository implements NotificationRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     if (recipientId == actorId) {
       throw const AppException.permission(
@@ -2754,8 +2870,19 @@ class DemoNotificationRepository implements NotificationRepository {
       );
     }
 
+    // (P32) معرّف حتمي: إعادة المحاولة تُرجع الإشعار الموجود بدل إنشاء ثانٍ.
+    final String? key = dedupeId?.trim();
+    if (key != null && key.isNotEmpty) {
+      final int existing = _items.indexWhere(
+        (AppNotification item) => item.id == key,
+      );
+      if (existing >= 0) {
+        return _items[existing];
+      }
+    }
+
     final AppNotification item = AppNotification(
-      id: 'demo-notification-new-${_nextId++}',
+      id: key != null && key.isNotEmpty ? key : 'demo-notification-new-${_nextId++}',
       recipientId: recipientId,
       type: type,
       actorId: actorId,
@@ -3030,13 +3157,18 @@ class DemoAdminRepository implements AdminRepository {
     List<TeacherProfile>? profiles,
     List<TeacherReview>? reviews,
     List<ContentReport>? reports,
+    DemoNotificationRepository? notifications,
   }) : _profiles = profiles ?? <TeacherProfile>[...DemoData.teachers],
        _reviews = reviews ?? <TeacherReview>[...DemoData.reviews],
-       _reports = <ContentReport>[...(reports ?? DemoData.reports)];
+       _reports = <ContentReport>[...(reports ?? DemoData.reports)],
+       _notifications = notifications;
 
   final List<TeacherProfile> _profiles;
   final List<TeacherReview> _reviews;
   final List<ContentReport> _reports;
+
+  /// (P32) إشعار المدرس بالقرار — نفس سلوك Firestore في الوضع التجريبي.
+  final NotificationRepository? _notifications;
 
   int _profileIndex(String teacherId) =>
       _profiles.indexWhere((TeacherProfile profile) => profile.id == teacherId);
@@ -3051,7 +3183,10 @@ class DemoAdminRepository implements AdminRepository {
 
   @override
   Future<void> verifyTeacher(String teacherId) async {
-    _applyDecision(teacherId: teacherId, status: TeacherProfileStatus.verified);
+    await _applyDecision(
+      teacherId: teacherId,
+      status: TeacherProfileStatus.verified,
+    );
   }
 
   @override
@@ -3067,18 +3202,18 @@ class DemoAdminRepository implements AdminRepository {
         debugMessage: 'admin rejection without reason (demo)',
       );
     }
-    _applyDecision(
+    await _applyDecision(
       teacherId: teacherId,
       status: TeacherProfileStatus.rejected,
       reviewNote: reason.trim(),
     );
   }
 
-  void _applyDecision({
+  Future<void> _applyDecision({
     required String teacherId,
     required TeacherProfileStatus status,
     String? reviewNote,
-  }) {
+  }) async {
     final int index = _profileIndex(teacherId);
     if (index < 0) {
       throw const AppException.notFound(
@@ -3088,11 +3223,40 @@ class DemoAdminRepository implements AdminRepository {
     }
     // `copyWith` لا بناء يدوي: أي حقل جديد يُضاف للنموذج (P15: التمييز وطريقة
     // التقديم والمحافظة) يبقى محفوظًا بلا أن ننساه هنا.
+    final TeacherProfileStatus previousStatus = _profiles[index].status;
     _profiles[index] = _profiles[index].copyWith(
       status: status,
       reviewNote: reviewNote,
       clearReviewNote: reviewNote == null,
     );
+
+    // (P32) لا إشعار إن لم يتغيّر القرار فعلًا.
+    if (previousStatus == status) {
+      return;
+    }
+    final NotificationRepository? repo = _notifications;
+    if (repo == null) {
+      return;
+    }
+    final NotificationType type = status == TeacherProfileStatus.verified
+        ? NotificationType.teacherApproved
+        : NotificationType.teacherRejected;
+    try {
+      await repo.push(
+        type: type,
+        recipientId: teacherId,
+        actorId: 'demo-admin',
+        actorName: 'إدارة المنصة',
+        targetId: teacherId,
+        body: NotificationRules.bodyFor(
+          type: type,
+          actorName: 'إدارة المنصة',
+          subject: reviewNote,
+        ),
+      );
+    } on Object catch (error) {
+      log('demo admin notification failed', name: 'notifications', error: error);
+    }
   }
 
   @override

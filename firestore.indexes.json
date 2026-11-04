@@ -1,5 +1,5 @@
 {
-  "//": "فهارس مركّبة مطلوبة للاستعلامات المستخدمة فعليًا في الكود. لا فهارس مضافة قبل استخدامها.",
+  "//": "فهارس مركّبة مطلوبة للاستعلامات المستخدمة فعليًا في الكود. لا فهارس مضافة قبل استخدامها. فهرس notifications (P32) يخدم صفحة الإشعارات: ترتيب createdAt تنازليًا ثم معرّف المستند تصاعديًا (يُضاف تلقائيًا كحقل ترتيب ثانٍ).",
   "indexes": [
     {
       "collectionGroup": "teacherProfiles",
@@ -15,6 +15,14 @@
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "teacherId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],

@@ -33,6 +33,7 @@ class GroupCard extends StatelessWidget {
     this.favoriteAction,
     this.teacherVerified,
     this.onTeacherTap,
+    this.unreadBadge,
   });
 
   final StudyGroup group;
@@ -53,6 +54,10 @@ class GroupCard extends StatelessWidget {
 
   /// فتح ملف المدرس من البطاقة (اختياري).
   final VoidCallback? onTeacherTap;
+
+  /// شارة «رسائل غير مقروءة» في محادثة المجموعة (P32). لا تُمرَّر إلا حين
+  /// يعرف صاحب الشاشة أن العارض عضو في هذه المجموعة — وإلا فلا ادّعاء برقم.
+  final Widget? unreadBadge;
 
   /// مفتاح شارة التوثيق — يثبته اختبار البطاقة بلا الاعتماد على نص.
   static const Key teacherBadgeKey = Key('group-card-teacher-verified');
@@ -77,6 +82,9 @@ class GroupCard extends StatelessWidget {
                   onTap: onTeacherTap,
                 ),
                 const SizedBox(width: AppSpacing.xs),
+                if (unreadBadge != null) unreadBadge!,
+                if (unreadBadge != null || favoriteAction != null)
+                  const SizedBox(width: AppSpacing.xxs),
                 if (favoriteAction != null) favoriteAction!,
                 if (onEditTap != null)
                   IconButton(

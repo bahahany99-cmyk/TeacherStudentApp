@@ -6191,3 +6191,228 @@ describe('P30 — الأثر وبصمات الطلبات: خادم فقط', () =
     );
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// P32 — إلغاء الحجز، قرار الإدارة، وعلامة قراءة المجموعة
+// ═════════════════════════════════════════════════════════════════════════════
+
+const cancelledBookingDoc = (cancelledBy) =>
+  bookingDoc('student-1', 'teacher-1', {
+    status: 'cancelled',
+    cancelledAt: now(),
+    cancelledBy,
+  });
+
+const seedCancelled = (cancelledBy) =>
+  seed([{ path: 'bookingRequests/b1', data: cancelledBookingDoc(cancelledBy) }]);
+
+const seedProfile = (status) =>
+  seed([{ path: 'teacherProfiles/teacher-1', data: teacherDoc('teacher-1', { status }) }]);
+
+describe('P32 — إشعار إلغاء الحجز', () => {
+  it('الطالب الذي ألغى يُشعر المدرس', async () => {
+    await seedCancelled('student-1');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1', {
+          title: 'ألغى طالب الحجز',
+        }),
+      ),
+    );
+  });
+
+  it('المدرس الذي ألغى يُشعر الطالب', async () => {
+    await seedCancelled('teacher-1');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asTeacher(), notificationPath('cancel-b1')),
+        notificationDoc('student-1', 'teacher-1', 'bookingCancelled', 'b1', {
+          title: 'ألغى أ. سارة الحجز',
+        }),
+      ),
+    );
+  });
+
+  it('لا إشعار إلغاء لحجز لم يُلغَ', async () => {
+    await seedBooking('accepted');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('لا انتحال: من لم يُلغِ الحجز لا يُشعر أحدًا به', async () => {
+    await seedCancelled('student-1');
+
+    // المدرس طرف في الحجز لكنه لم يُلغِه ⇒ لا يحق له إنشاء إشعار الإلغاء.
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('cancel-b1')),
+        notificationDoc('student-1', 'teacher-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('لا إشعار إلغاء لنفس المنشئ', async () => {
+    await seedCancelled('student-1');
+
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('cancel-b1')),
+        notificationDoc('student-1', 'student-1', 'bookingCancelled', 'b1'),
+      ),
+    );
+  });
+
+  it('لا يمكن تعليم إشعار شخص آخر مقروءًا', async () => {
+    await seed([
+      {
+        path: notificationPath('n1'),
+        data: notificationDoc('teacher-1', 'student-1', 'bookingCancelled', 'b1', {
+          readAt: now(),
+        }),
+      },
+    ]);
+
+    await assertFails(
+      updateDoc(doc(asStudent(), notificationPath('n1')), { readAt: now() }),
+    );
+  });
+});
+
+describe('P32 — إشعار قرار التوثيق من الإدارة', () => {
+  it('الإدارة تُشعر المدرس بالاعتماد بعد كتابة الحالة', async () => {
+    await seedProfile('verified');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asAdmin(), notificationPath('decision-teacher-1')),
+        notificationDoc('teacher-1', 'admin-1', 'teacherApproved', 'teacher-1', {
+          actorName: 'إدارة المنصة',
+          title: 'اعتُمد ملفك التدريسي',
+        }),
+      ),
+    );
+  });
+
+  it('الإدارة تُشعر المدرس بالرفض', async () => {
+    await seedProfile('rejected');
+
+    await assertSucceeds(
+      setDoc(
+        doc(asAdmin(), notificationPath('decision-teacher-1')),
+        notificationDoc('teacher-1', 'admin-1', 'teacherRejected', 'teacher-1', {
+          actorName: 'إدارة المنصة',
+        }),
+      ),
+    );
+  });
+
+  it('مستخدم عادي لا يستطيع انتحال إشعار إدارة', async () => {
+    await seedProfile('verified');
+
+    await assertFails(
+      setDoc(
+        doc(asTeacher(), notificationPath('decision-teacher-1')),
+        notificationDoc('teacher-1', 'teacher-1', 'teacherApproved', 'teacher-1'),
+      ),
+    );
+    // ولا طالب يزوّر اعتمادًا لمدرس آخر.
+    await assertFails(
+      setDoc(
+        doc(asStudent(), notificationPath('decision-teacher-2')),
+        notificationDoc('teacher-1', 'student-1', 'teacherApproved', 'teacher-1'),
+      ),
+    );
+  });
+
+  it('النوع يجب أن يطابق القرار المكتوب فعلًا', async () => {
+    await seedProfile('pendingReview');
+
+    await assertFails(
+      setDoc(
+        doc(asAdmin(), notificationPath('decision-teacher-1')),
+        notificationDoc('teacher-1', 'admin-1', 'teacherApproved', 'teacher-1'),
+      ),
+    );
+  });
+});
+
+describe('P32 — علامة قراءة محادثة المجموعة (لكل عضو)', () => {
+  const readPath = (userId) => `studyGroups/g1/reads/${userId}`;
+  const seedParticipants = () =>
+    seed([
+      { path: 'studyGroups/g1', data: groupDoc('teacher-1', { seatsTaken: 1 }) },
+      {
+        path: 'studyGroups/g1/members/student-1',
+        data: { studentId: 'student-1', name: 'طالب', joinedAt: now(), status: 'active' },
+      },
+    ]);
+
+  it('العضو يكتب علامته هو فقط', async () => {
+    await seedParticipants();
+
+    await assertSucceeds(
+      setDoc(doc(asStudent(), readPath('student-1')), { lastReadAt: now() }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(asStudent(), readPath('student-1')), { lastReadAt: now() }),
+    );
+  });
+
+  it('المالك يكتب علامته هو أيضًا', async () => {
+    await seedParticipants();
+
+    await assertSucceeds(
+      setDoc(doc(asTeacher(), readPath('teacher-1')), { lastReadAt: now() }),
+    );
+  });
+
+  it('لا كتابة على علامة عضو آخر', async () => {
+    await seedParticipants();
+
+    await assertFails(
+      setDoc(doc(asStudent(), readPath('teacher-1')), { lastReadAt: now() }),
+    );
+    await assertFails(
+      setDoc(doc(asTeacher(), readPath('student-1')), { lastReadAt: now() }),
+    );
+  });
+
+  it('حقل واحد فقط: لا حقول إضافية في مستند القراءة', async () => {
+    await seedParticipants();
+
+    await assertFails(
+      setDoc(doc(asStudent(), readPath('student-1')), {
+        lastReadAt: now(),
+        unreadCount: 0,
+      }),
+    );
+  });
+
+  it('غير المشارك لا يكتب ولا يقرأ', async () => {
+    await seedParticipants();
+
+    await assertFails(
+      setDoc(doc(asOther(), readPath('stranger-9')), { lastReadAt: now() }),
+    );
+    await assertFails(getDoc(doc(asOther(), readPath('student-1'))));
+  });
+
+  it('العضو يقرأ علامته، ولا يقرأ علامة زميله', async () => {
+    await seedParticipants();
+    await seed([
+      { path: readPath('student-1'), data: { lastReadAt: now() } },
+      { path: readPath('teacher-1'), data: { lastReadAt: now() } },
+    ]);
+
+    await assertSucceeds(getDoc(doc(asStudent(), readPath('student-1'))));
+    await assertFails(getDoc(doc(asStudent(), readPath('teacher-1'))));
+  });
+});

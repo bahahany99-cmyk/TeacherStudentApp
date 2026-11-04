@@ -12,6 +12,7 @@ import 'package:teacher_student_app/core/errors/firebase_error_mapper.dart';
 import 'package:teacher_student_app/data/firebase/mappers/firestore_mappers.dart';
 import 'package:teacher_student_app/data/firebase/teacher_profile_writes.dart';
 import 'package:teacher_student_app/data/validation/group_teacher_discovery.dart';
+import 'package:teacher_student_app/data/validation/group_unread_rules.dart';
 import 'package:teacher_student_app/data/validation/teacher_visibility_fallback.dart';
 import 'package:teacher_student_app/data/models/group_draft.dart';
 import 'package:teacher_student_app/data/models/user_avatar.dart';
@@ -19,6 +20,7 @@ import 'package:teacher_student_app/data/services/avatar_repository.dart';
 import 'package:teacher_student_app/data/models/group_filter.dart';
 import 'package:teacher_student_app/data/models/group_join_request.dart';
 import 'package:teacher_student_app/data/models/app_notification.dart';
+import 'package:teacher_student_app/data/models/notification_page.dart';
 import 'package:teacher_student_app/data/models/favorite.dart';
 import 'package:teacher_student_app/data/models/booking_request.dart';
 import 'package:teacher_student_app/data/models/content_report.dart';
@@ -71,6 +73,9 @@ abstract final class FirestoreCollections {
   static const String groupJoinRequests = 'groupJoinRequests';
   static const String groupSessions = 'sessions';
   static const String groupMessages = 'messages';
+
+  /// (P32) علامة قراءة محادثة المجموعة: مستند لكل مشارك (`lastReadAt`).
+  static const String groupReads = 'reads';
   static const String groupWaitlist = 'groupWaitlist';
   static const String bookingRequests = 'bookingRequests';
 
@@ -1864,6 +1869,7 @@ class FirestoreGroupRepository implements GroupRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -1878,6 +1884,7 @@ class FirestoreGroupRepository implements GroupRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       log('notification push failed', name: 'notifications', error: error);
@@ -2059,6 +2066,85 @@ class FirestoreMessageRepository implements MessageRepository {
         return byTime != 0 ? byTime : a.id.compareTo(b.id);
       });
       return List<GroupMessage>.unmodifiable(messages);
+    });
+  }
+
+  /// مستند علامة القراءة لهذا المشارك في هذه المجموعة (P32).
+  DocumentReference<Map<String, dynamic>> _readDoc(
+    String groupId,
+    String memberId,
+  ) => _firestore
+      .collection(FirestoreCollections.studyGroups)
+      .doc(groupId)
+      .collection(FirestoreCollections.groupReads)
+      .doc(memberId);
+
+  @override
+  Future<DateTime?> lastReadAt({
+    required String groupId,
+    required String memberId,
+  }) {
+    return _guard(() async {
+      if (groupId.isEmpty || memberId.isEmpty) {
+        return null;
+      }
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await _readDoc(
+        groupId,
+        memberId,
+      ).get();
+      final Object? value = snapshot.data()?['lastReadAt'];
+      // العضو القديم قد لا يحمل الحقل — غيابه يعني «لم يقرأ»، لا خطأ.
+      return value is Timestamp ? value.toDate() : null;
+    });
+  }
+
+  @override
+  Future<int> unreadCount({
+    required String groupId,
+    required String memberId,
+  }) {
+    return _guard(() async {
+      if (groupId.isEmpty || memberId.isEmpty) {
+        return 0;
+      }
+      final DateTime? readAt = await lastReadAt(
+        groupId: groupId,
+        memberId: memberId,
+      );
+      Query<Map<String, dynamic>> query = _messages(groupId);
+      if (readAt != null) {
+        // شرط زمني على حقل واحد ⇒ فهرس أحاديّ تلقائي، بلا فهرس مركّب.
+        query = query.where('sentAt', isGreaterThan: Timestamp.fromDate(readAt));
+      }
+      // سقف صريح: الشارة تعرض «9+» على الأكثر، فلا نقرأ تاريخًا كاملًا لأجلها.
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query
+          .limit(GroupUnreadRules.probeLimit)
+          .get();
+      // رسائلي أنا ليست «غير مقروءة» عندي.
+      return snapshot.docs
+          .where(
+            (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+                doc.data()['senderId'] != memberId,
+          )
+          .length;
+    });
+  }
+
+  @override
+  Future<void> markRead({
+    required String groupId,
+    required String memberId,
+  }) {
+    return _guard(() async {
+      if (groupId.isEmpty || memberId.isEmpty) {
+        return;
+      }
+      // حقل واحد فقط، وفي مستند صاحب الشاشة نفسه: القواعد ترفض أي حقل آخر وأي
+      // مستند لغير صاحبه. `set` لا `update`: أول قراءة تُنشئ المستند، والمعاملة
+      // اللاحقة تعدّله؛ كلاهما مسموح بنفس الشرط (مفتاح واحد + وقت).
+      await _readDoc(groupId, memberId).set(<String, Object?>{
+        'lastReadAt': Timestamp.now(),
+      });
     });
   }
 
@@ -2467,48 +2553,81 @@ class FirestoreBookingRepository implements BookingRepository {
         request.id,
       );
 
-      return _firestore.runTransaction<BookingRequest>((
-        Transaction transaction,
-      ) async {
-        final BookingRequest current = await _readBooking(
-          transaction,
-          ref,
-          teacherId: byTeacher ? actorId : null,
-          byTeacher: byTeacher,
-          studentId: byTeacher ? null : actorId,
-        );
-        final DateTime now = DateTime.now();
-        final String? reason = BookingRules.actionBlockReason(
-          booking: current,
-          viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
-          action: BookingAction.cancel,
-          now: now,
-        );
-        if (reason != null) {
-          throw AppException(
-            AppErrorKind.invalidInput,
-            overrideMessage: reason,
-            debugMessage: 'cancel blocked',
-          );
-        }
+      final BookingRequest cancelled =
+          await _firestore.runTransaction<BookingRequest>((
+            Transaction transaction,
+          ) async {
+            final BookingRequest current = await _readBooking(
+              transaction,
+              ref,
+              teacherId: byTeacher ? actorId : null,
+              byTeacher: byTeacher,
+              studentId: byTeacher ? null : actorId,
+            );
+            final DateTime now = DateTime.now();
+            final String? reason = BookingRules.actionBlockReason(
+              booking: current,
+              viewer: byTeacher ? BookingViewer.teacher : BookingViewer.student,
+              action: BookingAction.cancel,
+              now: now,
+            );
+            if (reason != null) {
+              throw AppException(
+                AppErrorKind.invalidInput,
+                overrideMessage: reason,
+                debugMessage: 'cancel blocked',
+              );
+            }
 
-        final BookingStatus status = BookingRules.cancelStatus(
-          booking: current,
-          now: now,
-        );
-        // تحرير الوقت من التقويم في المعاملة نفسها.
-        await _releaseSlot(transaction, current);
-        transaction.update(ref, <String, Object?>{
-          'status': status.name,
-          'cancelledAt': now,
-          'cancelledBy': actorId,
-        });
-        return current.copyWith(
-          status: status,
-          cancelledAt: now,
-          cancelledBy: actorId,
-        );
-      });
+            final BookingStatus status = BookingRules.cancelStatus(
+              booking: current,
+              now: now,
+            );
+            // تحرير الوقت من التقويم في المعاملة نفسها.
+            await _releaseSlot(transaction, current);
+            transaction.update(ref, <String, Object?>{
+              'status': status.name,
+              'cancelledAt': now,
+              'cancelledBy': actorId,
+            });
+            return current.copyWith(
+              status: status,
+              cancelledAt: now,
+              cancelledBy: actorId,
+            );
+          });
+
+      // (P32) الإشعار **بعد** نجاح المعاملة فقط: لو رفضت المعاملة (سبق الإلغاء
+      // أو لا صلاحية) لا يصل شيء إلى الملف. وهذا هو شرط «لا إشعار إن لم يتغيّر
+      // الحالة»: `cancelStatus` لا تُرجع حالة ملغاة إلا من حالة قابلة للإلغاء،
+      // والقواعد تمنع إعادة الإلغاء أصلًا.
+      //
+      // **الطرف الآخر وحده:** `byTeacher` يحدّد المستلم، والمنشئ لا يُشعر نفسه
+      // (`_notify` يتجاهل التطابق أيضًا كخط دفاع ثانٍ).
+      //
+      // **بلا تكرار:** معرّف المستند حتمي (`cancelNotificationId`) ⇒ إعادة
+      // المحاولة تصطدم بمستند موجود وترفضه القواعد، ولا يظهر إشعار ثانٍ.
+      final String recipientId = (byTeacher
+              ? cancelled.studentId
+              : cancelled.teacherId) ??
+          '';
+      final String actorName = byTeacher
+          ? cancelled.teacherName
+          : cancelled.studentName;
+      await _notify(
+        type: NotificationType.bookingCancelled,
+        recipientId: recipientId,
+        actorId: actorId,
+        actorName: actorName,
+        targetId: cancelled.id,
+        dedupeId: NotificationRules.cancelNotificationId(cancelled.id),
+        body: NotificationRules.bodyFor(
+          type: NotificationType.bookingCancelled,
+          actorName: actorName,
+          slotLabel: BookingRules.slotLabel(cancelled),
+        ),
+      );
+      return cancelled;
     });
   }
 
@@ -2919,6 +3038,7 @@ class FirestoreBookingRepository implements BookingRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -2933,6 +3053,7 @@ class FirestoreBookingRepository implements BookingRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       log('notification push failed', name: 'notifications', error: error);
@@ -3369,6 +3490,7 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) async {
     final NotificationRepository? repo = _notifications;
     if (repo == null || recipientId.isEmpty || recipientId == actorId) {
@@ -3383,6 +3505,7 @@ class FirestoreDirectChatRepository implements DirectChatRepository {
         targetId: targetId,
         title: title,
         body: body,
+        dedupeId: dedupeId,
       );
     } on Object catch (error) {
       log('notification push failed', name: 'notifications', error: error);
@@ -3427,16 +3550,97 @@ class FirestoreNotificationRepository implements NotificationRepository {
   }
 
   @override
+  Future<NotificationPage> listPage({
+    required String recipientId,
+    int limit = NotificationRules.pageSize,
+    DateTime? before,
+    String? beforeId,
+  }) {
+    return _guard(() async {
+      if (recipientId.isEmpty) {
+        return NotificationPage.empty;
+      }
+      final int size = limit.clamp(1, NotificationRules.maxPerLoad);
+      // ترتيب على الخادم بمؤشر `createdAt` — يحتاج الفهرس المركّب
+      // `notifications(recipientId, createdAt DESC)` في `firestore.indexes.json`.
+      // نقرأ `size + 1` لنعرف هل بقي شيء، بلا استعلام عدّ ثانٍ.
+      // الترتيب: الأحدث أولًا، ثم المعرّف تصاعديًا عند تساوي الوقت — نفس
+      // ترتيب `NotificationRules.newestFirst` المستخدم في عرض القوائم.
+      Query<Map<String, dynamic>> query = _items
+          .where('recipientId', isEqualTo: recipientId)
+          .orderBy('createdAt', descending: true)
+          .orderBy(FieldPath.documentId);
+      if (before != null) {
+        query = query.startAfter(<Object?>[
+          Timestamp.fromDate(before),
+          beforeId ?? '',
+        ]);
+      }
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query
+          .limit(size + 1)
+          .get();
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          snapshot.docs.toList(growable: false);
+      final bool hasMore = docs.length > size;
+      final List<AppNotification> items = NotificationRules.newestFirst(
+        mapDocuments(docs.take(size).map(_entry), notificationFromMap),
+      );
+      return NotificationPage(items: items, hasMore: hasMore);
+    });
+  }
+
+  @override
+  Future<int> markChatMessagesRead({
+    required String recipientId,
+    required String chatId,
+  }) {
+    return _guard(() async {
+      if (recipientId.isEmpty || chatId.isEmpty) {
+        return 0;
+      }
+      // ثلاثة شروط متساوية (`recipientId`/`type`/`targetId`) + `readAt isNull`:
+      // Firestore يدمجها بلا فهرس مركّب، و`type`/`targetId` هما ما يحصر الأثر
+      // في إشعارات **هذه المحادثة** دون الحجز أو الانضمام أو المزاد.
+      final QuerySnapshot<Map<String, dynamic>> unread = await _items
+          .where('recipientId', isEqualTo: recipientId)
+          .where('type', isEqualTo: NotificationType.directMessage.wireName)
+          .where('targetId', isEqualTo: chatId)
+          .where('readAt', isNull: true)
+          .get();
+      if (unread.docs.isEmpty) {
+        // لا كتابة إن لم يكن هناك غير مقروء: لا نُحدِّث `readAt` لقارئ فتح
+        // المحادثة مرتين متتاليتين.
+        return 0;
+      }
+      final DateTime now = DateTime.now();
+      const int chunk = 400;
+      for (int start = 0; start < unread.docs.length; start += chunk) {
+        final WriteBatch batch = _firestore.batch();
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+            in unread.docs.skip(start).take(chunk)) {
+          batch.update(doc.reference, <String, Object?>{'readAt': now});
+        }
+        await batch.commit();
+      }
+      return unread.docs.length;
+    });
+  }
+
+  @override
   Stream<List<AppNotification>> watchMine(String recipientId) {
     if (recipientId.isEmpty) {
       return Stream<List<AppNotification>>.value(
         const <AppNotification>[],
       );
     }
-    // شرط واحد + ترتيب في العميل (كما في `listMine`): لا فهرس مركّب جديد.
+    // (P32) النافذة الحيّة = أحدث صفحة فقط، بترتيب من الخادم: الأقدم يُطلب من
+    // الشاشة عند الحاجة، فلا يُقرأ تاريخ الإشعارات كله عند كل فتح. يحتاج الفهرس
+    // المركّب `notifications(recipientId, createdAt DESC)`.
     return _items
         .where('recipientId', isEqualTo: recipientId)
-        .limit(NotificationRules.maxPerLoad)
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId)
+        .limit(NotificationRules.pageSize)
         .snapshots()
         .map(
           (QuerySnapshot<Map<String, dynamic>> snapshot) =>
@@ -3523,6 +3727,7 @@ class FirestoreNotificationRepository implements NotificationRepository {
     required String targetId,
     String? title,
     String? body,
+    String? dedupeId,
   }) {
     return _guard(() async {
       final String cleanActorName = NotificationRules.normalize(
@@ -3550,7 +3755,13 @@ class FirestoreNotificationRepository implements NotificationRepository {
       }
 
       final DateTime now = DateTime.now();
-      final DocumentReference<Map<String, dynamic>> ref = _items.doc();
+      // معرّف حتمي عند تمريره: إعادة المحاولة تكتب على نفس المسار. `set` مع
+      // `SetOptions` غير مستخدمة عمدًا: الكتابة الثانية يجب أن **ترفضها**
+      // القواعد (تعديل على إشعار مستلم آخر) لا أن تنجح صامتة.
+      final DocumentReference<Map<String, dynamic>> ref =
+          dedupeId != null && dedupeId.trim().isNotEmpty
+          ? _items.doc(dedupeId.trim())
+          : _items.doc();
       final Map<String, Object?> data = <String, Object?>{
         'recipientId': recipientId,
         'type': type.wireName,
@@ -3900,12 +4111,20 @@ class FirestoreFavoriteRepository implements FavoriteRepository {
 /// (ودور المستخدم في `users/{uid}` لا يمنح شيئًا إضافيًا). أي استدعاء من حساب
 /// عادي يعود بـ`permission-denied` ويُترجم إلى رسالة عربية عبر [_guard].
 class FirestoreAdminRepository implements AdminRepository {
-  FirestoreAdminRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _auth = auth ?? FirebaseAuth.instance;
+  FirestoreAdminRepository({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    NotificationRepository? notifications,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _auth = auth ?? FirebaseAuth.instance,
+       _notifications = notifications;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+
+  /// كاتب الإشعارات (P32): اختياري حتى لا يُجبر كل تركيب للمستودع (اختبارات
+  /// القواعد، أدوات الإدارة) على تمريره. غيابه يعني «لا إشعار» لا «فشل قرار».
+  final NotificationRepository? _notifications;
 
   CollectionReference<Map<String, dynamic>> get _profiles =>
       _firestore.collection(FirestoreCollections.teacherProfiles);
@@ -4007,10 +4226,10 @@ class FirestoreAdminRepository implements AdminRepository {
       final DocumentSnapshot<Map<String, dynamic>> current = await _profiles
           .doc(teacherId)
           .get();
-      final bool hasFlag =
-          (current.data() ?? const <String, Object?>{}).containsKey(
-            'accountHidden',
-          );
+      final Map<String, dynamic> before =
+          current.data() ?? const <String, dynamic>{};
+      final bool hasFlag = before.containsKey('accountHidden');
+      final String previousStatus = (before['status'] as String?) ?? '';
 
       await _profiles.doc(teacherId).update(
         TeacherProfileWrites.adminDecision(
@@ -4022,6 +4241,51 @@ class FirestoreAdminRepository implements AdminRepository {
           adminUid: _adminUid,
         ),
       );
+
+      // (P32) إشعار المدرس بقرار **نهائي**، بعد نجاح الكتابة فقط.
+      //
+      // **لماذا شرط تغيّر الحالة؟** لأن تعديلًا إداريًا بلا قرار فعلي (إعادة
+      // كتابة الحالة نفسها، تصحيح حقل) ليس خبرًا يستحق إشعارًا، ولأن إعادة
+      // تنفيذ الطلب بعد نجاحه لا يجوز أن تُنتج إشعارًا ثانيًا.
+      //
+      // **لماذا معرّف حتمي؟** قرار «رفض ← تعديل ← اعتماد» قرار جديد بوقت مراجعة
+      // سابق مختلف، فمفتاحه مختلف؛ أما إعادة المحاولة نفسها فتصطدم بالمستند
+      // الموجود فترفضها القواعد (وهي تمنع على المُحدِث تعديل إشعار مستلمه).
+      if (previousStatus == status.wireValue) {
+        return;
+      }
+      final NotificationRepository? repo = _notifications;
+      final String? adminUid = _adminUid;
+      if (repo == null || adminUid == null) {
+        return;
+      }
+      final Object? reviewedAt = before['reviewedAt'];
+      final String previousStamp = reviewedAt is Timestamp
+          ? reviewedAt.millisecondsSinceEpoch.toString()
+          : '0';
+      final NotificationType type = status == TeacherProfileStatus.verified
+          ? NotificationType.teacherApproved
+          : NotificationType.teacherRejected;
+      try {
+        await repo.push(
+          type: type,
+          recipientId: teacherId,
+          actorId: adminUid,
+          // اسم ظاهر محايد: هوية المسؤول لا تُعرض للمدرس.
+          actorName: 'إدارة المنصة',
+          targetId: teacherId,
+          dedupeId: 'decision-$teacherId-${type.wireName}-$previousStamp',
+          body: NotificationRules.bodyFor(
+            type: type,
+            actorName: 'إدارة المنصة',
+            subject: note,
+          ),
+        );
+      } catch (error) {
+        // قرار الإدارة **تمّ**. إشعار فاشل لا يُحوّل نجاحًا إلى خطأ في وجه
+        // المسؤول، ولا يُلغى القرار من أجله.
+        log('admin decision notification failed: $error');
+      }
     });
   }
 
