@@ -14,6 +14,9 @@
 #   * الباقي: `flutter drive -d web-server --browser-name=chrome` مع chromedriver
 #     — الطريق الموثّق والوحيد المدعوم لاختبار التكامل على الويب.
 #
+# (بلا `--verbose`: كان يغرق ذيل السجل في سطور debug metadata فيصير غير مقروء،
+# ولأن الحكم صار لتقارير التطبيق لا لنص السجل.)
+#
 # **كيف نحكم؟** لا بسطر «All tests passed» (قد يُطبع بعدد صفر اختبارات)، بل
 # بتقارير كل اختبار من داخل التطبيق إلى خادم محلي (`results_server.mjs`):
 #   لا `__main` ⇒ التطبيق لم يبدأ في المتصفح.
@@ -65,7 +68,7 @@ fi
 DRIVE_STATUS=0
 echo "→ flutter drive -d web-server (بناء ويب حقيقي + Chrome، مهلة ${DRIVE_TIMEOUT}s)"
 timeout --signal=INT "${DRIVE_TIMEOUT}" \
-  flutter drive --verbose \
+  flutter drive \
   --driver=test_driver/integration_test.dart \
   --target=integration_test/p32_firestore_repositories_test.dart \
   -d web-server \

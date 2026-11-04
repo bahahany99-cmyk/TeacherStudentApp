@@ -297,34 +297,11 @@ jobs:
           tail = '\n'.join(lines[-120:]).replace('%', '%25').replace('\n', '%0A').replace('\r', '')
           print(f'::notice title=repositories-log-tail::{tail[:5500]}')
           PY
-          # **دليل التنفيذ الفعلي** هو تقارير `results_server.mjs` القادمة من
-          # داخل التطبيق (وقد فُحصت داخل `run_web_integration.sh` وفشلت عند نقصها).
-          # العدد المستخرج من سطر Flutter (`00:05 +11: All tests passed!`) يبقى
-          # إشارة مساعدة فقط: لا نفشل عليه حتى لا يعتمد الحكم على نصّ السجل.
-          python3 - <<'PY'
-          import pathlib
-          import re
-
-          EXPECTED = 11
-          log = pathlib.Path('/tmp/repos.txt').read_text(errors='replace')
-          matches = re.findall(r'\+(\d+): All tests passed', log)
-          count = int(matches[-1]) if matches else 0
-
-          names = sorted({
-              line.split(': ', 1)[1].strip()
-              for line in log.splitlines()
-              if re.match(r'^\d{2}:\d{2} \+\d+', line) and ': ' in line
-          })
-          summary = ' · '.join(names)[:900].replace('%', '%25')
-          print(f'::notice title=repositories-integration::عدد الاختبارات المنفَّذة: {count}')
-          print(f'::notice title=repositories-names::{summary}')
-
-          if count < EXPECTED:
-              print(
-                  f'::warning::السجل يقول {count} من {EXPECTED} — '
-                  'الحكم النهائي من تقارير التطبيق لا من هذا السطر.'
-              )
-          PY
+          # **دليل التنفيذ الفعلي** هو تقارير `results_server.mjs` القادمة من داخل
+          # التطبيق، وقد فُحصت داخل `run_web_integration.sh` (فشل عند أي نقص).
+          # أُزيل عدّ `+N` من نص السجل: السجل الفعلي لا يحوي هذا السطر أصلًا
+          # (`flutter drive --verbose` يغرق في سطور debug metadata)، فكان العدّ
+          # يقول «0» بينما 11 تقريرًا وصلت — إشارة مضلِّلة لا قيمة لها.
           echo "✅ تنفيذ Firestore (تصفّح/تعليم/عدّاد/علامات): كل الحالات ناجحة على المحاكي."
 
       - name: Upload integration log
