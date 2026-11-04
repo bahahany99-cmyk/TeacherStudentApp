@@ -275,7 +275,7 @@ jobs:
             --only firestore,auth \
             --project demo-darsly \
             --config firebase.json \
-            "node tool/rules_tests/seed_web_emulator.mjs && flutter test --platform chrome test_web/firestore_repositories_emulator_test.dart --reporter expanded" \
+            "node tool/rules_tests/seed_web_emulator.mjs && flutter test --platform chrome test/web/firestore_repositories_emulator.dart --reporter expanded" \
             > /tmp/repos.txt 2>&1 || status=$?
           tail -120 /tmp/repos.txt
 

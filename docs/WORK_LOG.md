@@ -4196,7 +4196,7 @@ Blaze، بلا دوال جديدة، وبلا بدء المرحلة الثاني
   2. `node tool/rules_tests/seed_web_emulator.mjs` — يُنشئ حسابات على محاكي
      Auth (ويأخذ `uid` الفعلي)، ثم يكتب البيانات **متجاوزًا القواعد**
      (`withSecurityRulesDisabled`) لأن الغرض اختبار القراءة لا الكتابة.
-  3. `flutter test --platform chrome test_web/firestore_repositories_emulator_test.dart`
+  3. `flutter test --platform chrome test/web/firestore_repositories_emulator.dart`
      — يحمّل Firebase JS SDK في الصفحة، ثم يشغّل
      `FirestoreNotificationRepository` و`FirestoreMessageRepository` **الحقيقيين**
      تحت قواعد المشروع نفسها.
@@ -4234,7 +4234,7 @@ Blaze، بلا دوال جديدة، وبلا بدء المرحلة الثاني
   ولا استثناء `setState after dispose`.
 
 ### الاختبارات المضافة
-- `test_web/firestore_repositories_emulator_test.dart` (8 حالات على تنفيذ
+- `test/web/firestore_repositories_emulator.dart` (8 حالات على تنفيذ
   Firestore الحقيقي مقابل المحاكي).
 - حالة widget للتخلّص الآمن (في `test/widget/p32_read_retry_ui_test.dart`).
 - مهمة CI `repos` + `tool/rules_tests/seed_web_emulator.mjs`.

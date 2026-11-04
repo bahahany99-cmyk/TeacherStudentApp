@@ -1,15 +1,17 @@
 /// اختبار **تنفيذ Firestore الحقيقي** (`lib/data/firebase/firestore_repositories.dart`)
 /// على Firestore Emulator من متصفح حقيقي (P32 — مراجعة نهائية).
 ///
-/// **لماذا هذا الملف خارج `test/`؟** لأن `cloud_firestore` يحتاج قناة منصّة
-/// أصلية؛ فلا يعمل في `flutter test` العادي (VM). هنا نُجمّع نفس الكود إلى
-/// JavaScript ونشغّله في Chrome مقابل المحاكي، **بنفس القواعد**، وبعميل
+/// **لماذا اسمه بلا لاحقة `_test`؟** لأن `cloud_firestore` يحتاج قناة منصّة
+/// أصلية؛ فلا يعمل في `flutter test` العادي (VM). لذلك لا يجب أن يكتشفه
+/// `flutter test` تلقائيًا (الاكتشاف يقتصر على `*_test.dart`)، ويُشغَّل بمساره
+/// صريحًا في مهمة CI المخصّصة. هنا نُجمّع نفس الكود إلى JavaScript ونشغّله في
+/// Chrome مقابل المحاكي، **بنفس القواعد**، وبعميل
 /// `FirestoreNotificationRepository`/`FirestoreMessageRepository` نفسه — لا
 /// إعادة كتابة للاستعلامات.
 ///
 /// **التشغيل:** داخل `firebase emulators:exec` (انظر مهمة CI):
 ///   node tool/rules_tests/seed_web_emulator.mjs
-///   flutter test --platform chrome test_web/firestore_repositories_emulator_test.dart
+///   flutter test --platform chrome test/web/firestore_repositories_emulator.dart
 ///
 /// **حدود التغطية:** يعمل على المحاكي لا على مشروع Firebase حقيقي، والمحاكي
 /// **لا يفرض الفهارس**؛ فمطابقة الفهرس المركّب تبقى فحصًا يدويًا عند النشر.
