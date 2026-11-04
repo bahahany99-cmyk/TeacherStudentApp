@@ -251,9 +251,9 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up chromedriver (مطابق لمتصفح العدّاء)
-        uses: nanasess/setup-chromedriver@v2
-
+      # لا chromedriver: صار التشغيل بـ`flutter drive -d chrome` (Flutter يطلق
+      # المتصفح ويتصل به بنفسه). التشغيل السابق بـ`-d web-server` مع
+      # chromedriver منفصل خرج بـ«All tests passed» بلا تنفيذ أي اختبار.
       - name: Cache Firestore emulator
         uses: actions/cache@v4
         with:
@@ -294,14 +294,15 @@ jobs:
           tail = '\n'.join(lines[-120:]).replace('%', '%25').replace('\n', '%0A').replace('\r', '')
           print(f'::notice title=repositories-log-tail::{tail[:5500]}')
           PY
-          # **دليل التنفيذ الفعلي:** لا نكتفي بـ«All tests passed!» لأنها قد تُطبع
-          # بعدد صفر لو انحرف الالتقاط. نستخرج العدد من سطر Flutter
-          # (`00:05 +9: All tests passed!`) ونفشل إن كان أقل من المتوقع.
+          # **دليل التنفيذ الفعلي** هو تقارير `results_server.mjs` القادمة من
+          # داخل التطبيق (وقد فُحصت داخل `run_web_drive.sh` وفشلت عند نقصها).
+          # العدد المستخرج من سطر Flutter (`00:05 +11: All tests passed!`) يبقى
+          # إشارة مساعدة فقط: لا نفشل عليه حتى لا يعتمد الحكم على نصّ السجل.
           python3 - <<'PY'
           import pathlib
           import re
 
-          EXPECTED = 9
+          EXPECTED = 11
           log = pathlib.Path('/tmp/repos.txt').read_text(errors='replace')
           matches = re.findall(r'\+(\d+): All tests passed', log)
           count = int(matches[-1]) if matches else 0
@@ -316,8 +317,10 @@ jobs:
           print(f'::notice title=repositories-names::{summary}')
 
           if count < EXPECTED:
-              print(f'::error::عدد الاختبارات المنفَّذة {count} أقل من المتوقع {EXPECTED} — لم يجرِ الاختبار كاملًا.')
-              raise SystemExit(1)
+              print(
+                  f'::warning::السجل يقول {count} من {EXPECTED} — '
+                  'الحكم النهائي من تقارير التطبيق لا من هذا السطر.'
+              )
           PY
           echo "✅ تنفيذ Firestore (تصفّح/تعليم/عدّاد/علامات): كل الحالات ناجحة على المحاكي."
 
@@ -328,7 +331,8 @@ jobs:
           name: firestore-repositories-log
           path: |
             /tmp/repos.txt
-            /tmp/chromedriver.log
+            /tmp/repos_results.txt
+            /tmp/results_server.log
           if-no-files-found: ignore
           retention-days: 2
 
