@@ -23,6 +23,9 @@ LINES_PER_BLOCK = 70
 MAX_CHARS = 6000
 
 MARKERS = (
+    # صيغة مُبلِّغ Flutter: عنوان الفشل ينتهي بـ`[E]`، والاستثناء تحته.
+    '[E]',
+    'Unhandled exception',
     'EXCEPTION CAUGHT',
     'Failing tests:',
     'Error:',
@@ -41,6 +44,8 @@ MARKERS = (
 # تشغيل ناجح، فلو أخذنا المقاطع بترتيب ظهورها لامتلأت الـannotations بالضجيج
 # وضاعت أسطر الفشل الحقيقية (حدث فعلًا في P14). نقدّم مقاطع الفشل الفعلية.
 HIGH_PRIORITY = (
+    '[E]',
+    'Unhandled exception',
     '✖',
     'not ok',
     'Failing tests:',
