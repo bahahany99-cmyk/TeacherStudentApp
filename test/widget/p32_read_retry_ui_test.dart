@@ -191,4 +191,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(notifications.attempts, attemptsAfterSuccess);
   });
+  testWidgets('التخلّص من الشاشة يلغي مؤقّت إعادة المحاولة بلا تحديث بعد dispose', (
+    WidgetTester tester,
+  ) async {
+    usePhoneSurface(tester);
+    final _FlakyNotificationRepository notifications =
+        _FlakyNotificationRepository(source: <AppNotification>[_notification()]);
+    final AppServices services = _services(notifications);
+
+    await tester.pumpWidget(_host(services));
+    await tester.pumpAndSettle();
+
+    // المحاولة الأولى فشلت ⇒ المؤقّت مبرمَج.
+    expect(notifications.attempts, greaterThanOrEqualTo(1));
+    final int attemptsBeforeDispose = notifications.attempts;
+
+    // الخروج من الشاشة (dispose) قبل انقضاء التهدئة.
+    await tester.pumpWidget(
+      const Directionality(
+        textDirection: TextDirection.rtl,
+        child: MaterialApp(home: Scaffold(body: Text('شاشة أخرى'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // تجاوز التهدئة بكثير بعد التخلّص: لا محاولة ولا استثناء.
+    await tester.pump(ChatReadMarker().retryDelay * 3);
+    await tester.pumpAndSettle();
+
+    expect(
+      notifications.attempts,
+      attemptsBeforeDispose,
+      reason: 'المؤقّت أُلغي في dispose فلا كتابة بعد التخلّص',
+    );
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'لا setState بعد dispose',
+    );
+  });
 }

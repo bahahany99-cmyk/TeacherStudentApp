@@ -4178,3 +4178,64 @@ placedAt ASC → teacherId`؛ `requestId` داخل المعاملة؛ الدفع
 أُضيف الملف الجديد إلى نفس مجموعة اختبارات القواعد، وصار سكربت
 `tool/rules_tests/package.json` يستخدم `--test-concurrency=1` حتى لا تُشغَّل
 ملفات الاختبار بالتوازي فتتعارض في `clearFirestore` على المحاكي نفسه.
+
+---
+
+## §46 — P32 (مراجعة نهائية قبل الدمج): اختبار تنفيذ Firestore الحقيقي على الويب
+
+**النطاق:** مراجعة/اختبار قبل قرار الدمج — بلا دمج، بلا نشر على Firebase، بلا
+Blaze، بلا دوال جديدة، وبلا بدء المرحلة الثانية.
+
+### 1) اختبار `firestore_repositories.dart` نفسه (لا إعادة كتابة استعلاماته)
+- **العقبة التي كانت:** `cloud_firestore` يحتاج قناة منصّة أصلية، فلا يعمل في
+  `flutter test` (VM). و`flutter test --platform chrome` لا يحمّل Firebase JS
+  SDK في هارنسه، و`cloud_firestore_web` يعتمد على `firebase` العالمي.
+- **الحل المنفَّذ:** مهمة CI جديدة `repos`:
+  1. `firebase emulators:exec --only firestore,auth` (المحاكي نفسه في CI، بلا
+     أي مشروع Firebase حقيقي).
+  2. `node tool/rules_tests/seed_web_emulator.mjs` — يُنشئ حسابات على محاكي
+     Auth (ويأخذ `uid` الفعلي)، ثم يكتب البيانات **متجاوزًا القواعد**
+     (`withSecurityRulesDisabled`) لأن الغرض اختبار القراءة لا الكتابة.
+  3. `flutter test --platform chrome test_web/firestore_repositories_emulator_test.dart`
+     — يحمّل Firebase JS SDK في الصفحة، ثم يشغّل
+     `FirestoreNotificationRepository` و`FirestoreMessageRepository` **الحقيقيين**
+     تحت قواعد المشروع نفسها.
+- **ما يُثبته الاختبار الفعلي:** `listPage` عبر عشرات الحالات الحدّية
+  (صفحات متتابعة بلا فقد/تكرار، تساوي `createdAt` مع الترتيب بالمعرّف،
+  `hasMore` والنهاية، رفض قراءة إشعارات مستخدم آخر)،
+  `markChatMessagesRead` (يعلّم إشعارات محادثة واحدة فقط، والنوع الآخر
+  والمحادثة الأخرى وإشعار مستخدم آخر لا تُمسّ، والتشغيل الثاني = 0)،
+  `unreadCount` (10 رسائل للعضو + واحدة لغيره ⇒ 1، وغياب `lastReadAt` ⇒ كل
+  رسائل الآخرين)، و`markRead` (يحدّث علامة العضو نفسه ويصفّر عدّاده، وكتابة
+  علامة عضو آخر مرفوضة).
+- **حدود التغطية (بصراحة):** المحاكي **لا يفرض الفهارس**، فمطابقة الفهرس
+  المركّب تبقى فحصًا يدويًا عند النشر؛ والاختبار لا يشغّل تطبيق Flutter كاملًا
+  بل طبقة البيانات الحقيقية.
+- المهمة **ليست** في `needs` الخاصة ببناء APK: تعطّلها لا يمنع إنتاج APK، لكنه
+  يُظهر التشغيل أحمر.
+
+### 2) مراجعة عدّاد المجموعة (تتبّع الاستعلامين فعليًا)
+- الاستعلام الأول: `studyGroups/{gid}/messages` (+ `sentAt > lastReadAt` عند
+  وجود العلامة) بتجميع `count`.
+- الاستعلام الثاني: نفسه + `senderId == memberId`.
+- الفهرس `messages(senderId ASC, sentAt ASC)` يطابق الثاني (مساواة + مدى على
+  حقول مختلفة = فهرس مركّب)، والأول يحتاج فهرسًا أحاديًا على `sentAt`
+  تلقائيًا. غياب `lastReadAt` ⇒ استعلامان بلا شرط زمني (لا فهرس مركّب).
+- **السلوك عند الفشل:** `_guard` يحوّل الخطأ إلى `AppException`، وشارة
+  المجموعة تلتقط أي خطأ وتعيد 0 فلا تُعرض شارة كاذبة (خطأ «فهرس مفقود» على
+  مشروع حقيقي قبل النشر ⇒ لا شارة، لا رقم خاطئ).
+
+### 3) مراجعة إعادة المحاولة والتخلّص
+- بعد فشل تعليم الإشعارات (`ChatReadMarker`): الحالة غير مكتملة ⇒
+  `shouldAttempt` صحيح بعد `allowRetry` ⇒ إعادة محاولة مضمونة.
+- `dispose`: يُلغي `_readRetryTimer`، وداخل المؤقّت فحص `mounted` قبل
+  `setState`، ودالة `_markRead` تفحص `mounted` بعد الـ`await`. أُضيف اختبار
+  widget يتخلّص من الشاشة **قبل** انقضاء التهدئة ثم يتجاوزها: لا محاولة جديدة
+  ولا استثناء `setState after dispose`.
+
+### الاختبارات المضافة
+- `test_web/firestore_repositories_emulator_test.dart` (8 حالات على تنفيذ
+  Firestore الحقيقي مقابل المحاكي).
+- حالة widget للتخلّص الآمن (في `test/widget/p32_read_retry_ui_test.dart`).
+- مهمة CI `repos` + `tool/rules_tests/seed_web_emulator.mjs`.
+- `0.1.0+39`.
