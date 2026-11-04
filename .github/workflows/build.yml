@@ -285,6 +285,15 @@ jobs:
             exit "$status"
           fi
 
+          # سجلات Azure غير قابلة للتنزيل من بيئة التطوير: ننشر ذيل السجل دائمًا
+          # كـannotation حتى يُقرأ منه ما جرى فعلًا (لا سيما عند عدّ صفر).
+          python3 - <<'PY'
+          import pathlib
+
+          lines = pathlib.Path('/tmp/repos.txt').read_text(errors='replace').splitlines()
+          tail = '\n'.join(lines[-80:]).replace('%', '%25')
+          print(f'::notice title=repositories-log-tail::{tail[:5500]}')
+          PY
           # **دليل التنفيذ الفعلي:** لا نكتفي بـ«All tests passed!» لأنها قد تُطبع
           # بعدد صفر لو انحرف الالتقاط. نستخرج العدد من سطر Flutter
           # (`00:05 +9: All tests passed!`) ونفشل إن كان أقل من المتوقع.

@@ -40,7 +40,7 @@ node tool/rules_tests/seed_integration.mjs
 
 echo "→ flutter drive (بناء ويب حقيقي + Chrome)"
 # أقل خيارات ممكنة: أي خيار غير مدعوم في إصدار Flutter الحالي يُفشل الأمر كله.
-flutter drive \
+flutter drive --verbose \
   --driver=test_driver/integration_test.dart \
   --target=integration_test/p32_firestore_repositories_test.dart \
   -d web-server \
