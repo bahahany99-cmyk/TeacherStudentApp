@@ -58,7 +58,19 @@ enum NotificationType {
   auctionReplacement('مقعد متاح في مزاد التمييز', NotificationTarget.auction),
 
   /// انتهت مهلة الدفع ولم يُسجَّل ⇒ المدرس.
-  auctionPaymentExpired('انتهت مهلة دفع المزاد', NotificationTarget.auction);
+  auctionPaymentExpired('انتهت مهلة دفع المزاد', NotificationTarget.auction),
+
+  // ── (P32) قرار الإدارة على ملف المدرس ───────────────────────────────────
+  // **لماذا نوعان لا نوع واحد بمعامل؟** لأن القواعد تتحقق من **الحالة المكتوبة
+  // فعلًا** في `teacherProfiles/{uid}`: «اعتُمد» تُقبل فقط إذا كانت الحالة
+  // `verified`، و«رُفض» فقط إذا كانت `rejected`. نوع واحد بنص حر كان سيسمح
+  // بادّعاء اعتماد لم يحدث. الإنشاء محصور في `isAdminWriter()`.
+
+  /// الإدارة اعتمدت ملف المدرس ⇒ المدرس صاحب الملف.
+  teacherApproved('اعتُمد ملفك', NotificationTarget.teacherProfile),
+
+  /// الإدارة رفضت الملف بسبب مكتوب ⇒ المدرس صاحب الملف.
+  teacherRejected('ملفك يحتاج تعديلًا', NotificationTarget.teacherProfile);
 
   const NotificationType(this.label, this.target);
 
