@@ -6,17 +6,18 @@
 /// * `flutter test --platform chrome` **لا يشغّل مُسجِّل إضافات الويب**، فتبقى
 ///   القناة بلا مستمع ويُعلَّق `Firebase.initializeApp` بلا خطأ (جُرّب فعلًا
 ///   وأُزيل: التشغيلات 41793072285 … 41800407384).
-/// * `integration_test` + `flutter drive` يبنيان **تطبيق ويب حقيقيًا** يمرّ على
+/// * `flutter test … -d chrome` يبني **تطبيق ويب حقيقيًا** يمرّ على
 ///   `web_plugin_registrant` المولَّد ⇒ تسجيل الإضافات يحدث تلقائيًا، فتعمل
-///   Firebase كما في التطبيق الحقيقي.
+///   Firebase كما في التطبيق الحقيقي. (جُرّب `flutter drive` بصيغتيه web-server
+///   وchrome: الأولى أبلغت «نجاحًا» بلا اختبارات، والثانية عُلِّقت.)
 ///
 /// **ما يُختبر:** `FirestoreNotificationRepository` و`FirestoreMessageRepository`
 /// **نفسهما** — لا إعادة كتابة للاستعلامات — تحت قواعد المشروع (`firestore.rules`)
 /// على محاكيي Firestore وAuth. البيانات تُهيَّأ قبل التشغيل بسكربت
 /// `tool/rules_tests/seed_integration.mjs` (متجاوزًا القواعد للتهيئة فقط).
 ///
-/// **التشغيل:** `tool/integration/run_web_drive.sh` داخل `firebase emulators:exec`
-/// (يستدعي `flutter drive -d chrome`).
+/// **التشغيل:** `tool/integration/run_web_integration.sh` داخل
+/// `firebase emulators:exec` (يستدعي `flutter test … -d chrome`).
 ///
 /// **كيف نعرف أن الاختبارات نُفِّذت فعلًا؟** لا بسطر «All tests passed» — فهو قد
 /// يُطبع بعدد صفر. كل اختبار يُرسل نتيجته من داخل التطبيق إلى خادم محلي

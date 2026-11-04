@@ -251,9 +251,10 @@ jobs:
           channel: stable
           cache: true
 
-      # لا chromedriver: صار التشغيل بـ`flutter drive -d chrome` (Flutter يطلق
-      # المتصفح ويتصل به بنفسه). التشغيل السابق بـ`-d web-server` مع
-      # chromedriver منفصل خرج بـ«All tests passed» بلا تنفيذ أي اختبار.
+      # لا chromedriver: التشغيل صار `flutter test integration_test/... -d chrome`
+      # (يبني تطبيق الويب الحقيقي ويشغّله في Chrome). جُرّب قبله:
+      # `flutter drive -d web-server` + chromedriver ⇒ «All tests passed» بلا أي
+      # اختبار، و`flutter drive -d chrome` ⇒ تعليق 35 دقيقة (41825828025).
       - name: Cache Firestore emulator
         uses: actions/cache@v4
         with:
@@ -276,7 +277,7 @@ jobs:
             --only firestore,auth \
             --project demo-darsly \
             --config firebase.json \
-            "tool/integration/run_web_drive.sh" \
+            "tool/integration/run_web_integration.sh" \
             > /tmp/repos.txt 2>&1 || status=$?
           tail -120 /tmp/repos.txt
 
@@ -295,7 +296,7 @@ jobs:
           print(f'::notice title=repositories-log-tail::{tail[:5500]}')
           PY
           # **دليل التنفيذ الفعلي** هو تقارير `results_server.mjs` القادمة من
-          # داخل التطبيق (وقد فُحصت داخل `run_web_drive.sh` وفشلت عند نقصها).
+          # داخل التطبيق (وقد فُحصت داخل `run_web_integration.sh` وفشلت عند نقصها).
           # العدد المستخرج من سطر Flutter (`00:05 +11: All tests passed!`) يبقى
           # إشارة مساعدة فقط: لا نفشل عليه حتى لا يعتمد الحكم على نصّ السجل.
           python3 - <<'PY'
