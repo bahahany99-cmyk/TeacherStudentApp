@@ -74,6 +74,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # (P32 — مراجعة) اختبار تكامل حقيقي لتنفيذ Firestore: `cloud_firestore`
+  # يحتاج قناة منصّة أصلية، فلا يعمل في `flutter test` (VM)، ولا تُسجَّل إضافات
+  # الويب في `flutter test --platform chrome`. المسار الرسمي الوحيد هو
+  # `integration_test` على بناء ويب حقيقي يمرّ على مُسجِّل الإضافات المولَّد.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
   # (P18) توليد أيقونات المنصّة من مصدر واحد (PNG في assets/icon/).
   # يُشغَّل يدويًا: `dart run flutter_launcher_icons` — وناتجه (mipmap/AppIcon)

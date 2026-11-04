@@ -211,6 +211,95 @@ jobs:
           if-no-files-found: ignore
           retention-days: 2
 
+  # ── تنفيذ Firestore الحقيقي: اختبار تكامل على متصفح + محاكي (P32) ────────────
+  # **لماذا integration_test؟** `cloud_firestore` يحتاج قناة منصّة أصلية فلا
+  # يعمل في `flutter test` (VM)، و`flutter test --platform chrome` لا يشغّل
+  # مُسجِّل إضافات الويب فيتعلّق `initializeApp` (جُرّب وأُزيل). أما
+  # `flutter drive -d web-server` فيبني **تطبيق ويب حقيقيًا** يمرّ على المُسجِّل
+  # المولَّد، فتعمل Firebase كما في التطبيق، ويُختبر كود المستودعات نفسه.
+  #
+  # ملاحظات:
+  # * ليست في `needs` الخاصة ببناء APK: تعطّلها لا يمنع إنتاج APK لكنه يُظهر
+  #   التشغيل أحمر.
+  # * كل شيء محلي: محاكيا Firestore وAuth، ولا مشروع Firebase حقيقي ولا نشر.
+  # * المحاكي لا يفرض الفهارس؛ مطابقة الفهرس المركّب تبقى فحصًا يدويًا قبل النشر.
+  repos:
+    name: firestore repositories (integration_test on web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tool/rules_tests/package-lock.json
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up chromedriver (مطابق لمتصفح العدّاء)
+        uses: nanasess/setup-chromedriver@v2
+
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('tool/rules_tests/package-lock.json') }}
+
+      - name: Install emulator tooling
+        run: |
+          npm ci --prefix tool/rules_tests --no-audit --no-fund
+          flutter config --enable-web
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Run integration test against emulators
+        run: |
+          set -o pipefail
+          status=0
+          xvfb-run -a ./tool/rules_tests/node_modules/.bin/firebase emulators:exec \
+            --only firestore,auth \
+            --project demo-darsly \
+            --config firebase.json \
+            "tool/integration/run_web_drive.sh" \
+            > /tmp/repos.txt 2>&1 || status=$?
+          tail -120 /tmp/repos.txt
+
+          if [ "$status" -ne 0 ]; then
+            python3 tool/ci/annotate_log.py /tmp/repos.txt "firestore-repos"
+            exit "$status"
+          fi
+
+          grep -E "All tests passed|\+[0-9]+: All tests passed" /tmp/repos.txt | tail -1 \
+            | xargs -r -0 echo "::notice title=repositories-integration::" || true
+          echo "✅ تنفيذ Firestore (تصفّح/تعليم/عدّاد/علامات): كل الحالات ناجحة على المحاكي."
+
+      - name: Upload integration log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-repositories-log
+          path: |
+            /tmp/repos.txt
+            /tmp/chromedriver.log
+          if-no-files-found: ignore
+          retention-days: 2
+
   # ── دوال المزاد (P30): اختبارات Node على نواة وخدمة المزاد ───────────────────
   # لا تحتاج Firebase ولا محاكيًا: المنطق مكتوب ليُختبر بلا شبكة
   # (`functions/lib/auction_core.js` نقي، والخدمة تعمل على مستودع في الذاكرة).
